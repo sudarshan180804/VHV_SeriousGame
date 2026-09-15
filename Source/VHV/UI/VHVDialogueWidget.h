@@ -1,0 +1,78 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "Core/VHVDialogueTypes.h"
+#include "UI/VHVUserWidgetBase.h"
+#include "Components/TextBlock.h"
+#include "Components/VerticalBox.h"
+#include "VHVDialogueWidget.generated.h"
+
+class UVHVUIManagerComponent;
+
+UCLASS()
+class VHV_API UVHVDialogueWidget : public UVHVUserWidgetBase
+{
+    GENERATED_BODY()
+
+public:
+    virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+
+    UFUNCTION(BlueprintCallable, Category = "VHV|UI")
+    void ShowDialogue(const FDialogueData& InDialogue);
+
+    UFUNCTION(BlueprintCallable, Category = "VHV|UI")
+    void ShowConversation(const FDialogueConversation& InConversation, const FString& InStartNodeID = TEXT(""));
+
+    UFUNCTION(BlueprintCallable, Category = "VHV|UI")
+    void HideDialogue();
+
+    UFUNCTION(BlueprintCallable, Category = "VHV|UI")
+    void AdvanceDialogue();
+
+    UFUNCTION(BlueprintCallable, Category = "VHV|UI")
+    void SelectNextChoice();
+
+    UFUNCTION(BlueprintCallable, Category = "VHV|UI")
+    void SelectPreviousChoice();
+
+    UFUNCTION(BlueprintCallable, Category = "VHV|UI")
+    bool ConfirmChoice();
+
+    /** Selects a rendered choice and asks the conversation owner to confirm it. */
+    UFUNCTION(BlueprintCallable, Category = "VHV|UI")
+    void SelectChoiceAndConfirm(int32 ChoiceIndex);
+
+    UFUNCTION(BlueprintCallable, Category = "VHV|UI")
+    void SetOwningUIManager(UVHVUIManagerComponent* InUIManager);
+
+    const FDialogueConversation& GetCurrentConversation() const { return CurrentConversation; }
+    const FString& GetCurrentNodeID() const { return CurrentNodeID; }
+    int32 GetSelectedChoiceIndex() const { return SelectedChoiceIndex; }
+
+protected:
+    void UpdateDialogueLine();
+    void UpdateFromNode();
+    void UpdateChoiceSelectionUI();
+    void EnsureChoiceContainer();
+    void ClearChoices();
+    const FDialogueNode* FindNodeByID(const FString& NodeID) const;
+    void SetCurrentNode(const FString& NodeID);
+
+    FDialogueConversation CurrentConversation;
+    FString CurrentNodeID;
+    FDialogueData CurrentDialogue;
+    int32 CurrentLineIndex = 0;
+    int32 SelectedChoiceIndex = 0;
+
+    UPROPERTY(BlueprintReadWrite, meta = (BindWidget))
+    TObjectPtr<UTextBlock> SpeakerNameText;
+
+    UPROPERTY(BlueprintReadWrite, meta = (BindWidget))
+    TObjectPtr<UTextBlock> DialogueText;
+
+    UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional))
+    TObjectPtr<UVerticalBox> ChoiceContainer;
+
+    UPROPERTY()
+    TObjectPtr<UVHVUIManagerComponent> OwningUIManager;
+};

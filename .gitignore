@@ -1,0 +1,44 @@
+# ==============================
+# Unreal Engine generated files
+# ==============================
+
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+
+# ==============================
+# IDE generated files
+# ==============================
+
+.vs/
+.idea/
+
+*.sln
+*.suo
+*.user
+*.userprefs
+*.VC.db
+*.VC.opendb
+
+# ==============================
+# Build / temporary files
+# ==============================
+
+*.log
+*.tmp
+*.bak
+
+# ==============================
+# Operating system files
+# ==============================
+
+.DS_Store
+Thumbs.db
+
+# ==============================
+# Rider
+# ==============================
+
+.idea/
+.vsconfig

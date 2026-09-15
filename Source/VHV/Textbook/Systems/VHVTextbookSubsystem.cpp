@@ -1,0 +1,714 @@
+#include "VHVTextbookSubsystem.h"
+
+void UVHVTextbookSubsystem::Initialize(FSubsystemCollectionBase& Collection)
+{
+    Super::Initialize(Collection);
+
+    CurrentLevelData = nullptr;
+    RuntimeState = FTextbookRuntimeState();
+    ProgressionMode = EVHVTextbookProgressionMode::InternalTextbook;
+}
+
+void UVHVTextbookSubsystem::Deinitialize()
+{
+    CurrentLevelData = nullptr;
+
+    Super::Deinitialize();
+}
+
+// ============================================================
+// JOURNEY CONTROL
+// ============================================================
+
+void UVHVTextbookSubsystem::StartJourney(UVHVLevelData* InLevelData)
+{
+    if (!InLevelData)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("VHVTextbookSubsystem: StartJourney called with null LevelData."));
+        return;
+    }
+
+    CurrentLevelData = InLevelData;
+
+    RuntimeState = FTextbookRuntimeState();
+    RuntimeState.bJourneyStarted = true;
+
+    StartDay();
+}
+
+void UVHVTextbookSubsystem::StartDay()
+{
+    if (!CurrentLevelData)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("VHVTextbookSubsystem: Cannot start day without LevelData."));
+        return;
+    }
+
+    RuntimeState.CurrentDayIndex = 0;
+    RuntimeState.CurrentTopicIndex = 0;
+    RuntimeState.CurrentActivityIndex = 0;
+
+    RuntimeState.CurrentPhase = ELearningPhase::Ask;
+    RuntimeState.bActivityActive = false;
+
+    RuntimeState.bDayStarted = true;
+    RuntimeState.bDayCompleted = false;
+    RuntimeState.bTopicCompleted = false;
+    RuntimeState.bActivityCompleted = false;
+
+    RuntimeState.AttemptCount = 0;
+    RuntimeState.HintLevel = 0;
+    RuntimeState.bAnswerSubmitted = false;
+    RuntimeState.bAnswerCorrect = false;
+}
+
+// ============================================================
+// LEARNING PHASE CONTROL
+// ============================================================
+
+void UVHVTextbookSubsystem::EnterAskPhase()
+{
+    RuntimeState.CurrentPhase = ELearningPhase::Ask;
+    RuntimeState.bAnswerSubmitted = false;
+    RuntimeState.bAnswerCorrect = false;
+
+    OnLearningPhaseChanged.Broadcast(RuntimeState.CurrentPhase);
+}
+
+void UVHVTextbookSubsystem::EnterFeedbackPhase()
+{
+    RuntimeState.CurrentPhase = ELearningPhase::Feedback;
+
+    OnLearningPhaseChanged.Broadcast(RuntimeState.CurrentPhase);
+}
+
+void UVHVTextbookSubsystem::EnterHintPhase()
+{
+    RuntimeState.CurrentPhase = ELearningPhase::Hint;
+
+    OnLearningPhaseChanged.Broadcast(RuntimeState.CurrentPhase);
+}
+
+void UVHVTextbookSubsystem::EnterTeachPhase()
+{
+    RuntimeState.CurrentPhase = ELearningPhase::Teach;
+
+    OnLearningPhaseChanged.Broadcast(RuntimeState.CurrentPhase);
+}
+
+// ============================================================
+// ACTIVITY CONTROL
+// ============================================================
+
+void UVHVTextbookSubsystem::SubmitAnswer(const bool bWasCorrect, const bool bWasPartial)
+{
+    RuntimeState.AttemptCount++;
+    RuntimeState.bAnswerSubmitted = true;
+    RuntimeState.bAnswerCorrect = bWasCorrect;
+    RuntimeState.bAnswerPartial = bWasPartial;
+
+    EnterFeedbackPhase();
+}
+
+bool UVHVTextbookSubsystem::SubmitMultiChoice(const TArray<int32>& SelectedOptionIndices)
+{
+    if (!CurrentLevelData || !RuntimeState.bActivityActive || RuntimeState.CurrentPhase != ELearningPhase::Ask)
+    {
+        return false;
+    }
+
+    const FTextbookActivityData CurrentActivity = GetCurrentActivity();
+    if (CurrentActivity.ActivityType != ETextbookActivityType::MultiChoice || SelectedOptionIndices.Num() == 0)
+    {
+        return false;
+    }
+
+    TSet<int32> SubmittedIndices;
+    for (const int32 OptionIndex : SelectedOptionIndices)
+    {
+        if (!CurrentActivity.Question.Options.IsValidIndex(OptionIndex) || SubmittedIndices.Contains(OptionIndex))
+        {
+            return false;
+        }
+        SubmittedIndices.Add(OptionIndex);
+    }
+
+    int32 CorrectOptionCount = 0;
+    int32 SelectedCorrectOptionCount = 0;
+    bool bSelectedIncorrectOption = false;
+    for (int32 OptionIndex = 0; OptionIndex < CurrentActivity.Question.Options.Num(); ++OptionIndex)
+    {
+        const bool bIsCorrectOption = CurrentActivity.Question.Options[OptionIndex].bIsCorrect;
+        const bool bIsSelected = SubmittedIndices.Contains(OptionIndex);
+        if (bIsCorrectOption)
+        {
+            ++CorrectOptionCount;
+            if (bIsSelected)
+            {
+                ++SelectedCorrectOptionCount;
+            }
+        }
+        else if (bIsSelected)
+        {
+            bSelectedIncorrectOption = true;
+        }
+    }
+
+    const bool bWasCorrect = !bSelectedIncorrectOption && SelectedCorrectOptionCount == CorrectOptionCount;
+    const bool bWasPartial = !bSelectedIncorrectOption && SelectedCorrectOptionCount < CorrectOptionCount;
+
+    UE_LOG(LogTemp, Log, TEXT("[VHVTextbook] MultiChoice submitted SelectedCount=%d"), SubmittedIndices.Num());
+    UE_LOG(LogTemp, Log, TEXT("[VHVTextbook] MultiChoice result=%s"), bWasCorrect ? TEXT("Correct") : (bWasPartial ? TEXT("Partial") : TEXT("Incorrect")));
+    SubmitAnswer(bWasCorrect, bWasPartial);
+    return bWasCorrect;
+}
+
+bool UVHVTextbookSubsystem::SubmitOrdering(const TArray<FString>& OrderedItemIDs)
+{
+    if (!CurrentLevelData || !RuntimeState.bActivityActive || RuntimeState.CurrentPhase != ELearningPhase::Ask || RuntimeState.AttemptCount >= 3)
+    {
+        return false;
+    }
+
+    const FTextbookActivityData CurrentActivity = GetCurrentActivity();
+    if (CurrentActivity.ActivityType != ETextbookActivityType::Ordering)
+    {
+        return false;
+    }
+
+    if (!IsValidOrderingDefinition(CurrentActivity))
+    {
+        return false;
+    }
+
+    if (OrderedItemIDs.Num() != CurrentActivity.OrderingItems.Num())
+    {
+        return false;
+    }
+
+    TSet<FString> SubmittedIDs;
+    for (const FString& ItemID : OrderedItemIDs)
+    {
+        if (ItemID.IsEmpty() || SubmittedIDs.Contains(ItemID))
+        {
+            return false;
+        }
+
+        SubmittedIDs.Add(ItemID);
+
+        bool bFound = false;
+        for (const FOrderingItem& OrderingItem : CurrentActivity.OrderingItems)
+        {
+            if (OrderingItem.ItemID == ItemID)
+            {
+                bFound = true;
+                break;
+            }
+        }
+
+        if (!bFound)
+        {
+            return false;
+        }
+    }
+
+    bool bCorrect = true;
+    if (OrderedItemIDs.Num() == CurrentActivity.CorrectOrder.Num())
+    {
+        for (int32 Index = 0; Index < OrderedItemIDs.Num(); ++Index)
+        {
+            if (OrderedItemIDs[Index] != CurrentActivity.CorrectOrder[Index])
+            {
+                bCorrect = false;
+                break;
+            }
+        }
+    }
+    else
+    {
+        bCorrect = false;
+    }
+
+    RuntimeState.AttemptCount++;
+    RuntimeState.bAnswerSubmitted = true;
+    RuntimeState.bAnswerCorrect = bCorrect;
+
+    if (bCorrect)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[VHVTextbook] Ordering attempt=%d result=Correct -> Feedback"), RuntimeState.AttemptCount);
+        EnterFeedbackPhase();
+    }
+    else if (RuntimeState.AttemptCount < 3)
+    {
+        RequestHint();
+        UE_LOG(LogTemp, Warning, TEXT("[VHVTextbook] Ordering attempt=%d result=Wrong -> Hint"), RuntimeState.AttemptCount);
+        EnterHintPhase();
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[VHVTextbook] Ordering attempt=3 result=Wrong -> Feedback"));
+        EnterFeedbackPhase();
+    }
+
+    return bCorrect;
+}
+
+bool UVHVTextbookSubsystem::IsValidOrderingDefinition(const FTextbookActivityData& Activity) const
+{
+    if (Activity.ActivityType != ETextbookActivityType::Ordering)
+    {
+        return false;
+    }
+
+    if (Activity.OrderingItems.Num() == 0)
+    {
+        return false;
+    }
+
+    TSet<FString> ItemIDs;
+    for (const FOrderingItem& Item : Activity.OrderingItems)
+    {
+        if (Item.ItemID.IsEmpty() || ItemIDs.Contains(Item.ItemID))
+        {
+            return false;
+        }
+
+        ItemIDs.Add(Item.ItemID);
+    }
+
+    if (Activity.CorrectOrder.Num() != Activity.OrderingItems.Num())
+    {
+        return false;
+    }
+
+    TSet<FString> OrderedItemIDs;
+    for (const FString& ItemID : Activity.CorrectOrder)
+    {
+        if (ItemID.IsEmpty())
+        {
+            return false;
+        }
+
+        if (OrderedItemIDs.Contains(ItemID))
+        {
+            return false;
+        }
+
+        OrderedItemIDs.Add(ItemID);
+
+        bool bExists = false;
+        for (const FOrderingItem& Item : Activity.OrderingItems)
+        {
+            if (Item.ItemID == ItemID)
+            {
+                bExists = true;
+                break;
+            }
+        }
+
+        if (!bExists)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool UVHVTextbookSubsystem::SubmitMatching(const TArray<FMatchingPair>& SubmittedMatches)
+{
+    if (!CurrentLevelData || !RuntimeState.bActivityActive || RuntimeState.CurrentPhase != ELearningPhase::Ask || RuntimeState.AttemptCount >= 3)
+    {
+        return false;
+    }
+
+    const FTextbookActivityData CurrentActivity = GetCurrentActivity();
+    if (!IsValidMatchingDefinition(CurrentActivity))
+    {
+        return false;
+    }
+
+    TMap<FString, FString> SubmittedByLeft;
+    TSet<FString> SubmittedRights;
+    bool bHasIncorrectMatch = false;
+    for (const FMatchingPair& SubmittedMatch : SubmittedMatches)
+    {
+        if (SubmittedMatch.LeftText.IsEmpty() || SubmittedMatch.RightText.IsEmpty() || SubmittedByLeft.Contains(SubmittedMatch.LeftText) || SubmittedRights.Contains(SubmittedMatch.RightText))
+        {
+            return false;
+        }
+        SubmittedByLeft.Add(SubmittedMatch.LeftText, SubmittedMatch.RightText);
+        SubmittedRights.Add(SubmittedMatch.RightText);
+
+        const FMatchingPair* AuthoredMatch = CurrentActivity.MatchingPairs.FindByPredicate([&SubmittedMatch](const FMatchingPair& Pair)
+        {
+            return Pair.LeftText == SubmittedMatch.LeftText;
+        });
+        if (!AuthoredMatch || AuthoredMatch->RightText != SubmittedMatch.RightText)
+        {
+            bHasIncorrectMatch = true;
+        }
+    }
+
+    const bool bWasCorrect = !bHasIncorrectMatch && SubmittedByLeft.Num() == CurrentActivity.MatchingPairs.Num();
+    const bool bWasPartial = !bHasIncorrectMatch && SubmittedByLeft.Num() < CurrentActivity.MatchingPairs.Num();
+    SubmitAnswer(bWasCorrect, bWasPartial);
+    UE_LOG(LogTemp, Log, TEXT("[VHVTextbook] Matching submitted MatchCount=%d result=%s"), SubmittedMatches.Num(), bWasCorrect ? TEXT("Correct") : (bWasPartial ? TEXT("Partial") : TEXT("Incorrect")));
+    return bWasCorrect;
+}
+
+bool UVHVTextbookSubsystem::SubmitObservation()
+{
+    if (!CurrentLevelData || !RuntimeState.bActivityActive || RuntimeState.CurrentPhase != ELearningPhase::Ask)
+    {
+        return false;
+    }
+
+    const FTextbookActivityData CurrentActivity = GetCurrentActivity();
+    if (CurrentActivity.ActivityType != ETextbookActivityType::Observation)
+    {
+        return false;
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("[VHVTextbook] Observation submitted ActivityID=%s"), *CurrentActivity.ActivityID);
+    SubmitAnswer(true);
+    return true;
+}
+
+bool UVHVTextbookSubsystem::IsValidMatchingDefinition(const FTextbookActivityData& Activity) const
+{
+    if (Activity.ActivityType != ETextbookActivityType::Matching || Activity.MatchingPairs.Num() == 0)
+    {
+        return false;
+    }
+
+    TSet<FString> LeftTexts;
+    TSet<FString> RightTexts;
+    for (const FMatchingPair& Pair : Activity.MatchingPairs)
+    {
+        if (Pair.LeftText.IsEmpty() || Pair.RightText.IsEmpty() || LeftTexts.Contains(Pair.LeftText) || RightTexts.Contains(Pair.RightText))
+        {
+            return false;
+        }
+        LeftTexts.Add(Pair.LeftText);
+        RightTexts.Add(Pair.RightText);
+    }
+    return true;
+}
+
+void UVHVTextbookSubsystem::CompleteCurrentActivity()
+{
+    const FTextbookActivityData CurrentActivity = GetCurrentActivity();
+
+    RuntimeState.bActivityCompleted = true;
+    RuntimeState.bActivityActive = false;
+
+    if (!CurrentActivity.ActivityID.IsEmpty())
+    {
+        RuntimeState.CompletedActivityIDs.Add(CurrentActivity.ActivityID);
+        UE_LOG(LogTemp, Warning, TEXT("[VHVTextbook] Completed ActivityID=%s"), *CurrentActivity.ActivityID);
+    }
+
+    OnActivityCompleted.Broadcast();
+}
+
+void UVHVTextbookSubsystem::AdvanceToNextActivity()
+{
+    if (!CurrentLevelData)
+    {
+        return;
+    }
+
+    if (ProgressionMode == EVHVTextbookProgressionMode::QuestManaged)
+    {
+        if (RuntimeState.bActivityActive)
+        {
+            CompleteCurrentActivity();
+        }
+        return;
+    }
+
+    FDayData& DayData = CurrentLevelData->DayData;
+
+    if (!DayData.Topics.IsValidIndex(RuntimeState.CurrentTopicIndex))
+    {
+        return;
+    }
+
+    FTopicData& CurrentTopic = DayData.Topics[RuntimeState.CurrentTopicIndex];
+
+    if (RuntimeState.bActivityActive)
+    {
+        CompleteCurrentActivity();
+    }
+
+    // --------------------------------------------------------
+    // Move to the next activity in the current topic
+    // --------------------------------------------------------
+    const int32 NextActivityIndex = RuntimeState.CurrentActivityIndex + 1;
+    if (CurrentTopic.Activities.IsValidIndex(NextActivityIndex))
+    {
+        RuntimeState.CurrentActivityIndex = NextActivityIndex;
+        RuntimeState.bActivityCompleted = false;
+        RuntimeState.bActivityActive = true;
+        RuntimeState.bAnswerSubmitted = false;
+        RuntimeState.bAnswerCorrect = false;
+        RuntimeState.AttemptCount = 0;
+        RuntimeState.HintLevel = 0;
+
+        const FTextbookActivityData NextActivity = GetCurrentActivity();
+        UE_LOG(LogTemp, Warning, TEXT("[VHVTextbook] Advancing to ActivityID=%s"), *NextActivity.ActivityID);
+
+        RuntimeState.CurrentPhase = ELearningPhase::Ask;
+        OnLearningPhaseChanged.Broadcast(RuntimeState.CurrentPhase);
+        return;
+    }
+
+    // --------------------------------------------------------
+    // Current topic is complete
+    // --------------------------------------------------------
+    RuntimeState.bTopicCompleted = true;
+
+    if (!CurrentTopic.TopicID.IsEmpty())
+    {
+        RuntimeState.MasteredTopicIDs.Add(CurrentTopic.TopicID);
+        UE_LOG(LogTemp, Warning, TEXT("[VHVTextbook] Topic completed=%s"), *CurrentTopic.TopicID);
+    }
+
+    OnTopicCompleted.Broadcast();
+
+    // --------------------------------------------------------
+    // Move to the next topic
+    // --------------------------------------------------------
+    RuntimeState.CurrentTopicIndex++;
+    RuntimeState.CurrentActivityIndex = 0;
+
+    if (DayData.Topics.IsValidIndex(RuntimeState.CurrentTopicIndex))
+    {
+        FTopicData& NextTopic = DayData.Topics[RuntimeState.CurrentTopicIndex];
+        RuntimeState.bTopicCompleted = false;
+        RuntimeState.bActivityCompleted = false;
+        RuntimeState.bActivityActive = true;
+        RuntimeState.bAnswerSubmitted = false;
+        RuntimeState.bAnswerCorrect = false;
+        RuntimeState.AttemptCount = 0;
+        RuntimeState.HintLevel = 0;
+
+        UE_LOG(LogTemp, Warning, TEXT("[VHVTextbook] Starting next TopicID=%s"), *NextTopic.TopicID);
+
+        const FTextbookActivityData NextActivity = GetCurrentActivity();
+        if (!NextActivity.ActivityID.IsEmpty())
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[VHVTextbook] Advancing to ActivityID=%s"), *NextActivity.ActivityID);
+        }
+
+        RuntimeState.CurrentPhase = ELearningPhase::Ask;
+        OnLearningPhaseChanged.Broadcast(RuntimeState.CurrentPhase);
+        return;
+    }
+
+    // --------------------------------------------------------
+    // No more topics = day reached its final activity
+    // --------------------------------------------------------
+    RuntimeState.bDayCompleted = true;
+    RuntimeState.bActivityActive = false;
+    RuntimeState.bActivityCompleted = true;
+
+    UE_LOG(LogTemp, Warning, TEXT("[VHVTextbook] Day reached final activity"));
+    OnDayCompleted.Broadcast();
+}
+
+void UVHVTextbookSubsystem::AdvanceTeach()
+{
+    if (!RuntimeState.bActivityActive)
+    {
+        return;
+    }
+
+    CompleteCurrentActivity();
+    AdvanceToNextActivity();
+}
+
+// ============================================================
+// HINTS
+// ============================================================
+
+void UVHVTextbookSubsystem::RequestHint()
+{
+    const FTextbookActivityData CurrentActivity = GetCurrentActivity();
+
+    if (RuntimeState.HintLevel < CurrentActivity.Hints.Num())
+    {
+        RuntimeState.HintLevel++;
+    }
+}
+
+// ============================================================
+// CURRENT CONTENT
+// ============================================================
+
+UVHVLevelData* UVHVTextbookSubsystem::GetCurrentLevelData() const
+{
+    return CurrentLevelData;
+}
+
+FDayData UVHVTextbookSubsystem::GetCurrentDay() const
+{
+    if (!CurrentLevelData)
+    {
+        return FDayData();
+    }
+
+    return CurrentLevelData->DayData;
+}
+
+FTopicData UVHVTextbookSubsystem::GetCurrentTopic() const
+{
+    if (!CurrentLevelData)
+    {
+        return FTopicData();
+    }
+
+    const FDayData& DayData = CurrentLevelData->DayData;
+
+    if (!DayData.Topics.IsValidIndex(RuntimeState.CurrentTopicIndex))
+    {
+        return FTopicData();
+    }
+
+    return DayData.Topics[RuntimeState.CurrentTopicIndex];
+}
+
+FTextbookActivityData UVHVTextbookSubsystem::GetCurrentActivity() const
+{
+    const FTopicData CurrentTopic = GetCurrentTopic();
+
+    if (!CurrentTopic.Activities.IsValidIndex(RuntimeState.CurrentActivityIndex))
+    {
+        return FTextbookActivityData();
+    }
+
+    return CurrentTopic.Activities[RuntimeState.CurrentActivityIndex];
+}
+
+bool UVHVTextbookSubsystem::TryGetActivityByID(const FString& ActivityID, FTextbookActivityData& OutActivity) const
+{
+    if (ActivityID.IsEmpty() || !CurrentLevelData)
+    {
+        return false;
+    }
+
+    const FDayData& DayData = CurrentLevelData->DayData;
+    for (const FTopicData& Topic : DayData.Topics)
+    {
+        for (const FTextbookActivityData& Activity : Topic.Activities)
+        {
+            if (Activity.ActivityID == ActivityID)
+            {
+                OutActivity = Activity;
+                return true;
+            }
+        }
+    }
+
+    OutActivity = FTextbookActivityData();
+    return false;
+}
+
+bool UVHVTextbookSubsystem::StartActivityByID(const FString& ActivityID)
+{
+    if (ActivityID.IsEmpty() || !CurrentLevelData)
+    {
+        return false;
+    }
+
+    const FDayData& DayData = CurrentLevelData->DayData;
+    for (int32 TopicIndex = 0; TopicIndex < DayData.Topics.Num(); ++TopicIndex)
+    {
+        const FTopicData& Topic = DayData.Topics[TopicIndex];
+        for (int32 ActivityIndex = 0; ActivityIndex < Topic.Activities.Num(); ++ActivityIndex)
+        {
+            if (Topic.Activities[ActivityIndex].ActivityID == ActivityID)
+            {
+                RuntimeState.CurrentTopicIndex = TopicIndex;
+                RuntimeState.CurrentActivityIndex = ActivityIndex;
+                RuntimeState.CurrentPhase = ELearningPhase::Ask;
+                RuntimeState.bActivityActive = true;
+
+                RuntimeState.bJourneyStarted = true;
+                RuntimeState.bDayStarted = true;
+                RuntimeState.bDayCompleted = false;
+                RuntimeState.bTopicCompleted = false;
+                RuntimeState.bActivityCompleted = false;
+
+                RuntimeState.AttemptCount = 0;
+                RuntimeState.HintLevel = 0;
+                RuntimeState.bAnswerSubmitted = false;
+                RuntimeState.bAnswerCorrect = false;
+
+                OnLearningPhaseChanged.Broadcast(RuntimeState.CurrentPhase);
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+// ============================================================
+// RUNTIME STATE
+// ============================================================
+
+FTextbookRuntimeState UVHVTextbookSubsystem::GetRuntimeState() const
+{
+    return RuntimeState;
+}
+
+ELearningPhase UVHVTextbookSubsystem::GetCurrentPhase() const
+{
+    return RuntimeState.CurrentPhase;
+}
+
+bool UVHVTextbookSubsystem::IsLearningActivityActive() const
+{
+    return RuntimeState.bActivityActive;
+}
+
+bool UVHVTextbookSubsystem::IsActivityActive() const
+{
+    return RuntimeState.bActivityActive;
+}
+
+void UVHVTextbookSubsystem::ExitCurrentLearningSession()
+{
+    RuntimeState.bActivityActive = false;
+    RuntimeState.bAnswerSubmitted = false;
+    RuntimeState.bAnswerCorrect = false;
+    RuntimeState.CurrentPhase = ELearningPhase::Ask;
+}
+
+void UVHVTextbookSubsystem::RetryCurrentActivityAfterHint()
+{
+    if (!RuntimeState.bActivityActive || RuntimeState.CurrentPhase != ELearningPhase::Hint)
+    {
+        return;
+    }
+
+    const FTextbookActivityData CurrentActivity = GetCurrentActivity();
+    RuntimeState.bAnswerSubmitted = false;
+    RuntimeState.bAnswerCorrect = false;
+    RuntimeState.CurrentPhase = ELearningPhase::Ask;
+
+    UE_LOG(LogTemp, Warning, TEXT("[VHVTextbook] Hint dismissed -> retry ActivityID=%s"), *CurrentActivity.ActivityID);
+    OnLearningPhaseChanged.Broadcast(RuntimeState.CurrentPhase);
+}
+
+void UVHVTextbookSubsystem::SetProgressionMode(const EVHVTextbookProgressionMode InMode)
+{
+    ProgressionMode = InMode;
+}
+
+EVHVTextbookProgressionMode UVHVTextbookSubsystem::GetProgressionMode() const
+{
+    return ProgressionMode;
+}
