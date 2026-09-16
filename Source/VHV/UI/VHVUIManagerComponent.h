@@ -23,7 +23,7 @@ class UVHVTextbookSubsystem;
 class UVHVQuestSubsystem;
 class UVHVQuestTrackerWidget;
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnVHVConversationEnded);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnVHVConversationSessionEnded);
 
 UENUM()
 enum class EVHVUIState : uint8
@@ -126,6 +126,9 @@ public:
     bool bConversationActive = false;
 
     UPROPERTY()
+    bool bConversationSessionActive = false;
+
+    UPROPERTY()
     bool bQuestManagedLearningActivityActive = false;
 
     UFUNCTION(BlueprintCallable, Category = "VHV|UI")
@@ -159,8 +162,11 @@ public:
     UFUNCTION(BlueprintPure, Category = "VHV|UI")
     bool IsConversationActive() const;
 
+    UFUNCTION(BlueprintPure, Category = "VHV|UI")
+    bool IsConversationSessionActive() const;
+
     UPROPERTY(BlueprintAssignable, Category = "VHV|UI")
-    FOnVHVConversationEnded OnConversationEnded;
+    FOnVHVConversationSessionEnded OnConversationSessionEnded;
 
     UFUNCTION(BlueprintCallable, Category = "VHV|UI")
     FConversationRuntimeState GetConversationState() const;
@@ -237,6 +243,7 @@ protected:
     void SetQuestionInputState(bool bActive);
     void SetDialogueInputState(bool bActive);
     void RestoreGameplayAfterQuestModalIfNeeded();
+    void EndConversationSession();
     void CommitCurrentConversationState();
     const FDialogueNode* FindNodeByID(const FString& ConversationID, const FString& NodeID) const;
     FDialogueNode* FindNodeByIDMutable(const FString& ConversationID, const FString& NodeID);

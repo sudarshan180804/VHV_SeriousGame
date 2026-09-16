@@ -32,7 +32,7 @@ private:
 	TObjectPtr<UVHVUIManagerComponent> ActiveUIManager;
 
 	UFUNCTION()
-	void HandleConversationEnded();
+	void HandleConversationSessionEnded();
 
 	UVHVUIManagerComponent* ResolveUIManager(AActor* InteractingActor) const;
 	void RestoreNPCState();

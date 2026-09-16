@@ -24,10 +24,10 @@ bool UVHVNPCDialogueComponent::StartDialogue(AActor* InteractingActor)
 
 	if (ActiveUIManager && ActiveUIManager != UIManager)
 	{
-		ActiveUIManager->OnConversationEnded.RemoveDynamic(this, &UVHVNPCDialogueComponent::HandleConversationEnded);
+		ActiveUIManager->OnConversationSessionEnded.RemoveDynamic(this, &UVHVNPCDialogueComponent::HandleConversationSessionEnded);
 	}
 	ActiveUIManager = UIManager;
-	ActiveUIManager->OnConversationEnded.AddUniqueDynamic(this, &UVHVNPCDialogueComponent::HandleConversationEnded);
+	ActiveUIManager->OnConversationSessionEnded.AddUniqueDynamic(this, &UVHVNPCDialogueComponent::HandleConversationSessionEnded);
 
 	bool bHandledByQuest = false;
 	if (const AActor* Owner = GetOwner())
@@ -55,7 +55,7 @@ bool UVHVNPCDialogueComponent::StartDialogue(AActor* InteractingActor)
 void UVHVNPCDialogueComponent::EndDialogue()
 {
 	UVHVUIManagerComponent* UIManager = ActiveUIManager;
-	if (UIManager && UIManager->IsConversationActive())
+	if (UIManager && UIManager->IsConversationSessionActive())
 	{
 		UIManager->ExitConversation();
 		return;
@@ -68,14 +68,14 @@ void UVHVNPCDialogueComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	if (ActiveUIManager)
 	{
-		ActiveUIManager->OnConversationEnded.RemoveDynamic(this, &UVHVNPCDialogueComponent::HandleConversationEnded);
+		ActiveUIManager->OnConversationSessionEnded.RemoveDynamic(this, &UVHVNPCDialogueComponent::HandleConversationSessionEnded);
 		ActiveUIManager = nullptr;
 	}
 
 	Super::EndPlay(EndPlayReason);
 }
 
-void UVHVNPCDialogueComponent::HandleConversationEnded()
+void UVHVNPCDialogueComponent::HandleConversationSessionEnded()
 {
 	RestoreNPCState();
 }
@@ -106,7 +106,7 @@ void UVHVNPCDialogueComponent::RestoreNPCState()
 {
 	if (ActiveUIManager)
 	{
-		ActiveUIManager->OnConversationEnded.RemoveDynamic(this, &UVHVNPCDialogueComponent::HandleConversationEnded);
+		ActiveUIManager->OnConversationSessionEnded.RemoveDynamic(this, &UVHVNPCDialogueComponent::HandleConversationSessionEnded);
 		ActiveUIManager = nullptr;
 	}
 

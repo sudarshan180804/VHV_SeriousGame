@@ -1264,6 +1264,7 @@ bool UVHVUIManagerComponent::StartConversationInternal(const FDialogueConversati
         }
     }
 
+    bConversationSessionActive = true;
     bConversationActive = true;
     return TraverseToNode(StartingNodeID);
 }
@@ -1506,7 +1507,6 @@ void UVHVUIManagerComponent::CompleteConversation()
         QuestSubsystem->NotifyConversationCompleted(CompletedConversationID);
     }
     RestoreGameplayAfterQuestModalIfNeeded();
-    OnConversationEnded.Broadcast();
 }
 
 void UVHVUIManagerComponent::RestoreGameplayAfterQuestModalIfNeeded()
@@ -1528,6 +1528,19 @@ void UVHVUIManagerComponent::RestoreGameplayAfterQuestModalIfNeeded()
         UE_LOG(LogVHV, Log, TEXT("[VHVQuest] Quest modal complete; returning UI to Gameplay."));
         ApplyUIState(EVHVUIState::Gameplay);
     }
+
+    EndConversationSession();
+}
+
+void UVHVUIManagerComponent::EndConversationSession()
+{
+    if (!bConversationSessionActive)
+    {
+        return;
+    }
+
+    bConversationSessionActive = false;
+    OnConversationSessionEnded.Broadcast();
 }
 
 void UVHVUIManagerComponent::ConfirmChoiceInput()
@@ -1605,13 +1618,12 @@ void UVHVUIManagerComponent::ConfirmChoiceInput()
 
 void UVHVUIManagerComponent::ExitConversation()
 {
-    if (CurrentUIState == EVHVUIState::Gameplay)
+    if (CurrentUIState == EVHVUIState::Gameplay && !bConversationSessionActive)
     {
         return;
     }
 
-    const bool bWasConversationActive = bConversationActive;
-    if (bWasConversationActive)
+    if (bConversationActive)
     {
         CommitCurrentConversationState();
     }
@@ -1632,16 +1644,17 @@ void UVHVUIManagerComponent::ExitConversation()
     HideFeedbackUI();
     HideTeachUI();
     ApplyUIState(EVHVUIState::Gameplay);
-
-    if (bWasConversationActive)
-    {
-        OnConversationEnded.Broadcast();
-    }
+    EndConversationSession();
 }
 
 bool UVHVUIManagerComponent::IsConversationActive() const
 {
     return bConversationActive;
+}
+
+bool UVHVUIManagerComponent::IsConversationSessionActive() const
+{
+    return bConversationSessionActive;
 }
 
 FConversationRuntimeState UVHVUIManagerComponent::GetConversationState() const
@@ -1669,6 +1682,7 @@ void UVHVUIManagerComponent::ShowDialogue(const FDialogueData& InDialogue)
         }
     }
 
+    bConversationSessionActive = true;
     bConversationActive = true;
     ApplyUIState(EVHVUIState::Dialogue);
     DialogueWidget->ShowDialogue(InDialogue);
@@ -1683,6 +1697,7 @@ void UVHVUIManagerComponent::HideDialogue()
 
     bConversationActive = false;
     ApplyUIState(EVHVUIState::Gameplay);
+    EndConversationSession();
 }
 
 void UVHVUIManagerComponent::AdvanceDialogue()
