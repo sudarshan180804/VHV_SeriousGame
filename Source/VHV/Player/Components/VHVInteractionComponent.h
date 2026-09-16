@@ -37,6 +37,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Interaction")
 	void Interact();
 
+	UFUNCTION(BlueprintCallable, Category = "Interaction")
+	void InteractWithActor(AActor* InteractingActor);
+
 	UFUNCTION(BlueprintPure, Category = "Interaction")
 	FText GetInteractionPrompt() const;
 

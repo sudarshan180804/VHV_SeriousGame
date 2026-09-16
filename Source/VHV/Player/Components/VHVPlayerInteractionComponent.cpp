@@ -147,7 +147,7 @@ void UVHVPlayerInteractionComponent::TryInteract()
     }
 
     UE_LOG(LogVHV, Warning, TEXT("VHV Interaction: Interacting with %s"), *GetNameSafe(CurrentTarget->GetOwner()));
-    CurrentTarget->Interact();
+    CurrentTarget->InteractWithActor(GetOwner());
 }
 
 bool UVHVPlayerInteractionComponent::HasInteractionTarget() const

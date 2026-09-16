@@ -23,6 +23,8 @@ class UVHVTextbookSubsystem;
 class UVHVQuestSubsystem;
 class UVHVQuestTrackerWidget;
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnVHVConversationEnded);
+
 UENUM()
 enum class EVHVUIState : uint8
 {
@@ -153,6 +155,12 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "VHV|UI")
     void ExitConversation();
+
+    UFUNCTION(BlueprintPure, Category = "VHV|UI")
+    bool IsConversationActive() const;
+
+    UPROPERTY(BlueprintAssignable, Category = "VHV|UI")
+    FOnVHVConversationEnded OnConversationEnded;
 
     UFUNCTION(BlueprintCallable, Category = "VHV|UI")
     FConversationRuntimeState GetConversationState() const;

@@ -1,6 +1,8 @@
 ﻿#include "VHVInteractionComponent.h"
 
 #include "VHV.h"
+#include "GameFramework/Pawn.h"
+#include "NPC/Components/VHVNPCInteractionComponent.h"
 #include "Quest/Components/VHVQuestParticipantComponent.h"
 
 UVHVInteractionComponent::UVHVInteractionComponent()
@@ -14,7 +16,20 @@ UVHVInteractionComponent::UVHVInteractionComponent()
 
 void UVHVInteractionComponent::Interact()
 {
-	if (!bCanInteract)
+	AActor* InteractingActor = nullptr;
+	if (GetWorld())
+	{
+		if (const APlayerController* PlayerController = GetWorld()->GetFirstPlayerController())
+		{
+			InteractingActor = PlayerController->GetPawn();
+		}
+	}
+	InteractWithActor(InteractingActor);
+}
+
+void UVHVInteractionComponent::InteractWithActor(AActor* InteractingActor)
+{
+	if (!CanInteract())
 	{
 		return;
 	}
@@ -27,6 +42,12 @@ void UVHVInteractionComponent::Interact()
 	);
 
     OnInteracted.Broadcast();
+
+	if (UVHVNPCInteractionComponent* NPCInteraction = GetOwner()->FindComponentByClass<UVHVNPCInteractionComponent>())
+	{
+		NPCInteraction->Interact(InteractingActor);
+		return;
+	}
 
     bool bHandledByQuest = false;
     if (UVHVQuestParticipantComponent* QuestParticipant = GetOwner()->FindComponentByClass<UVHVQuestParticipantComponent>())
@@ -42,12 +63,27 @@ void UVHVInteractionComponent::Interact()
 
 FText UVHVInteractionComponent::GetInteractionPrompt() const
 {
+	if (const UVHVNPCInteractionComponent* NPCInteraction = GetOwner()
+		? GetOwner()->FindComponentByClass<UVHVNPCInteractionComponent>()
+		: nullptr)
+	{
+		return NPCInteraction->GetInteractionPrompt();
+	}
+
 	return InteractionPrompt;
 }
 
 bool UVHVInteractionComponent::CanInteract() const
 {
-	return bCanInteract;
+	if (!bCanInteract)
+	{
+		return false;
+	}
+
+	const UVHVNPCInteractionComponent* NPCInteraction = GetOwner()
+		? GetOwner()->FindComponentByClass<UVHVNPCInteractionComponent>()
+		: nullptr;
+	return !NPCInteraction || NPCInteraction->CanInteract();
 }
 
 void UVHVInteractionComponent::TriggerTemporaryDialogueTest()

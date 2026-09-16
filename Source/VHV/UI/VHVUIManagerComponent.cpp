@@ -1506,6 +1506,7 @@ void UVHVUIManagerComponent::CompleteConversation()
         QuestSubsystem->NotifyConversationCompleted(CompletedConversationID);
     }
     RestoreGameplayAfterQuestModalIfNeeded();
+    OnConversationEnded.Broadcast();
 }
 
 void UVHVUIManagerComponent::RestoreGameplayAfterQuestModalIfNeeded()
@@ -1609,7 +1610,8 @@ void UVHVUIManagerComponent::ExitConversation()
         return;
     }
 
-    if (bConversationActive)
+    const bool bWasConversationActive = bConversationActive;
+    if (bWasConversationActive)
     {
         CommitCurrentConversationState();
     }
@@ -1630,6 +1632,16 @@ void UVHVUIManagerComponent::ExitConversation()
     HideFeedbackUI();
     HideTeachUI();
     ApplyUIState(EVHVUIState::Gameplay);
+
+    if (bWasConversationActive)
+    {
+        OnConversationEnded.Broadcast();
+    }
+}
+
+bool UVHVUIManagerComponent::IsConversationActive() const
+{
+    return bConversationActive;
 }
 
 FConversationRuntimeState UVHVUIManagerComponent::GetConversationState() const
