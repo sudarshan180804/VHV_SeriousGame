@@ -7,6 +7,9 @@
 
 class UVHVQuestArcData;
 class UVHVTextbookSubsystem;
+class AVHVNPCBehaviorTarget;
+class UVHVNPCQuestCommandComponent;
+class UWorld;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnVHVQuestEvent, FName, QuestID);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnVHVQuestObjectiveEvent, FName, QuestID, FName, ObjectiveID);
@@ -73,6 +76,27 @@ public:
     UFUNCTION(BlueprintCallable, Category = "VHV|Quest")
     void NotifyCustomEvent(FName EventID);
 
+    UFUNCTION(BlueprintCallable, Category = "VHV|Quest|NPC Commands")
+    bool RequestNPCMove(FName ParticipantID, FName TargetID);
+
+    UFUNCTION(BlueprintCallable, Category = "VHV|Quest|NPC Commands")
+    bool RequestNPCWait(FName ParticipantID, float Duration);
+
+    UFUNCTION(BlueprintCallable, Category = "VHV|Quest|NPC Commands")
+    bool RequestNPCReturnToPost(FName ParticipantID);
+
+    UFUNCTION(BlueprintCallable, Category = "VHV|Quest|NPC Commands")
+    bool ReleaseNPCFromQuest(FName ParticipantID);
+
+    UFUNCTION(BlueprintCallable, Category = "VHV|Quest|NPC Commands")
+    bool CancelNPCQuestCommand(FName ParticipantID);
+
+    bool RegisterNPCBehaviorTarget(AVHVNPCBehaviorTarget* Target);
+    void UnregisterNPCBehaviorTarget(AVHVNPCBehaviorTarget* Target);
+    AVHVNPCBehaviorTarget* FindNPCBehaviorTarget(const UWorld* World, FName TargetID) const;
+    bool RegisterNPCCommandComponent(UVHVNPCQuestCommandComponent* CommandComponent);
+    void UnregisterNPCCommandComponent(UVHVNPCQuestCommandComponent* CommandComponent);
+
     UPROPERTY(BlueprintAssignable, Category = "VHV|Quest|Events")
     FOnVHVQuestEvent OnQuestStarted;
 
@@ -119,4 +143,11 @@ private:
 
     UPROPERTY()
     FVHVQuestArcRuntimeState RuntimeState;
+
+    using FBehaviorTargetRegistry = TMap<FName, TWeakObjectPtr<AVHVNPCBehaviorTarget>>;
+    using FNPCCommandRegistry = TMap<FName, TWeakObjectPtr<UVHVNPCQuestCommandComponent>>;
+    TMap<TWeakObjectPtr<UWorld>, FBehaviorTargetRegistry> BehaviorTargetsByWorld;
+    TMap<TWeakObjectPtr<UWorld>, FNPCCommandRegistry> NPCCommandsByWorld;
+
+    UVHVNPCQuestCommandComponent* FindNPCCommandComponent(const UWorld* World, FName ParticipantID) const;
 };

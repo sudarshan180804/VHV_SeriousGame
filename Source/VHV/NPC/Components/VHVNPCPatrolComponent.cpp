@@ -83,8 +83,13 @@ void UVHVNPCPatrolComponent::StopPatrol()
 
 void UVHVNPCPatrolComponent::PausePatrol()
 {
-	if (!bPatrolling || bPaused)
+	if (!bPatrolling)
 	{
+		return;
+	}
+	if (bPaused)
+	{
+		bPausedForTalking = false;
 		return;
 	}
 

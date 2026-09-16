@@ -6,6 +6,7 @@
 #include "NPC/Components/VHVNPCDialogueComponent.h"
 #include "NPC/Components/VHVNPCInteractionComponent.h"
 #include "NPC/Components/VHVNPCPatrolComponent.h"
+#include "NPC/Components/VHVNPCQuestCommandComponent.h"
 #include "NPC/VHVNPCAIController.h"
 #include "Player/Components/VHVInteractionComponent.h"
 #include "Quest/Components/VHVQuestParticipantComponent.h"
@@ -37,6 +38,7 @@ AVHVNPCCharacter::AVHVNPCCharacter()
 	NPCInteractionComponent = CreateDefaultSubobject<UVHVNPCInteractionComponent>(TEXT("NPCInteractionComponent"));
 	DialogueComponent = CreateDefaultSubobject<UVHVNPCDialogueComponent>(TEXT("DialogueComponent"));
 	PatrolComponent = CreateDefaultSubobject<UVHVNPCPatrolComponent>(TEXT("PatrolComponent"));
+	QuestCommandComponent = CreateDefaultSubobject<UVHVNPCQuestCommandComponent>(TEXT("QuestCommandComponent"));
 
 	InteractionCollision = CreateDefaultSubobject<USphereComponent>(TEXT("InteractionCollision"));
 	InteractionCollision->SetupAttachment(GetRootComponent());
@@ -98,4 +100,9 @@ USphereComponent* AVHVNPCCharacter::GetInteractionCollision() const
 UVHVNPCPatrolComponent* AVHVNPCCharacter::GetPatrolComponent() const
 {
 	return PatrolComponent;
+}
+
+UVHVNPCQuestCommandComponent* AVHVNPCCharacter::GetQuestCommandComponent() const
+{
+	return QuestCommandComponent;
 }

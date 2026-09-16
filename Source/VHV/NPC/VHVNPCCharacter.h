@@ -9,6 +9,7 @@ class UVHVNPCBehaviorComponent;
 class UVHVNPCDialogueComponent;
 class UVHVNPCInteractionComponent;
 class UVHVNPCPatrolComponent;
+class UVHVNPCQuestCommandComponent;
 class UVHVQuestParticipantComponent;
 class USphereComponent;
 
@@ -47,6 +48,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "VHV|NPC|Components")
 	UVHVNPCPatrolComponent* GetPatrolComponent() const;
 
+	UFUNCTION(BlueprintPure, Category = "VHV|NPC|Components")
+	UVHVNPCQuestCommandComponent* GetQuestCommandComponent() const;
+
 private:
 	virtual void BeginPlay() override;
 
@@ -73,4 +77,7 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VHV|NPC|Components", meta = (AllowPrivateAccess = "true", NoEditInline))
 	TObjectPtr<UVHVNPCPatrolComponent> PatrolComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VHV|NPC|Components", meta = (AllowPrivateAccess = "true", NoEditInline))
+	TObjectPtr<UVHVNPCQuestCommandComponent> QuestCommandComponent;
 };

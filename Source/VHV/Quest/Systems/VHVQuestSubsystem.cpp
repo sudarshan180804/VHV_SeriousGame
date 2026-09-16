@@ -2,6 +2,9 @@
 
 #include "Core/VHVConversationDataAsset.h"
 #include "Quest/Data/VHVQuestArcData.h"
+#include "NPC/Components/VHVNPCQuestCommandComponent.h"
+#include "NPC/Quest/VHVNPCBehaviorTarget.h"
+#include "Quest/Components/VHVQuestParticipantComponent.h"
 #include "Textbook/Data/VHVLevelData.h"
 #include "Textbook/Systems/VHVTextbookSubsystem.h"
 #include "Engine/World.h"
@@ -28,6 +31,8 @@ void UVHVQuestSubsystem::Deinitialize()
     ActiveQuestArc = nullptr;
     TextbookSubsystem = nullptr;
     RuntimeState = FVHVQuestArcRuntimeState();
+    BehaviorTargetsByWorld.Empty();
+    NPCCommandsByWorld.Empty();
     Super::Deinitialize();
 }
 
@@ -285,6 +290,161 @@ void UVHVQuestSubsystem::NotifyCustomEvent(FName EventID)
     {
         CompleteCurrentObjective();
     }
+}
+
+bool UVHVQuestSubsystem::RequestNPCMove(const FName ParticipantID, const FName TargetID)
+{
+    UVHVNPCQuestCommandComponent* CommandComponent = FindNPCCommandComponent(GetWorld(), ParticipantID);
+    return CommandComponent && CommandComponent->MoveToTarget(TargetID);
+}
+
+bool UVHVQuestSubsystem::RequestNPCWait(const FName ParticipantID, const float Duration)
+{
+    UVHVNPCQuestCommandComponent* CommandComponent = FindNPCCommandComponent(GetWorld(), ParticipantID);
+    return CommandComponent && CommandComponent->Wait(Duration);
+}
+
+bool UVHVQuestSubsystem::RequestNPCReturnToPost(const FName ParticipantID)
+{
+    UVHVNPCQuestCommandComponent* CommandComponent = FindNPCCommandComponent(GetWorld(), ParticipantID);
+    return CommandComponent && CommandComponent->ReturnToPost();
+}
+
+bool UVHVQuestSubsystem::ReleaseNPCFromQuest(const FName ParticipantID)
+{
+    UVHVNPCQuestCommandComponent* CommandComponent = FindNPCCommandComponent(GetWorld(), ParticipantID);
+    return CommandComponent && CommandComponent->ReleaseToPatrol();
+}
+
+bool UVHVQuestSubsystem::CancelNPCQuestCommand(const FName ParticipantID)
+{
+    UVHVNPCQuestCommandComponent* CommandComponent = FindNPCCommandComponent(GetWorld(), ParticipantID);
+    if (!CommandComponent)
+    {
+        return false;
+    }
+    CommandComponent->CancelQuestCommand();
+    return true;
+}
+
+bool UVHVQuestSubsystem::RegisterNPCBehaviorTarget(AVHVNPCBehaviorTarget* Target)
+{
+    if (!IsValid(Target) || Target->TargetID.IsNone() || !Target->GetWorld())
+    {
+        return false;
+    }
+
+    FBehaviorTargetRegistry& Registry = BehaviorTargetsByWorld.FindOrAdd(Target->GetWorld());
+    if (const TWeakObjectPtr<AVHVNPCBehaviorTarget>* Existing = Registry.Find(Target->TargetID))
+    {
+        if (Existing->IsValid() && Existing->Get() != Target)
+        {
+            UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Duplicate NPC behavior Target ID '%s' in world '%s' on '%s' and '%s'."),
+                *Target->TargetID.ToString(), *GetNameSafe(Target->GetWorld()), *GetNameSafe(Existing->Get()), *GetNameSafe(Target));
+            return false;
+        }
+    }
+    Registry.Add(Target->TargetID, Target);
+    return true;
+}
+
+void UVHVQuestSubsystem::UnregisterNPCBehaviorTarget(AVHVNPCBehaviorTarget* Target)
+{
+    if (!Target || !Target->GetWorld())
+    {
+        return;
+    }
+    if (FBehaviorTargetRegistry* Registry = BehaviorTargetsByWorld.Find(Target->GetWorld()))
+    {
+        if (const TWeakObjectPtr<AVHVNPCBehaviorTarget>* Existing = Registry->Find(Target->TargetID);
+            Existing && Existing->Get() == Target)
+        {
+            Registry->Remove(Target->TargetID);
+        }
+        if (Registry->IsEmpty())
+        {
+            BehaviorTargetsByWorld.Remove(Target->GetWorld());
+        }
+    }
+}
+
+AVHVNPCBehaviorTarget* UVHVQuestSubsystem::FindNPCBehaviorTarget(const UWorld* World, const FName TargetID) const
+{
+    if (!World || TargetID.IsNone())
+    {
+        return nullptr;
+    }
+    const FBehaviorTargetRegistry* Registry = BehaviorTargetsByWorld.Find(World);
+    const TWeakObjectPtr<AVHVNPCBehaviorTarget>* Target = Registry ? Registry->Find(TargetID) : nullptr;
+    return Target ? Target->Get() : nullptr;
+}
+
+bool UVHVQuestSubsystem::RegisterNPCCommandComponent(UVHVNPCQuestCommandComponent* CommandComponent)
+{
+    if (!IsValid(CommandComponent) || !CommandComponent->GetWorld())
+    {
+        return false;
+    }
+    const UVHVQuestParticipantComponent* Participant = CommandComponent->GetOwner()
+        ? CommandComponent->GetOwner()->FindComponentByClass<UVHVQuestParticipantComponent>()
+        : nullptr;
+    if (!Participant || Participant->ParticipantID.IsNone())
+    {
+        UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] NPC command component on '%s' requires a non-empty Participant ID."), *GetNameSafe(CommandComponent->GetOwner()));
+        return false;
+    }
+
+    FNPCCommandRegistry& Registry = NPCCommandsByWorld.FindOrAdd(CommandComponent->GetWorld());
+    if (const TWeakObjectPtr<UVHVNPCQuestCommandComponent>* Existing = Registry.Find(Participant->ParticipantID))
+    {
+        if (Existing->IsValid() && Existing->Get() != CommandComponent)
+        {
+            UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Duplicate NPC Participant ID '%s' in world '%s' on '%s' and '%s'."),
+                *Participant->ParticipantID.ToString(), *GetNameSafe(CommandComponent->GetWorld()),
+                *GetNameSafe(Existing->Get()->GetOwner()), *GetNameSafe(CommandComponent->GetOwner()));
+            return false;
+        }
+    }
+    Registry.Add(Participant->ParticipantID, CommandComponent);
+    return true;
+}
+
+void UVHVQuestSubsystem::UnregisterNPCCommandComponent(UVHVNPCQuestCommandComponent* CommandComponent)
+{
+    if (!CommandComponent || !CommandComponent->GetWorld())
+    {
+        return;
+    }
+    const UVHVQuestParticipantComponent* Participant = CommandComponent->GetOwner()
+        ? CommandComponent->GetOwner()->FindComponentByClass<UVHVQuestParticipantComponent>()
+        : nullptr;
+    if (!Participant)
+    {
+        return;
+    }
+    if (FNPCCommandRegistry* Registry = NPCCommandsByWorld.Find(CommandComponent->GetWorld()))
+    {
+        if (const TWeakObjectPtr<UVHVNPCQuestCommandComponent>* Existing = Registry->Find(Participant->ParticipantID);
+            Existing && Existing->Get() == CommandComponent)
+        {
+            Registry->Remove(Participant->ParticipantID);
+        }
+        if (Registry->IsEmpty())
+        {
+            NPCCommandsByWorld.Remove(CommandComponent->GetWorld());
+        }
+    }
+}
+
+UVHVNPCQuestCommandComponent* UVHVQuestSubsystem::FindNPCCommandComponent(const UWorld* World, const FName ParticipantID) const
+{
+    if (!World || ParticipantID.IsNone())
+    {
+        return nullptr;
+    }
+    const FNPCCommandRegistry* Registry = NPCCommandsByWorld.Find(World);
+    const TWeakObjectPtr<UVHVNPCQuestCommandComponent>* Command = Registry ? Registry->Find(ParticipantID) : nullptr;
+    return Command ? Command->Get() : nullptr;
 }
 
 void UVHVQuestSubsystem::HandleTextbookActivityCompleted()
