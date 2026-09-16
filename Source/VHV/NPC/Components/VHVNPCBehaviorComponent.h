@@ -2,8 +2,11 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Navigation/PathFollowingComponent.h"
 #include "NPC/Types/VHVNPCBehaviorTypes.h"
 #include "VHVNPCBehaviorComponent.generated.h"
+
+class AVHVNPCAIController;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
 	FOnVHVNPCBehaviorStateChanged,
@@ -21,6 +24,21 @@ class VHV_API UVHVNPCBehaviorComponent : public UActorComponent
 public:
 	UVHVNPCBehaviorComponent();
 
+	UFUNCTION(BlueprintCallable, Category = "VHV|NPC|Behavior", meta = (DisplayName = "Move To Location"))
+	bool StartMoveToLocation(FVector Destination, float AcceptanceRadius = 25.0f);
+
+	UFUNCTION(BlueprintCallable, Category = "VHV|NPC|Behavior", meta = (DisplayName = "Move To Actor"))
+	bool StartMoveToActor(AActor* Target, float AcceptanceRadius = 25.0f);
+
+	UFUNCTION(BlueprintCallable, Category = "VHV|NPC|Behavior", meta = (DisplayName = "Wait"))
+	bool StartWait(float Duration);
+
+	UFUNCTION(BlueprintCallable, Category = "VHV|NPC|Behavior")
+	bool ReturnToPost(float AcceptanceRadius = 25.0f);
+
+	UFUNCTION(BlueprintCallable, Category = "VHV|NPC|Behavior", meta = (DisplayName = "Cancel Behavior"))
+	void CancelCurrentBehavior();
+
 	UFUNCTION(BlueprintCallable, Category = "VHV|NPC|Behavior")
 	void SetBehaviorState(EVHVNPCBehaviorState NewState);
 
@@ -34,6 +52,23 @@ public:
 	FOnVHVNPCBehaviorStateChanged OnBehaviorStateChanged;
 
 private:
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VHV|NPC|Behavior", meta = (AllowPrivateAccess = "true"))
 	EVHVNPCBehaviorState BehaviorState = EVHVNPCBehaviorState::Idle;
+
+	UPROPERTY(Transient)
+	TObjectPtr<AVHVNPCAIController> BoundAIController;
+
+	FTimerHandle WaitTimerHandle;
+	bool bMovementActive = false;
+	bool bReturningToPost = false;
+
+	AVHVNPCAIController* ResolveAIController();
+	void BindToAIController();
+	void ClearActiveOperations(bool bStopMovement);
+	bool HandleMoveRequestResult(EPathFollowingRequestResult::Type RequestResult, const FString& Description);
+	void HandleMovementCompleted(const FPathFollowingResult& Result);
+	void HandleWaitCompleted();
 };

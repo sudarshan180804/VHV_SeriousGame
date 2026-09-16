@@ -60,6 +60,11 @@ void UVHVNPCInteractionComponent::Interact(AActor* InteractingActor)
 		return;
 	}
 
+	if (UVHVNPCBehaviorComponent* BehaviorComponent = GetOwner()->FindComponentByClass<UVHVNPCBehaviorComponent>())
+	{
+		BehaviorComponent->SetBehaviorState(EVHVNPCBehaviorState::Talking);
+	}
+
 	if (const APawn* OwnerPawn = Cast<APawn>(GetOwner()))
 	{
 		if (AVHVNPCAIController* PawnAIController = Cast<AVHVNPCAIController>(OwnerPawn->GetController()))
@@ -67,11 +72,6 @@ void UVHVNPCInteractionComponent::Interact(AActor* InteractingActor)
 			PawnAIController->StopForInteraction();
 			PawnAIController->FaceActor(InteractingActor);
 		}
-	}
-
-	if (UVHVNPCBehaviorComponent* BehaviorComponent = GetOwner()->FindComponentByClass<UVHVNPCBehaviorComponent>())
-	{
-		BehaviorComponent->SetBehaviorState(EVHVNPCBehaviorState::Talking);
 	}
 
 	UVHVNPCDialogueComponent* DialogueComponent = GetOwner()->FindComponentByClass<UVHVNPCDialogueComponent>();

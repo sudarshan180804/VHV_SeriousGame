@@ -19,6 +19,12 @@ class VHV_API AVHVNPCCharacter : public ACharacter
 public:
 	AVHVNPCCharacter();
 
+	UFUNCTION(BlueprintPure, Category = "VHV|NPC|Behavior")
+	FTransform GetHomeTransform() const;
+
+	UFUNCTION(BlueprintCallable, Category = "VHV|NPC|Behavior")
+	void SetHomeTransform(const FTransform& NewHomeTransform);
+
 	UFUNCTION(BlueprintPure, Category = "VHV|NPC|Components")
 	UVHVInteractionComponent* GetInteractionComponent() const;
 
@@ -38,6 +44,11 @@ public:
 	USphereComponent* GetInteractionCollision() const;
 
 private:
+	virtual void BeginPlay() override;
+
+	UPROPERTY(Transient)
+	FTransform HomeTransform;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VHV|NPC|Components", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UVHVInteractionComponent> InteractionComponent;
 

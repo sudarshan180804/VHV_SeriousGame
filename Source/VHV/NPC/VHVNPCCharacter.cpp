@@ -47,6 +47,22 @@ AVHVNPCCharacter::AVHVNPCCharacter()
 	InteractionCollision->CanCharacterStepUpOn = ECB_No;
 }
 
+void AVHVNPCCharacter::BeginPlay()
+{
+	Super::BeginPlay();
+	HomeTransform = GetActorTransform();
+}
+
+FTransform AVHVNPCCharacter::GetHomeTransform() const
+{
+	return HomeTransform;
+}
+
+void AVHVNPCCharacter::SetHomeTransform(const FTransform& NewHomeTransform)
+{
+	HomeTransform = NewHomeTransform;
+}
+
 UVHVInteractionComponent* AVHVNPCCharacter::GetInteractionComponent() const
 {
 	return InteractionComponent;
