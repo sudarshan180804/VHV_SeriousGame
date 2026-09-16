@@ -34,7 +34,7 @@ void UVHVNPCBehaviorComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 bool UVHVNPCBehaviorComponent::StartMoveToLocation(const FVector Destination, const float AcceptanceRadius)
 {
-	if (BehaviorState == EVHVNPCBehaviorState::Talking || BehaviorState == EVHVNPCBehaviorState::Unavailable)
+	if (BehaviorState == EVHVNPCBehaviorState::Engaging || BehaviorState == EVHVNPCBehaviorState::Talking || BehaviorState == EVHVNPCBehaviorState::Unavailable)
 	{
 		return false;
 	}
@@ -58,7 +58,7 @@ bool UVHVNPCBehaviorComponent::StartMoveToLocation(const FVector Destination, co
 
 bool UVHVNPCBehaviorComponent::StartMoveToActor(AActor* Target, const float AcceptanceRadius)
 {
-	if (BehaviorState == EVHVNPCBehaviorState::Talking || BehaviorState == EVHVNPCBehaviorState::Unavailable)
+	if (BehaviorState == EVHVNPCBehaviorState::Engaging || BehaviorState == EVHVNPCBehaviorState::Talking || BehaviorState == EVHVNPCBehaviorState::Unavailable)
 	{
 		return false;
 	}
@@ -82,7 +82,7 @@ bool UVHVNPCBehaviorComponent::StartMoveToActor(AActor* Target, const float Acce
 
 bool UVHVNPCBehaviorComponent::StartWait(const float Duration)
 {
-	if (BehaviorState == EVHVNPCBehaviorState::Talking || BehaviorState == EVHVNPCBehaviorState::Unavailable || Duration <= 0.0f || !GetWorld())
+	if (BehaviorState == EVHVNPCBehaviorState::Engaging || BehaviorState == EVHVNPCBehaviorState::Talking || BehaviorState == EVHVNPCBehaviorState::Unavailable || Duration <= 0.0f || !GetWorld())
 	{
 		return false;
 	}
@@ -102,7 +102,7 @@ bool UVHVNPCBehaviorComponent::StartWait(const float Duration)
 
 bool UVHVNPCBehaviorComponent::ReturnToPost(const float AcceptanceRadius)
 {
-	if (BehaviorState == EVHVNPCBehaviorState::Talking || BehaviorState == EVHVNPCBehaviorState::Unavailable)
+	if (BehaviorState == EVHVNPCBehaviorState::Engaging || BehaviorState == EVHVNPCBehaviorState::Talking || BehaviorState == EVHVNPCBehaviorState::Unavailable)
 	{
 		return false;
 	}
@@ -137,7 +137,7 @@ void UVHVNPCBehaviorComponent::SetBehaviorState(const EVHVNPCBehaviorState NewSt
 		return;
 	}
 
-	if (NewState == EVHVNPCBehaviorState::Talking)
+	if (NewState == EVHVNPCBehaviorState::Engaging || NewState == EVHVNPCBehaviorState::Talking)
 	{
 		ClearActiveOperations(true);
 	}

@@ -68,6 +68,7 @@ void UVHVNPCPatrolComponent::StopPatrol()
 
 	const bool bShouldCancelBehavior = bPatrolOperationActive
 		&& BehaviorComponent
+		&& BehaviorComponent->GetBehaviorState() != EVHVNPCBehaviorState::Engaging
 		&& BehaviorComponent->GetBehaviorState() != EVHVNPCBehaviorState::Talking;
 	bPatrolOperationActive = false;
 	ExpectedOperation = EVHVNPCBehaviorOperation::None;
@@ -95,6 +96,7 @@ void UVHVNPCPatrolComponent::PausePatrol()
 
 	const bool bShouldCancelBehavior = bPatrolOperationActive
 		&& BehaviorComponent
+		&& BehaviorComponent->GetBehaviorState() != EVHVNPCBehaviorState::Engaging
 		&& BehaviorComponent->GetBehaviorState() != EVHVNPCBehaviorState::Talking;
 	bPatrolOperationActive = false;
 	ExpectedOperation = EVHVNPCBehaviorOperation::None;
@@ -107,6 +109,7 @@ void UVHVNPCPatrolComponent::PausePatrol()
 bool UVHVNPCPatrolComponent::ResumePatrol()
 {
 	if (!bPatrolling || !bPaused || !BehaviorComponent
+		|| BehaviorComponent->GetBehaviorState() == EVHVNPCBehaviorState::Engaging
 		|| BehaviorComponent->GetBehaviorState() == EVHVNPCBehaviorState::Talking)
 	{
 		return false;
@@ -271,7 +274,7 @@ void UVHVNPCPatrolComponent::HandleBehaviorStateChanged(
 		return;
 	}
 
-	if (NewState == EVHVNPCBehaviorState::Talking)
+	if (NewState == EVHVNPCBehaviorState::Engaging || NewState == EVHVNPCBehaviorState::Talking)
 	{
 		if (!bPaused)
 		{

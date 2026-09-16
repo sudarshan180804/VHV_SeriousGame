@@ -16,7 +16,7 @@ UVHVNPCInteractionComponent::UVHVNPCInteractionComponent()
 
 bool UVHVNPCInteractionComponent::CanInteract() const
 {
-	if (!bInteractionEnabled)
+	if (!bInteractionEnabled || bInteractionPending)
 	{
 		return false;
 	}
@@ -26,6 +26,7 @@ bool UVHVNPCInteractionComponent::CanInteract() const
 		: nullptr;
 	return !BehaviorComponent
 		|| (BehaviorComponent->IsAvailableForInteraction()
+			&& BehaviorComponent->GetBehaviorState() != EVHVNPCBehaviorState::Engaging
 			&& BehaviorComponent->GetBehaviorState() != EVHVNPCBehaviorState::Talking);
 }
 
@@ -60,9 +61,12 @@ void UVHVNPCInteractionComponent::Interact(AActor* InteractingActor)
 		return;
 	}
 
+	bInteractionPending = true;
+	PendingInteractingActor = InteractingActor;
+
 	if (UVHVNPCBehaviorComponent* BehaviorComponent = GetOwner()->FindComponentByClass<UVHVNPCBehaviorComponent>())
 	{
-		BehaviorComponent->SetBehaviorState(EVHVNPCBehaviorState::Talking);
+		BehaviorComponent->SetBehaviorState(EVHVNPCBehaviorState::Engaging);
 	}
 
 	if (const APawn* OwnerPawn = Cast<APawn>(GetOwner()))
@@ -70,8 +74,62 @@ void UVHVNPCInteractionComponent::Interact(AActor* InteractingActor)
 		if (AVHVNPCAIController* PawnAIController = Cast<AVHVNPCAIController>(OwnerPawn->GetController()))
 		{
 			PawnAIController->StopForInteraction();
+			if (bFacePlayerBeforeDialogue && IsValid(InteractingActor))
+			{
+				FacingAIController = PawnAIController;
+				FacingAIController->OnFacingCompleted.RemoveAll(this);
+				FacingAIController->OnFacingCompleted.AddUObject(this, &UVHVNPCInteractionComponent::HandleFacingCompleted);
+				if (FacingAIController->BeginFaceActor(InteractingActor, FacingToleranceDegrees, FacingTimeoutSeconds))
+				{
+					return;
+				}
+				FacingAIController->OnFacingCompleted.RemoveAll(this);
+				FacingAIController = nullptr;
+			}
 			PawnAIController->FaceActor(InteractingActor);
 		}
+	}
+
+	StartDialogueAfterFacing();
+}
+
+void UVHVNPCInteractionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (FacingAIController)
+	{
+		FacingAIController->OnFacingCompleted.RemoveAll(this);
+		FacingAIController->CancelFacing();
+	}
+	FacingAIController = nullptr;
+	PendingInteractingActor = nullptr;
+	bInteractionPending = false;
+	Super::EndPlay(EndPlayReason);
+}
+
+void UVHVNPCInteractionComponent::HandleFacingCompleted(const bool bSuccess)
+{
+	(void)bSuccess;
+	if (FacingAIController)
+	{
+		FacingAIController->OnFacingCompleted.RemoveAll(this);
+	}
+	FacingAIController = nullptr;
+	StartDialogueAfterFacing();
+}
+
+void UVHVNPCInteractionComponent::StartDialogueAfterFacing()
+{
+	if (!bInteractionPending || !GetOwner())
+	{
+		return;
+	}
+
+	AActor* InteractingActor = PendingInteractingActor.Get();
+	bInteractionPending = false;
+	PendingInteractingActor = nullptr;
+	if (UVHVNPCBehaviorComponent* BehaviorComponent = GetOwner()->FindComponentByClass<UVHVNPCBehaviorComponent>())
+	{
+		BehaviorComponent->SetBehaviorState(EVHVNPCBehaviorState::Talking);
 	}
 
 	UVHVNPCDialogueComponent* DialogueComponent = GetOwner()->FindComponentByClass<UVHVNPCDialogueComponent>();
@@ -83,22 +141,27 @@ void UVHVNPCInteractionComponent::Interact(AActor* InteractingActor)
 		}
 		else
 		{
-			const APawn* OwnerPawn = Cast<APawn>(GetOwner());
-			AVHVNPCAIController* AIController = OwnerPawn
-				? Cast<AVHVNPCAIController>(OwnerPawn->GetController())
-				: nullptr;
-			if (AIController)
-			{
-				AIController->ClearInteractionFocus();
-			}
-			if (UVHVNPCBehaviorComponent* BehaviorComponent = GetOwner()->FindComponentByClass<UVHVNPCBehaviorComponent>())
-			{
-				BehaviorComponent->SetBehaviorState(EVHVNPCBehaviorState::Idle);
-			}
-			if (AIController)
-			{
-				AIController->ResumeBehavior();
-			}
+			RestoreNPCStateWithoutDialogue();
 		}
+	}
+}
+
+void UVHVNPCInteractionComponent::RestoreNPCStateWithoutDialogue()
+{
+	const APawn* OwnerPawn = Cast<APawn>(GetOwner());
+	AVHVNPCAIController* AIController = OwnerPawn
+		? Cast<AVHVNPCAIController>(OwnerPawn->GetController())
+		: nullptr;
+	if (AIController)
+	{
+		AIController->ClearInteractionFocus();
+	}
+	if (UVHVNPCBehaviorComponent* BehaviorComponent = GetOwner()->FindComponentByClass<UVHVNPCBehaviorComponent>())
+	{
+		BehaviorComponent->SetBehaviorState(EVHVNPCBehaviorState::Idle);
+	}
+	if (AIController)
+	{
+		AIController->ResumeBehavior();
 	}
 }
