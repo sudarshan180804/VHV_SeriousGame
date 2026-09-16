@@ -40,11 +40,12 @@ bool UVHVNPCBehaviorComponent::StartMoveToLocation(const FVector Destination, co
 	}
 
 	ClearActiveOperations(true);
+	ActiveOperation = EVHVNPCBehaviorOperation::MoveTo;
 	AVHVNPCAIController* AIController = ResolveAIController();
 	if (!AIController)
 	{
 		UE_LOG(LogVHV, Warning, TEXT("[VHVNPC] Movement failed for '%s': no VHV NPC AI controller."), *GetNameSafe(GetOwner()));
-		SetBehaviorState(EVHVNPCBehaviorState::Idle);
+		CompleteActiveOperation(false);
 		return false;
 	}
 
@@ -63,11 +64,12 @@ bool UVHVNPCBehaviorComponent::StartMoveToActor(AActor* Target, const float Acce
 	}
 
 	ClearActiveOperations(true);
+	ActiveOperation = EVHVNPCBehaviorOperation::MoveTo;
 	AVHVNPCAIController* AIController = ResolveAIController();
 	if (!AIController || !IsValid(Target))
 	{
 		UE_LOG(LogVHV, Warning, TEXT("[VHVNPC] Movement failed for '%s': invalid controller or target."), *GetNameSafe(GetOwner()));
-		SetBehaviorState(EVHVNPCBehaviorState::Idle);
+		CompleteActiveOperation(false);
 		return false;
 	}
 
@@ -86,6 +88,7 @@ bool UVHVNPCBehaviorComponent::StartWait(const float Duration)
 	}
 
 	ClearActiveOperations(true);
+	ActiveOperation = EVHVNPCBehaviorOperation::Wait;
 	SetBehaviorState(EVHVNPCBehaviorState::Waiting);
 	GetWorld()->GetTimerManager().SetTimer(
 		WaitTimerHandle,
@@ -105,15 +108,15 @@ bool UVHVNPCBehaviorComponent::ReturnToPost(const float AcceptanceRadius)
 	}
 
 	ClearActiveOperations(true);
+	ActiveOperation = EVHVNPCBehaviorOperation::ReturnToPost;
 	AVHVNPCAIController* AIController = ResolveAIController();
 	if (!AIController)
 	{
 		UE_LOG(LogVHV, Warning, TEXT("[VHVNPC] Return-to-post failed for '%s': no VHV NPC AI controller."), *GetNameSafe(GetOwner()));
-		SetBehaviorState(EVHVNPCBehaviorState::Idle);
+		CompleteActiveOperation(false);
 		return false;
 	}
 
-	bReturningToPost = true;
 	SetBehaviorState(EVHVNPCBehaviorState::Moving);
 	UE_LOG(LogVHV, Log, TEXT("[VHVNPC] Return-to-post started for '%s'."), *GetNameSafe(GetOwner()));
 	return HandleMoveRequestResult(
@@ -198,7 +201,7 @@ void UVHVNPCBehaviorComponent::ClearActiveOperations(const bool bStopMovement)
 
 	const bool bHadActiveMovement = bMovementActive;
 	bMovementActive = false;
-	bReturningToPost = false;
+	ActiveOperation = EVHVNPCBehaviorOperation::None;
 	if (bStopMovement && bHadActiveMovement)
 	{
 		if (AVHVNPCAIController* AIController = ResolveAIController())
@@ -206,6 +209,20 @@ void UVHVNPCBehaviorComponent::ClearActiveOperations(const bool bStopMovement)
 			AIController->StopMovementForBehavior();
 		}
 	}
+}
+
+void UVHVNPCBehaviorComponent::CompleteActiveOperation(const bool bSuccess)
+{
+	const EVHVNPCBehaviorOperation CompletedOperation = ActiveOperation;
+	if (CompletedOperation == EVHVNPCBehaviorOperation::None)
+	{
+		return;
+	}
+
+	bMovementActive = false;
+	ActiveOperation = EVHVNPCBehaviorOperation::None;
+	SetBehaviorState(EVHVNPCBehaviorState::Idle);
+	OnBehaviorCompleted.Broadcast(CompletedOperation, bSuccess);
 }
 
 bool UVHVNPCBehaviorComponent::HandleMoveRequestResult(
@@ -221,14 +238,12 @@ bool UVHVNPCBehaviorComponent::HandleMoveRequestResult(
 	if (RequestResult == EPathFollowingRequestResult::AlreadyAtGoal)
 	{
 		UE_LOG(LogVHV, Log, TEXT("[VHVNPC] Movement succeeded for '%s' (%s; already at goal)."), *GetNameSafe(GetOwner()), *Description);
-		bReturningToPost = false;
-		SetBehaviorState(EVHVNPCBehaviorState::Idle);
+		CompleteActiveOperation(true);
 		return true;
 	}
 
 	UE_LOG(LogVHV, Warning, TEXT("[VHVNPC] Movement failed for '%s' (%s request rejected)."), *GetNameSafe(GetOwner()), *Description);
-	bReturningToPost = false;
-	SetBehaviorState(EVHVNPCBehaviorState::Idle);
+	CompleteActiveOperation(false);
 	return false;
 }
 
@@ -239,26 +254,25 @@ void UVHVNPCBehaviorComponent::HandleMovementCompleted(const FPathFollowingResul
 		return;
 	}
 
-	const bool bWasReturningToPost = bReturningToPost;
-	bMovementActive = false;
-	bReturningToPost = false;
+	const bool bWasReturningToPost = ActiveOperation == EVHVNPCBehaviorOperation::ReturnToPost;
+	const bool bSuccess = Result.IsSuccess();
 
-	if (Result.IsSuccess())
+	if (bSuccess)
 	{
 		UE_LOG(LogVHV, Log, TEXT("[VHVNPC] Movement succeeded for '%s'%s."),
 			*GetNameSafe(GetOwner()),
 			bWasReturningToPost ? TEXT(" (returned to post)") : TEXT(""));
 	}
-	else if (Result.Code != EPathFollowingResult::Aborted)
+	else
 	{
 		UE_LOG(LogVHV, Warning, TEXT("[VHVNPC] Movement failed for '%s'."), *GetNameSafe(GetOwner()));
 	}
 
-	SetBehaviorState(EVHVNPCBehaviorState::Idle);
+	CompleteActiveOperation(bSuccess);
 }
 
 void UVHVNPCBehaviorComponent::HandleWaitCompleted()
 {
 	UE_LOG(LogVHV, Log, TEXT("[VHVNPC] Wait finished for '%s'."), *GetNameSafe(GetOwner()));
-	SetBehaviorState(EVHVNPCBehaviorState::Idle);
+	CompleteActiveOperation(true);
 }

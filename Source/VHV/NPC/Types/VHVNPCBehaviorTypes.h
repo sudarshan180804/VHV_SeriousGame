@@ -12,3 +12,12 @@ enum class EVHVNPCBehaviorState : uint8
 	Waiting UMETA(DisplayName = "Waiting"),
 	Unavailable UMETA(DisplayName = "Unavailable")
 };
+
+UENUM(BlueprintType)
+enum class EVHVNPCBehaviorOperation : uint8
+{
+	None UMETA(Hidden),
+	MoveTo UMETA(DisplayName = "Move To"),
+	Wait UMETA(DisplayName = "Wait"),
+	ReturnToPost UMETA(DisplayName = "Return To Post")
+};
