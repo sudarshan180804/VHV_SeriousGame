@@ -33,7 +33,8 @@ enum class EVHVQuestObjectiveType : uint8
     Interact,
     ReachLocation,
     CustomEvent,
-    NPCAction
+    NPCAction,
+    WorldAction
 };
 
 USTRUCT(BlueprintType)
@@ -76,6 +77,12 @@ struct VHV_API FVHVQuestObjectiveDefinition
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|NPC Action", meta = (EditCondition = "ObjectiveType == EVHVQuestObjectiveType::NPCAction && NPCCommandType == EVHVNPCQuestCommandType::Wait", EditConditionHides, ClampMin = "0.0"))
     float NPCWaitDuration = 0.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|World Action", meta = (EditCondition = "ObjectiveType == EVHVQuestObjectiveType::WorldAction", EditConditionHides))
+    FName WorldActionReceiverID;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|World Action", meta = (EditCondition = "ObjectiveType == EVHVQuestObjectiveType::WorldAction", EditConditionHides))
+    FName WorldActionID;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|Story State")
     FVHVStoryConditionSet ActivationConditions;

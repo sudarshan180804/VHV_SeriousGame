@@ -8,6 +8,7 @@
 #include "Story/Systems/VHVStoryStateSubsystem.h"
 #include "Textbook/Data/VHVLevelData.h"
 #include "Textbook/Systems/VHVTextbookSubsystem.h"
+#include "World/Systems/VHVWorldActionSubsystem.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
 #include "VHV.h"
@@ -27,6 +28,7 @@ void UVHVQuestSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 void UVHVQuestSubsystem::Deinitialize()
 {
     ClearActiveNPCActionTracking();
+    ClearActiveWorldActionTracking();
     if (TextbookSubsystem)
     {
         TextbookSubsystem->OnActivityCompleted.RemoveDynamic(this, &UVHVQuestSubsystem::HandleTextbookActivityCompleted);
@@ -50,6 +52,10 @@ bool UVHVQuestSubsystem::RegisterQuestArc(UVHVQuestArcData* QuestArc)
     if (!ValidateQuestArc(QuestArc))
     {
         return false;
+    }
+    if (ActiveQuestArc != QuestArc)
+    {
+        ClearActiveWorldActionTracking();
     }
     ActiveQuestArc = QuestArc;
     return true;
@@ -182,6 +188,7 @@ bool UVHVQuestSubsystem::CompleteCurrentObjective()
     bCurrentObjectiveActivated = false;
     bCurrentObjectiveWaitingOnConditions = false;
     ClearActiveNPCActionTracking();
+    ClearActiveWorldActionTracking();
     QuestState->CompletedObjectiveIDs.Add(ObjectiveID);
 
     if (!Objective.CompletionEffects.IsEmpty() && !StoryStateSubsystem)
@@ -626,6 +633,21 @@ bool UVHVQuestSubsystem::ValidateQuestArc(const UVHVQuestArcData* QuestArc) cons
                     bValid = false;
                 }
             }
+            if (Objective.ObjectiveType == EVHVQuestObjectiveType::WorldAction)
+            {
+                if (Objective.WorldActionReceiverID.IsNone())
+                {
+                    UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Quest '%s' WorldAction objective '%s' requires a World Action Receiver ID."),
+                        *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString());
+                    bValid = false;
+                }
+                if (Objective.WorldActionID.IsNone())
+                {
+                    UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Quest '%s' WorldAction objective '%s' requires a World Action ID."),
+                        *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString());
+                    bValid = false;
+                }
+            }
             for (const FVHVStoryCondition& Condition : Objective.ActivationConditions.Conditions)
             {
                 if (Condition.StateID.IsNone())
@@ -698,6 +720,7 @@ void UVHVQuestSubsystem::CompleteCurrentQuest()
 void UVHVQuestSubsystem::ActivateCurrentObjective()
 {
     ClearActiveNPCActionTracking();
+    ClearActiveWorldActionTracking();
     bCurrentObjectiveActivated = false;
     bCurrentObjectiveWaitingOnConditions = false;
     const FVHVQuestRuntimeState* State = FindQuestState(RuntimeState.ActiveQuestID);
@@ -749,6 +772,11 @@ void UVHVQuestSubsystem::TryActivateCurrentObjective()
     if (Objective->ObjectiveType == EVHVQuestObjectiveType::NPCAction)
     {
         ExecuteActiveNPCAction();
+        return;
+    }
+    if (Objective->ObjectiveType == EVHVQuestObjectiveType::WorldAction)
+    {
+        ExecuteActiveWorldAction();
         return;
     }
     if ((Objective->ObjectiveType == EVHVQuestObjectiveType::Conversation || Objective->ObjectiveType == EVHVQuestObjectiveType::LearningActivity) && Objective->bAutoStart)
@@ -888,6 +916,93 @@ void UVHVQuestSubsystem::ClearActiveNPCActionTracking()
     ActiveNPCObjectiveID = NAME_None;
     ActiveNPCObjectiveParticipantID = NAME_None;
     ActiveNPCObjectiveCommandType = EVHVNPCQuestCommandType::None;
+}
+
+void UVHVQuestSubsystem::ExecuteActiveWorldAction()
+{
+    const FVHVQuestObjectiveDefinition* Objective = GetActiveObjective();
+    UWorld* World = GetWorld();
+    UVHVWorldActionSubsystem* WorldActionSubsystem = World ? World->GetSubsystem<UVHVWorldActionSubsystem>() : nullptr;
+    if (!Objective || Objective->ObjectiveType != EVHVQuestObjectiveType::WorldAction || !WorldActionSubsystem)
+    {
+        if (Objective && Objective->ObjectiveType == EVHVQuestObjectiveType::WorldAction)
+        {
+            UE_LOG(LogVHV, Error, TEXT("[VHVQuest] Quest '%s' WorldAction objective '%s' could not access the World Action subsystem; objective remains active."),
+                *RuntimeState.ActiveQuestID.ToString(), *Objective->ObjectiveID.ToString());
+        }
+        return;
+    }
+
+    ActiveWorldActionSubsystem = WorldActionSubsystem;
+    ActiveWorldActionRequestID.Invalidate();
+    ActiveWorldActionQuestID = RuntimeState.ActiveQuestID;
+    ActiveWorldActionObjectiveID = Objective->ObjectiveID;
+    ActiveWorldActionReceiverID = Objective->WorldActionReceiverID;
+    ActiveWorldActionID = Objective->WorldActionID;
+    WorldActionSubsystem->OnWorldActionCompleted.AddUniqueDynamic(this, &UVHVQuestSubsystem::HandleWorldActionCompleted);
+
+    const FName ExpectedQuestID = ActiveWorldActionQuestID;
+    const FName ExpectedObjectiveID = ActiveWorldActionObjectiveID;
+    const EVHVWorldActionExecutionResult Result = WorldActionSubsystem->RequestWorldAction(
+        Objective->WorldActionReceiverID,
+        Objective->WorldActionID,
+        ActiveWorldActionRequestID);
+
+    if (Result == EVHVWorldActionExecutionResult::Rejected
+        && ActiveWorldActionQuestID == ExpectedQuestID
+        && ActiveWorldActionObjectiveID == ExpectedObjectiveID)
+    {
+        UE_LOG(LogVHV, Error, TEXT("[VHVQuest] Quest '%s' WorldAction objective '%s' request '%s' was rejected by receiver '%s'; objective remains active."),
+            *ExpectedQuestID.ToString(), *ExpectedObjectiveID.ToString(), *Objective->WorldActionID.ToString(), *Objective->WorldActionReceiverID.ToString());
+        ClearActiveWorldActionTracking();
+    }
+}
+
+void UVHVQuestSubsystem::HandleWorldActionCompleted(
+    const FGuid RequestID,
+    const FName ReceiverID,
+    const FName ActionID,
+    const bool bSuccess)
+{
+    const FVHVQuestObjectiveDefinition* Objective = GetActiveObjective();
+    if (!Objective
+        || Objective->ObjectiveType != EVHVQuestObjectiveType::WorldAction
+        || RuntimeState.ActiveQuestID != ActiveWorldActionQuestID
+        || Objective->ObjectiveID != ActiveWorldActionObjectiveID
+        || RequestID != ActiveWorldActionRequestID
+        || ReceiverID != ActiveWorldActionReceiverID
+        || ActionID != ActiveWorldActionID
+        || Objective->WorldActionReceiverID != ActiveWorldActionReceiverID
+        || Objective->WorldActionID != ActiveWorldActionID)
+    {
+        return;
+    }
+
+    const FName QuestID = ActiveWorldActionQuestID;
+    const FName ObjectiveID = ActiveWorldActionObjectiveID;
+    if (!bSuccess)
+    {
+        UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Quest '%s' WorldAction objective '%s' action '%s' failed on receiver '%s'; objective remains active."),
+            *QuestID.ToString(), *ObjectiveID.ToString(), *ActionID.ToString(), *ReceiverID.ToString());
+        ClearActiveWorldActionTracking();
+        return;
+    }
+
+    CompleteCurrentObjective();
+}
+
+void UVHVQuestSubsystem::ClearActiveWorldActionTracking()
+{
+    if (ActiveWorldActionSubsystem)
+    {
+        ActiveWorldActionSubsystem->OnWorldActionCompleted.RemoveDynamic(this, &UVHVQuestSubsystem::HandleWorldActionCompleted);
+    }
+    ActiveWorldActionSubsystem = nullptr;
+    ActiveWorldActionRequestID.Invalidate();
+    ActiveWorldActionQuestID = NAME_None;
+    ActiveWorldActionObjectiveID = NAME_None;
+    ActiveWorldActionReceiverID = NAME_None;
+    ActiveWorldActionID = NAME_None;
 }
 
 bool UVHVQuestSubsystem::BuildJournalEntry(const FVHVQuestDefinition& Definition, const FVHVQuestRuntimeState& State, FVHVQuestJournalEntry& OutEntry) const

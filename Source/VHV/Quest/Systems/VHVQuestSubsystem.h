@@ -8,6 +8,7 @@
 class UVHVQuestArcData;
 class UVHVStoryStateSubsystem;
 class UVHVTextbookSubsystem;
+class UVHVWorldActionSubsystem;
 class AVHVNPCBehaviorTarget;
 class UVHVNPCQuestCommandComponent;
 class UWorld;
@@ -138,6 +139,9 @@ private:
     UFUNCTION()
     void HandleStoryCounterChanged(FName CounterID, int32 NewValue);
 
+    UFUNCTION()
+    void HandleWorldActionCompleted(FGuid RequestID, FName ReceiverID, FName ActionID, bool bSuccess);
+
     bool ValidateQuestArc(const UVHVQuestArcData* QuestArc) const;
     void CompleteCurrentQuest();
     void ActivateCurrentObjective();
@@ -146,6 +150,8 @@ private:
     void EnsureStoryStateDelegateBindings();
     void ExecuteActiveNPCAction();
     void ClearActiveNPCActionTracking();
+    void ExecuteActiveWorldAction();
+    void ClearActiveWorldActionTracking();
     bool BuildJournalEntry(const FVHVQuestDefinition& Definition, const FVHVQuestRuntimeState& State, FVHVQuestJournalEntry& OutEntry) const;
     FName GetRequiredConversationID(const FVHVQuestObjectiveDefinition& Objective) const;
     const FVHVQuestDefinition* FindQuestDefinition(FName QuestID) const;
@@ -172,6 +178,15 @@ private:
     FName ActiveNPCObjectiveID;
     FName ActiveNPCObjectiveParticipantID;
     EVHVNPCQuestCommandType ActiveNPCObjectiveCommandType = EVHVNPCQuestCommandType::None;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UVHVWorldActionSubsystem> ActiveWorldActionSubsystem;
+
+    FGuid ActiveWorldActionRequestID;
+    FName ActiveWorldActionQuestID;
+    FName ActiveWorldActionObjectiveID;
+    FName ActiveWorldActionReceiverID;
+    FName ActiveWorldActionID;
 
     bool bCurrentObjectiveActivated = false;
     bool bCurrentObjectiveWaitingOnConditions = false;
