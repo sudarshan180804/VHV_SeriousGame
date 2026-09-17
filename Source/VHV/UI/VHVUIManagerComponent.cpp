@@ -1517,7 +1517,7 @@ void UVHVUIManagerComponent::RestoreGameplayAfterQuestModalIfNeeded()
         const bool bAutoStartsModal = Objective.bAutoStart
             && (Objective.ObjectiveType == EVHVQuestObjectiveType::Conversation
                 || Objective.ObjectiveType == EVHVQuestObjectiveType::LearningActivity);
-        if (bAutoStartsModal)
+        if (bAutoStartsModal && !QuestSubsystem->IsCurrentObjectiveWaitingForActivation())
         {
             return;
         }

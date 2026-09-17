@@ -6,6 +6,7 @@
 #include "VHVQuestSubsystem.generated.h"
 
 class UVHVQuestArcData;
+class UVHVStoryStateSubsystem;
 class UVHVTextbookSubsystem;
 class AVHVNPCBehaviorTarget;
 class UVHVNPCQuestCommandComponent;
@@ -57,6 +58,9 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "VHV|Quest")
     bool IsQuestFlowActive() const;
+
+    UFUNCTION(BlueprintPure, Category = "VHV|Quest")
+    bool IsCurrentObjectiveWaitingForActivation() const;
 
     UFUNCTION(BlueprintCallable, Category = "VHV|Quest")
     bool RequestCurrentObjectiveActivation();
@@ -128,9 +132,18 @@ private:
     UFUNCTION()
     void HandleNPCObjectiveCommandCompleted(EVHVNPCQuestCommandType Command, bool bSuccess);
 
+    UFUNCTION()
+    void HandleStoryFlagChanged(FName FlagID, bool bValue);
+
+    UFUNCTION()
+    void HandleStoryCounterChanged(FName CounterID, int32 NewValue);
+
     bool ValidateQuestArc(const UVHVQuestArcData* QuestArc) const;
     void CompleteCurrentQuest();
     void ActivateCurrentObjective();
+    void TryActivateCurrentObjective();
+    void ReevaluateWaitingObjective();
+    void EnsureStoryStateDelegateBindings();
     void ExecuteActiveNPCAction();
     void ClearActiveNPCActionTracking();
     bool BuildJournalEntry(const FVHVQuestDefinition& Definition, const FVHVQuestRuntimeState& State, FVHVQuestJournalEntry& OutEntry) const;
@@ -147,6 +160,9 @@ private:
     TObjectPtr<UVHVTextbookSubsystem> TextbookSubsystem;
 
     UPROPERTY()
+    TObjectPtr<UVHVStoryStateSubsystem> StoryStateSubsystem;
+
+    UPROPERTY()
     FVHVQuestArcRuntimeState RuntimeState;
 
     UPROPERTY(Transient)
@@ -156,6 +172,10 @@ private:
     FName ActiveNPCObjectiveID;
     FName ActiveNPCObjectiveParticipantID;
     EVHVNPCQuestCommandType ActiveNPCObjectiveCommandType = EVHVNPCQuestCommandType::None;
+
+    bool bCurrentObjectiveActivated = false;
+    bool bCurrentObjectiveWaitingOnConditions = false;
+    bool bCompletingCurrentObjective = false;
 
     using FBehaviorTargetRegistry = TMap<FName, TWeakObjectPtr<AVHVNPCBehaviorTarget>>;
     using FNPCCommandRegistry = TMap<FName, TWeakObjectPtr<UVHVNPCQuestCommandComponent>>;

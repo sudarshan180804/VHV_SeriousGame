@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "NPC/Types/VHVNPCBehaviorTypes.h"
+#include "Story/Types/VHVStoryStateTypes.h"
 #include "VHVQuestTypes.generated.h"
 
 class UVHVConversationDataAsset;
@@ -75,6 +76,12 @@ struct VHV_API FVHVQuestObjectiveDefinition
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|NPC Action", meta = (EditCondition = "ObjectiveType == EVHVQuestObjectiveType::NPCAction && NPCCommandType == EVHVNPCQuestCommandType::Wait", EditConditionHides, ClampMin = "0.0"))
     float NPCWaitDuration = 0.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|Story State")
+    FVHVStoryConditionSet ActivationConditions;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|Story State")
+    TArray<FVHVStoryEffect> CompletionEffects;
 };
 
 USTRUCT(BlueprintType)

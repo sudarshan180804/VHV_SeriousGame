@@ -5,6 +5,7 @@
 #include "NPC/Components/VHVNPCQuestCommandComponent.h"
 #include "NPC/Quest/VHVNPCBehaviorTarget.h"
 #include "Quest/Components/VHVQuestParticipantComponent.h"
+#include "Story/Systems/VHVStoryStateSubsystem.h"
 #include "Textbook/Data/VHVLevelData.h"
 #include "Textbook/Systems/VHVTextbookSubsystem.h"
 #include "Engine/World.h"
@@ -14,12 +15,13 @@
 void UVHVQuestSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
     Super::Initialize(Collection);
-    Collection.InitializeDependency<UVHVTextbookSubsystem>();
-    TextbookSubsystem = GetGameInstance()->GetSubsystem<UVHVTextbookSubsystem>();
+    TextbookSubsystem = Collection.InitializeDependency<UVHVTextbookSubsystem>();
+    StoryStateSubsystem = Collection.InitializeDependency<UVHVStoryStateSubsystem>();
     if (TextbookSubsystem)
     {
         TextbookSubsystem->OnActivityCompleted.AddDynamic(this, &UVHVQuestSubsystem::HandleTextbookActivityCompleted);
     }
+    EnsureStoryStateDelegateBindings();
 }
 
 void UVHVQuestSubsystem::Deinitialize()
@@ -29,8 +31,14 @@ void UVHVQuestSubsystem::Deinitialize()
     {
         TextbookSubsystem->OnActivityCompleted.RemoveDynamic(this, &UVHVQuestSubsystem::HandleTextbookActivityCompleted);
     }
+    if (StoryStateSubsystem)
+    {
+        StoryStateSubsystem->OnStoryFlagChanged.RemoveDynamic(this, &UVHVQuestSubsystem::HandleStoryFlagChanged);
+        StoryStateSubsystem->OnStoryCounterChanged.RemoveDynamic(this, &UVHVQuestSubsystem::HandleStoryCounterChanged);
+    }
     ActiveQuestArc = nullptr;
     TextbookSubsystem = nullptr;
+    StoryStateSubsystem = nullptr;
     RuntimeState = FVHVQuestArcRuntimeState();
     BehaviorTargetsByWorld.Empty();
     NPCCommandsByWorld.Empty();
@@ -156,19 +164,43 @@ bool UVHVQuestSubsystem::CompleteCurrentObjective()
 {
     FVHVQuestRuntimeState* QuestState = FindQuestState(RuntimeState.ActiveQuestID);
     const FVHVQuestDefinition* Quest = FindQuestDefinition(RuntimeState.ActiveQuestID);
-    if (!QuestState || !Quest || QuestState->Status != EVHVQuestStatus::Active || !Quest->Objectives.IsValidIndex(QuestState->CurrentObjectiveIndex))
+    if (!QuestState || !Quest || QuestState->Status != EVHVQuestStatus::Active || !Quest->Objectives.IsValidIndex(QuestState->CurrentObjectiveIndex)
+        || !bCurrentObjectiveActivated || bCompletingCurrentObjective)
     {
         return false;
     }
 
     const FName QuestID = Quest->QuestID;
-    const FName ObjectiveID = Quest->Objectives[QuestState->CurrentObjectiveIndex].ObjectiveID;
+    const FVHVQuestObjectiveDefinition& Objective = Quest->Objectives[QuestState->CurrentObjectiveIndex];
+    const FName ObjectiveID = Objective.ObjectiveID;
+    if (QuestState->CompletedObjectiveIDs.Contains(ObjectiveID))
+    {
+        return false;
+    }
+
+    bCompletingCurrentObjective = true;
+    bCurrentObjectiveActivated = false;
+    bCurrentObjectiveWaitingOnConditions = false;
     ClearActiveNPCActionTracking();
     QuestState->CompletedObjectiveIDs.Add(ObjectiveID);
+
+    if (!Objective.CompletionEffects.IsEmpty() && !StoryStateSubsystem)
+    {
+        UE_LOG(LogVHV, Error, TEXT("[VHVQuest] Quest '%s' objective '%s' could not apply Story State completion effects because the Story State subsystem is unavailable."),
+            *QuestID.ToString(), *ObjectiveID.ToString());
+    }
+    else if (StoryStateSubsystem && !Objective.CompletionEffects.IsEmpty()
+        && !StoryStateSubsystem->ApplyEffects(Objective.CompletionEffects))
+    {
+        UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Quest '%s' objective '%s' had one or more invalid Story State completion effects."),
+            *QuestID.ToString(), *ObjectiveID.ToString());
+    }
+
     OnObjectiveCompleted.Broadcast(QuestID, ObjectiveID);
 
     ++QuestState->CurrentObjectiveIndex;
     OnQuestUpdated.Broadcast(QuestID);
+    bCompletingCurrentObjective = false;
     if (Quest->Objectives.IsValidIndex(QuestState->CurrentObjectiveIndex))
     {
         ActivateCurrentObjective();
@@ -221,10 +253,15 @@ bool UVHVQuestSubsystem::IsQuestFlowActive() const
     return ActiveQuestArc && RuntimeState.bArcActive && !RuntimeState.bArcCompleted;
 }
 
+bool UVHVQuestSubsystem::IsCurrentObjectiveWaitingForActivation() const
+{
+    return GetActiveObjective() && bCurrentObjectiveWaitingOnConditions && !bCurrentObjectiveActivated;
+}
+
 bool UVHVQuestSubsystem::RequestCurrentObjectiveActivation()
 {
     const FVHVQuestObjectiveDefinition* Objective = GetActiveObjective();
-    if (!Objective)
+    if (!Objective || !bCurrentObjectiveActivated)
     {
         return false;
     }
@@ -242,8 +279,7 @@ bool UVHVQuestSubsystem::NotifyParticipantInteracted(FName ParticipantID)
 
     if (Objective->ObjectiveType == EVHVQuestObjectiveType::Interact && Objective->TargetID == ParticipantID)
     {
-        CompleteCurrentObjective();
-        return true;
+        return CompleteCurrentObjective();
     }
 
     const bool bLaunchable = Objective->ObjectiveType == EVHVQuestObjectiveType::Talk
@@ -251,8 +287,7 @@ bool UVHVQuestSubsystem::NotifyParticipantInteracted(FName ParticipantID)
         || Objective->ObjectiveType == EVHVQuestObjectiveType::LearningActivity;
     if (bLaunchable && (Objective->TargetID.IsNone() || Objective->TargetID == ParticipantID))
     {
-        RequestCurrentObjectiveActivation();
-        return true;
+        return RequestCurrentObjectiveActivation();
     }
     return false;
 }
@@ -457,6 +492,20 @@ void UVHVQuestSubsystem::HandleTextbookActivityCompleted()
     }
 }
 
+void UVHVQuestSubsystem::HandleStoryFlagChanged(const FName FlagID, const bool bValue)
+{
+    (void)FlagID;
+    (void)bValue;
+    ReevaluateWaitingObjective();
+}
+
+void UVHVQuestSubsystem::HandleStoryCounterChanged(const FName CounterID, const int32 NewValue)
+{
+    (void)CounterID;
+    (void)NewValue;
+    ReevaluateWaitingObjective();
+}
+
 bool UVHVQuestSubsystem::ValidateQuestArc(const UVHVQuestArcData* QuestArc) const
 {
     if (!QuestArc)
@@ -577,6 +626,24 @@ bool UVHVQuestSubsystem::ValidateQuestArc(const UVHVQuestArcData* QuestArc) cons
                     bValid = false;
                 }
             }
+            for (const FVHVStoryCondition& Condition : Objective.ActivationConditions.Conditions)
+            {
+                if (Condition.StateID.IsNone())
+                {
+                    UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Quest '%s' objective '%s' has an Activation Condition with an empty Story State ID."),
+                        *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString());
+                    bValid = false;
+                }
+            }
+            for (const FVHVStoryEffect& Effect : Objective.CompletionEffects)
+            {
+                if (Effect.StateID.IsNone())
+                {
+                    UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Quest '%s' objective '%s' has a Completion Effect with an empty Story State ID."),
+                        *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString());
+                    bValid = false;
+                }
+            }
         }
     }
     return bValid;
@@ -631,6 +698,8 @@ void UVHVQuestSubsystem::CompleteCurrentQuest()
 void UVHVQuestSubsystem::ActivateCurrentObjective()
 {
     ClearActiveNPCActionTracking();
+    bCurrentObjectiveActivated = false;
+    bCurrentObjectiveWaitingOnConditions = false;
     const FVHVQuestRuntimeState* State = FindQuestState(RuntimeState.ActiveQuestID);
     const FVHVQuestObjectiveDefinition* Objective = GetActiveObjective();
     if (!State || !Objective)
@@ -639,6 +708,44 @@ void UVHVQuestSubsystem::ActivateCurrentObjective()
     }
     OnObjectiveChanged.Broadcast(RuntimeState.ActiveQuestID, Objective->ObjectiveID);
     OnQuestUpdated.Broadcast(RuntimeState.ActiveQuestID);
+    TryActivateCurrentObjective();
+}
+
+void UVHVQuestSubsystem::TryActivateCurrentObjective()
+{
+    if (bCurrentObjectiveActivated)
+    {
+        return;
+    }
+
+    const FVHVQuestObjectiveDefinition* Objective = GetActiveObjective();
+    if (!Objective)
+    {
+        bCurrentObjectiveWaitingOnConditions = false;
+        return;
+    }
+
+    if (!Objective->ActivationConditions.Conditions.IsEmpty())
+    {
+        EnsureStoryStateDelegateBindings();
+    }
+
+    if (!Objective->ActivationConditions.Conditions.IsEmpty() && !StoryStateSubsystem)
+    {
+        UE_LOG(LogVHV, Error, TEXT("[VHVQuest] Quest '%s' objective '%s' cannot evaluate Story State activation conditions because the Story State subsystem is unavailable."),
+            *RuntimeState.ActiveQuestID.ToString(), *Objective->ObjectiveID.ToString());
+        bCurrentObjectiveWaitingOnConditions = true;
+        return;
+    }
+
+    if (StoryStateSubsystem && !StoryStateSubsystem->EvaluateConditionSet(Objective->ActivationConditions))
+    {
+        bCurrentObjectiveWaitingOnConditions = true;
+        return;
+    }
+
+    bCurrentObjectiveWaitingOnConditions = false;
+    bCurrentObjectiveActivated = true;
     if (Objective->ObjectiveType == EVHVQuestObjectiveType::NPCAction)
     {
         ExecuteActiveNPCAction();
@@ -664,6 +771,29 @@ void UVHVQuestSubsystem::ActivateCurrentObjective()
             RequestCurrentObjectiveActivation();
         }
     }
+}
+
+void UVHVQuestSubsystem::ReevaluateWaitingObjective()
+{
+    if (bCurrentObjectiveWaitingOnConditions && !bCurrentObjectiveActivated)
+    {
+        TryActivateCurrentObjective();
+    }
+}
+
+void UVHVQuestSubsystem::EnsureStoryStateDelegateBindings()
+{
+    if (!StoryStateSubsystem && GetGameInstance())
+    {
+        StoryStateSubsystem = GetGameInstance()->GetSubsystem<UVHVStoryStateSubsystem>();
+    }
+    if (!StoryStateSubsystem)
+    {
+        return;
+    }
+
+    StoryStateSubsystem->OnStoryFlagChanged.AddUniqueDynamic(this, &UVHVQuestSubsystem::HandleStoryFlagChanged);
+    StoryStateSubsystem->OnStoryCounterChanged.AddUniqueDynamic(this, &UVHVQuestSubsystem::HandleStoryCounterChanged);
 }
 
 void UVHVQuestSubsystem::ExecuteActiveNPCAction()
