@@ -125,9 +125,14 @@ private:
     UFUNCTION()
     void HandleTextbookActivityCompleted();
 
+    UFUNCTION()
+    void HandleNPCObjectiveCommandCompleted(EVHVNPCQuestCommandType Command, bool bSuccess);
+
     bool ValidateQuestArc(const UVHVQuestArcData* QuestArc) const;
     void CompleteCurrentQuest();
     void ActivateCurrentObjective();
+    void ExecuteActiveNPCAction();
+    void ClearActiveNPCActionTracking();
     bool BuildJournalEntry(const FVHVQuestDefinition& Definition, const FVHVQuestRuntimeState& State, FVHVQuestJournalEntry& OutEntry) const;
     FName GetRequiredConversationID(const FVHVQuestObjectiveDefinition& Objective) const;
     const FVHVQuestDefinition* FindQuestDefinition(FName QuestID) const;
@@ -143,6 +148,14 @@ private:
 
     UPROPERTY()
     FVHVQuestArcRuntimeState RuntimeState;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UVHVNPCQuestCommandComponent> ActiveNPCObjectiveCommandComponent;
+
+    FName ActiveNPCObjectiveQuestID;
+    FName ActiveNPCObjectiveID;
+    FName ActiveNPCObjectiveParticipantID;
+    EVHVNPCQuestCommandType ActiveNPCObjectiveCommandType = EVHVNPCQuestCommandType::None;
 
     using FBehaviorTargetRegistry = TMap<FName, TWeakObjectPtr<AVHVNPCBehaviorTarget>>;
     using FNPCCommandRegistry = TMap<FName, TWeakObjectPtr<UVHVNPCQuestCommandComponent>>;

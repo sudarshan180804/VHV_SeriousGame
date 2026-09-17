@@ -8,16 +8,6 @@
 class UVHVNPCBehaviorComponent;
 class UVHVNPCPatrolComponent;
 
-UENUM(BlueprintType)
-enum class EVHVNPCQuestCommandType : uint8
-{
-	None UMETA(Hidden),
-	MoveToTarget UMETA(DisplayName = "Move To Target"),
-	Wait UMETA(DisplayName = "Wait"),
-	ReturnToPost UMETA(DisplayName = "Return To Post"),
-	ReleaseToPatrol UMETA(DisplayName = "Release To Patrol")
-};
-
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
 	FOnVHVNPCQuestCommandCompleted,
 	EVHVNPCQuestCommandType,
@@ -72,10 +62,11 @@ private:
 	bool bHasQuestOwnership = false;
 	bool bPatrolWasActive = false;
 	bool bBehaviorOperationActive = false;
-	bool bInterruptedForDialogue = false;
+	bool bCommandPending = false;
 	bool bResumePatrolWhenIdle = false;
 
 	void BeginQuestOwnership();
+	bool QueueOrExecuteActiveCommand();
 	bool ExecuteActiveCommand();
 	void CompleteActiveCommand(bool bSuccess);
 	void AbortActiveCommand(bool bBroadcastFailure);

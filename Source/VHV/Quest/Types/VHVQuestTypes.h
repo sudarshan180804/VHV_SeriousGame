@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "NPC/Types/VHVNPCBehaviorTypes.h"
 #include "VHVQuestTypes.generated.h"
 
 class UVHVConversationDataAsset;
@@ -30,7 +31,8 @@ enum class EVHVQuestObjectiveType : uint8
     LearningActivity,
     Interact,
     ReachLocation,
-    CustomEvent
+    CustomEvent,
+    NPCAction
 };
 
 USTRUCT(BlueprintType)
@@ -61,6 +63,18 @@ struct VHV_API FVHVQuestObjectiveDefinition
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective", meta = (EditCondition = "ObjectiveType == EVHVQuestObjectiveType::Conversation || ObjectiveType == EVHVQuestObjectiveType::LearningActivity", EditConditionHides))
     bool bAutoStart = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|NPC Action", meta = (EditCondition = "ObjectiveType == EVHVQuestObjectiveType::NPCAction", EditConditionHides))
+    FName NPCParticipantID;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|NPC Action", meta = (EditCondition = "ObjectiveType == EVHVQuestObjectiveType::NPCAction", EditConditionHides))
+    EVHVNPCQuestCommandType NPCCommandType = EVHVNPCQuestCommandType::None;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|NPC Action", meta = (EditCondition = "ObjectiveType == EVHVQuestObjectiveType::NPCAction && NPCCommandType == EVHVNPCQuestCommandType::MoveToTarget", EditConditionHides))
+    FName NPCTargetID;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|NPC Action", meta = (EditCondition = "ObjectiveType == EVHVQuestObjectiveType::NPCAction && NPCCommandType == EVHVNPCQuestCommandType::Wait", EditConditionHides, ClampMin = "0.0"))
+    float NPCWaitDuration = 0.0f;
 };
 
 USTRUCT(BlueprintType)

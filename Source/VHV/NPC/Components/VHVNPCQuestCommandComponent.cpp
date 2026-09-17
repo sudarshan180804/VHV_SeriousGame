@@ -47,7 +47,7 @@ bool UVHVNPCQuestCommandComponent::MoveToTarget(const FName TargetID)
 	AbortActiveCommand(true);
 	ActiveCommand = EVHVNPCQuestCommandType::MoveToTarget;
 	ActiveTargetID = TargetID;
-	return ExecuteActiveCommand();
+	return QueueOrExecuteActiveCommand();
 }
 
 bool UVHVNPCQuestCommandComponent::Wait(const float Duration)
@@ -60,7 +60,7 @@ bool UVHVNPCQuestCommandComponent::Wait(const float Duration)
 	AbortActiveCommand(true);
 	ActiveCommand = EVHVNPCQuestCommandType::Wait;
 	ActiveWaitDuration = Duration;
-	return ExecuteActiveCommand();
+	return QueueOrExecuteActiveCommand();
 }
 
 bool UVHVNPCQuestCommandComponent::ReturnToPost()
@@ -72,7 +72,7 @@ bool UVHVNPCQuestCommandComponent::ReturnToPost()
 	BeginQuestOwnership();
 	AbortActiveCommand(true);
 	ActiveCommand = EVHVNPCQuestCommandType::ReturnToPost;
-	return ExecuteActiveCommand();
+	return QueueOrExecuteActiveCommand();
 }
 
 bool UVHVNPCQuestCommandComponent::ReleaseToPatrol()
@@ -128,7 +128,7 @@ void UVHVNPCQuestCommandComponent::BeginQuestOwnership()
 	}
 }
 
-bool UVHVNPCQuestCommandComponent::ExecuteActiveCommand()
+bool UVHVNPCQuestCommandComponent::QueueOrExecuteActiveCommand()
 {
 	if (!bHasQuestOwnership || ActiveCommand == EVHVNPCQuestCommandType::None || !BehaviorComponent)
 	{
@@ -138,11 +138,32 @@ bool UVHVNPCQuestCommandComponent::ExecuteActiveCommand()
 	const EVHVNPCBehaviorState State = BehaviorComponent->GetBehaviorState();
 	if (State == EVHVNPCBehaviorState::Engaging || State == EVHVNPCBehaviorState::Talking)
 	{
-		bInterruptedForDialogue = true;
+		bBehaviorOperationActive = false;
+		bCommandPending = true;
 		return true;
 	}
 
-	bInterruptedForDialogue = false;
+	return ExecuteActiveCommand();
+}
+
+bool UVHVNPCQuestCommandComponent::ExecuteActiveCommand()
+{
+	if (!bHasQuestOwnership || ActiveCommand == EVHVNPCQuestCommandType::None || !BehaviorComponent)
+	{
+		return false;
+	}
+
+	// A state change can synchronously interrupt an operation. Recheck immediately
+	// before dispatch so a conversation always wins command ownership of movement.
+	const EVHVNPCBehaviorState State = BehaviorComponent->GetBehaviorState();
+	if (State == EVHVNPCBehaviorState::Engaging || State == EVHVNPCBehaviorState::Talking)
+	{
+		bBehaviorOperationActive = false;
+		bCommandPending = true;
+		return true;
+	}
+
+	bCommandPending = false;
 	bBehaviorOperationActive = true;
 	bool bStarted = false;
 	switch (ActiveCommand)
@@ -194,7 +215,7 @@ void UVHVNPCQuestCommandComponent::CompleteActiveCommand(const bool bSuccess)
 	ActiveTargetID = NAME_None;
 	ActiveWaitDuration = 0.0f;
 	bBehaviorOperationActive = false;
-	bInterruptedForDialogue = false;
+	bCommandPending = false;
 	OnQuestCommandCompleted.Broadcast(CompletedCommand, bSuccess);
 }
 
@@ -202,6 +223,8 @@ void UVHVNPCQuestCommandComponent::AbortActiveCommand(const bool bBroadcastFailu
 {
 	if (ActiveCommand == EVHVNPCQuestCommandType::None)
 	{
+		bBehaviorOperationActive = false;
+		bCommandPending = false;
 		return;
 	}
 
@@ -211,7 +234,7 @@ void UVHVNPCQuestCommandComponent::AbortActiveCommand(const bool bBroadcastFailu
 	ActiveTargetID = NAME_None;
 	ActiveWaitDuration = 0.0f;
 	bBehaviorOperationActive = false;
-	bInterruptedForDialogue = false;
+	bCommandPending = false;
 	if (bShouldCancelBehavior && BehaviorComponent)
 	{
 		BehaviorComponent->CancelCurrentBehavior();
@@ -285,7 +308,7 @@ void UVHVNPCQuestCommandComponent::HandleBehaviorStateChanged(
 		&& ActiveCommand != EVHVNPCQuestCommandType::None)
 	{
 		bBehaviorOperationActive = false;
-		bInterruptedForDialogue = true;
+		bCommandPending = true;
 		return;
 	}
 
@@ -304,9 +327,9 @@ void UVHVNPCQuestCommandComponent::HandleBehaviorStateChanged(
 		return;
 	}
 
-	if (bHasQuestOwnership && bInterruptedForDialogue && ActiveCommand != EVHVNPCQuestCommandType::None)
+	if (bHasQuestOwnership && bCommandPending && ActiveCommand != EVHVNPCQuestCommandType::None)
 	{
-		bInterruptedForDialogue = false;
+		bCommandPending = false;
 		ExecuteActiveCommand();
 	}
 }

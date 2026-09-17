@@ -24,6 +24,7 @@ void UVHVQuestSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 void UVHVQuestSubsystem::Deinitialize()
 {
+    ClearActiveNPCActionTracking();
     if (TextbookSubsystem)
     {
         TextbookSubsystem->OnActivityCompleted.RemoveDynamic(this, &UVHVQuestSubsystem::HandleTextbookActivityCompleted);
@@ -162,6 +163,7 @@ bool UVHVQuestSubsystem::CompleteCurrentObjective()
 
     const FName QuestID = Quest->QuestID;
     const FName ObjectiveID = Quest->Objectives[QuestState->CurrentObjectiveIndex].ObjectiveID;
+    ClearActiveNPCActionTracking();
     QuestState->CompletedObjectiveIDs.Add(ObjectiveID);
     OnObjectiveCompleted.Broadcast(QuestID, ObjectiveID);
 
@@ -548,6 +550,33 @@ bool UVHVQuestSubsystem::ValidateQuestArc(const UVHVQuestArcData* QuestArc) cons
                 UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Objective '%s' requires a Target ID."), *Objective.ObjectiveID.ToString());
                 bValid = false;
             }
+            if (Objective.ObjectiveType == EVHVQuestObjectiveType::NPCAction)
+            {
+                if (Objective.NPCParticipantID.IsNone())
+                {
+                    UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Quest '%s' NPCAction objective '%s' requires an NPC Participant ID."),
+                        *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString());
+                    bValid = false;
+                }
+                if (Objective.NPCCommandType == EVHVNPCQuestCommandType::None)
+                {
+                    UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Quest '%s' NPCAction objective '%s' requires an NPC command type."),
+                        *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString());
+                    bValid = false;
+                }
+                else if (Objective.NPCCommandType == EVHVNPCQuestCommandType::MoveToTarget && Objective.NPCTargetID.IsNone())
+                {
+                    UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Quest '%s' NPCAction objective '%s' with MoveToTarget requires an NPC Target ID."),
+                        *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString());
+                    bValid = false;
+                }
+                else if (Objective.NPCCommandType == EVHVNPCQuestCommandType::Wait && Objective.NPCWaitDuration < 0.0f)
+                {
+                    UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Quest '%s' NPCAction objective '%s' has a negative NPC Wait Duration (%g)."),
+                        *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString(), Objective.NPCWaitDuration);
+                    bValid = false;
+                }
+            }
         }
     }
     return bValid;
@@ -601,6 +630,7 @@ void UVHVQuestSubsystem::CompleteCurrentQuest()
 
 void UVHVQuestSubsystem::ActivateCurrentObjective()
 {
+    ClearActiveNPCActionTracking();
     const FVHVQuestRuntimeState* State = FindQuestState(RuntimeState.ActiveQuestID);
     const FVHVQuestObjectiveDefinition* Objective = GetActiveObjective();
     if (!State || !Objective)
@@ -609,6 +639,11 @@ void UVHVQuestSubsystem::ActivateCurrentObjective()
     }
     OnObjectiveChanged.Broadcast(RuntimeState.ActiveQuestID, Objective->ObjectiveID);
     OnQuestUpdated.Broadcast(RuntimeState.ActiveQuestID);
+    if (Objective->ObjectiveType == EVHVQuestObjectiveType::NPCAction)
+    {
+        ExecuteActiveNPCAction();
+        return;
+    }
     if ((Objective->ObjectiveType == EVHVQuestObjectiveType::Conversation || Objective->ObjectiveType == EVHVQuestObjectiveType::LearningActivity) && Objective->bAutoStart)
     {
         const FName ExpectedQuestID = RuntimeState.ActiveQuestID;
@@ -629,6 +664,100 @@ void UVHVQuestSubsystem::ActivateCurrentObjective()
             RequestCurrentObjectiveActivation();
         }
     }
+}
+
+void UVHVQuestSubsystem::ExecuteActiveNPCAction()
+{
+    const FVHVQuestObjectiveDefinition* Objective = GetActiveObjective();
+    if (!Objective || Objective->ObjectiveType != EVHVQuestObjectiveType::NPCAction)
+    {
+        return;
+    }
+
+    UVHVNPCQuestCommandComponent* CommandComponent = FindNPCCommandComponent(GetWorld(), Objective->NPCParticipantID);
+    if (!CommandComponent)
+    {
+        UE_LOG(LogVHV, Error, TEXT("[VHVQuest] Quest '%s' NPCAction objective '%s' could not find NPC participant '%s'; objective remains active."),
+            *RuntimeState.ActiveQuestID.ToString(), *Objective->ObjectiveID.ToString(), *Objective->NPCParticipantID.ToString());
+        return;
+    }
+
+    // The command API replaces any prior quest command. Cancel it before binding
+    // so its synchronous failure notification cannot be mistaken for this objective.
+    CancelNPCQuestCommand(Objective->NPCParticipantID);
+
+    ActiveNPCObjectiveCommandComponent = CommandComponent;
+    ActiveNPCObjectiveQuestID = RuntimeState.ActiveQuestID;
+    ActiveNPCObjectiveID = Objective->ObjectiveID;
+    ActiveNPCObjectiveParticipantID = Objective->NPCParticipantID;
+    ActiveNPCObjectiveCommandType = Objective->NPCCommandType;
+    CommandComponent->OnQuestCommandCompleted.AddUniqueDynamic(this, &UVHVQuestSubsystem::HandleNPCObjectiveCommandCompleted);
+
+    bool bStarted = false;
+    switch (Objective->NPCCommandType)
+    {
+    case EVHVNPCQuestCommandType::MoveToTarget:
+        bStarted = RequestNPCMove(Objective->NPCParticipantID, Objective->NPCTargetID);
+        break;
+    case EVHVNPCQuestCommandType::Wait:
+        bStarted = RequestNPCWait(Objective->NPCParticipantID, Objective->NPCWaitDuration);
+        break;
+    case EVHVNPCQuestCommandType::ReturnToPost:
+        bStarted = RequestNPCReturnToPost(Objective->NPCParticipantID);
+        break;
+    case EVHVNPCQuestCommandType::ReleaseToPatrol:
+        bStarted = ReleaseNPCFromQuest(Objective->NPCParticipantID);
+        break;
+    default:
+        break;
+    }
+    if (!bStarted && ActiveNPCObjectiveQuestID == RuntimeState.ActiveQuestID && ActiveNPCObjectiveID == Objective->ObjectiveID)
+    {
+        UE_LOG(LogVHV, Error, TEXT("[VHVQuest] Quest '%s' NPCAction objective '%s' failed to start command '%s' for participant '%s'; objective remains active."),
+            *RuntimeState.ActiveQuestID.ToString(), *Objective->ObjectiveID.ToString(), *UEnum::GetValueAsString(Objective->NPCCommandType), *Objective->NPCParticipantID.ToString());
+        ClearActiveNPCActionTracking();
+    }
+}
+
+void UVHVQuestSubsystem::HandleNPCObjectiveCommandCompleted(const EVHVNPCQuestCommandType Command, const bool bSuccess)
+{
+    const FVHVQuestObjectiveDefinition* Objective = GetActiveObjective();
+    if (!Objective
+        || Objective->ObjectiveType != EVHVQuestObjectiveType::NPCAction
+        || RuntimeState.ActiveQuestID != ActiveNPCObjectiveQuestID
+        || Objective->ObjectiveID != ActiveNPCObjectiveID
+        || Objective->NPCParticipantID != ActiveNPCObjectiveParticipantID
+        || Objective->NPCCommandType != ActiveNPCObjectiveCommandType
+        || Command != ActiveNPCObjectiveCommandType)
+    {
+        return;
+    }
+
+    const FName QuestID = ActiveNPCObjectiveQuestID;
+    const FName ObjectiveID = ActiveNPCObjectiveID;
+    const FName ParticipantID = ActiveNPCObjectiveParticipantID;
+    if (!bSuccess)
+    {
+        UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Quest '%s' NPCAction objective '%s' command '%s' failed for participant '%s'; objective remains active."),
+            *QuestID.ToString(), *ObjectiveID.ToString(), *UEnum::GetValueAsString(Command), *ParticipantID.ToString());
+        ClearActiveNPCActionTracking();
+        return;
+    }
+
+    CompleteCurrentObjective();
+}
+
+void UVHVQuestSubsystem::ClearActiveNPCActionTracking()
+{
+    if (ActiveNPCObjectiveCommandComponent)
+    {
+        ActiveNPCObjectiveCommandComponent->OnQuestCommandCompleted.RemoveDynamic(this, &UVHVQuestSubsystem::HandleNPCObjectiveCommandCompleted);
+    }
+    ActiveNPCObjectiveCommandComponent = nullptr;
+    ActiveNPCObjectiveQuestID = NAME_None;
+    ActiveNPCObjectiveID = NAME_None;
+    ActiveNPCObjectiveParticipantID = NAME_None;
+    ActiveNPCObjectiveCommandType = EVHVNPCQuestCommandType::None;
 }
 
 bool UVHVQuestSubsystem::BuildJournalEntry(const FVHVQuestDefinition& Definition, const FVHVQuestRuntimeState& State, FVHVQuestJournalEntry& OutEntry) const
