@@ -584,6 +584,12 @@ bool UVHVQuestSubsystem::RequestNPCReturnToPost(const FName ParticipantID)
     return CommandComponent && CommandComponent->ReturnToPost();
 }
 
+bool UVHVQuestSubsystem::RequestNPCPlayAction(const FName ParticipantID, const FName ActionID)
+{
+    UVHVNPCQuestCommandComponent* CommandComponent = FindNPCCommandComponent(GetWorld(), ParticipantID);
+    return CommandComponent && CommandComponent->PlayAction(ActionID);
+}
+
 bool UVHVQuestSubsystem::ReleaseNPCFromQuest(const FName ParticipantID)
 {
     UVHVNPCQuestCommandComponent* CommandComponent = FindNPCCommandComponent(GetWorld(), ParticipantID);
@@ -862,6 +868,12 @@ bool UVHVQuestSubsystem::ValidateQuestArc(const UVHVQuestArcData* QuestArc) cons
                         *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString(), Objective.NPCWaitDuration);
                     bValid = false;
                 }
+                else if (Objective.NPCCommandType == EVHVNPCQuestCommandType::PlayAction && Objective.NPCActionID.IsNone())
+                {
+                    UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Quest '%s' NPCAction objective '%s' with PlayAction requires an NPC Action ID."),
+                        *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString());
+                    bValid = false;
+                }
             }
             if (Objective.ObjectiveType == EVHVQuestObjectiveType::WorldAction)
             {
@@ -1095,6 +1107,9 @@ void UVHVQuestSubsystem::ExecuteActiveNPCAction()
         break;
     case EVHVNPCQuestCommandType::ReleaseToPatrol:
         bStarted = ReleaseNPCFromQuest(Objective->NPCParticipantID);
+        break;
+    case EVHVNPCQuestCommandType::PlayAction:
+        bStarted = RequestNPCPlayAction(Objective->NPCParticipantID, Objective->NPCActionID);
         break;
     default:
         break;

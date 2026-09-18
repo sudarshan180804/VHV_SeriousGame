@@ -99,6 +99,9 @@ public:
     bool RequestNPCReturnToPost(FName ParticipantID);
 
     UFUNCTION(BlueprintCallable, Category = "VHV|Quest|NPC Commands")
+    bool RequestNPCPlayAction(FName ParticipantID, FName ActionID);
+
+    UFUNCTION(BlueprintCallable, Category = "VHV|Quest|NPC Commands")
     bool ReleaseNPCFromQuest(FName ParticipantID);
 
     UFUNCTION(BlueprintCallable, Category = "VHV|Quest|NPC Commands")

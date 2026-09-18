@@ -7,6 +7,7 @@
 
 class UVHVNPCBehaviorComponent;
 class UVHVNPCPatrolComponent;
+class UVHVNPCPresentationComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
 	FOnVHVNPCQuestCommandCompleted,
@@ -34,6 +35,9 @@ public:
 	bool ReturnToPost();
 
 	UFUNCTION(BlueprintCallable, Category = "VHV|NPC|Quest Commands")
+	bool PlayAction(FName ActionID);
+
+	UFUNCTION(BlueprintCallable, Category = "VHV|NPC|Quest Commands")
 	bool ReleaseToPatrol();
 
 	UFUNCTION(BlueprintCallable, Category = "VHV|NPC|Quest Commands")
@@ -56,8 +60,12 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UVHVNPCPatrolComponent> PatrolComponent;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UVHVNPCPresentationComponent> PresentationComponent;
+
 	EVHVNPCQuestCommandType ActiveCommand = EVHVNPCQuestCommandType::None;
 	FName ActiveTargetID;
+	FName ActiveActionID;
 	float ActiveWaitDuration = 0.0f;
 	bool bHasQuestOwnership = false;
 	bool bPatrolWasActive = false;
@@ -79,4 +87,7 @@ private:
 
 	UFUNCTION()
 	void HandleBehaviorStateChanged(EVHVNPCBehaviorState PreviousState, EVHVNPCBehaviorState NewState);
+
+	UFUNCTION()
+	void HandlePresentationActionCompleted(FName ActionID, bool bSuccess);
 };

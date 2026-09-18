@@ -3,6 +3,7 @@
 #include "Engine/GameInstance.h"
 #include "NPC/Components/VHVNPCBehaviorComponent.h"
 #include "NPC/Components/VHVNPCPatrolComponent.h"
+#include "NPC/Components/VHVNPCPresentationComponent.h"
 #include "NPC/Quest/VHVNPCBehaviorTarget.h"
 #include "Quest/Components/VHVQuestParticipantComponent.h"
 #include "Quest/Systems/VHVQuestSubsystem.h"
@@ -18,10 +19,15 @@ void UVHVNPCQuestCommandComponent::BeginPlay()
 	Super::BeginPlay();
 	BehaviorComponent = GetOwner() ? GetOwner()->FindComponentByClass<UVHVNPCBehaviorComponent>() : nullptr;
 	PatrolComponent = GetOwner() ? GetOwner()->FindComponentByClass<UVHVNPCPatrolComponent>() : nullptr;
+	PresentationComponent = GetOwner() ? GetOwner()->FindComponentByClass<UVHVNPCPresentationComponent>() : nullptr;
 	if (BehaviorComponent)
 	{
 		BehaviorComponent->OnBehaviorCompleted.AddUniqueDynamic(this, &UVHVNPCQuestCommandComponent::HandleBehaviorCompleted);
 		BehaviorComponent->OnBehaviorStateChanged.AddUniqueDynamic(this, &UVHVNPCQuestCommandComponent::HandleBehaviorStateChanged);
+	}
+	if (PresentationComponent)
+	{
+		PresentationComponent->OnPresentationActionCompleted.AddUniqueDynamic(this, &UVHVNPCQuestCommandComponent::HandlePresentationActionCompleted);
 	}
 	RegisterWithQuestSubsystem();
 }
@@ -33,6 +39,11 @@ void UVHVNPCQuestCommandComponent::EndPlay(const EEndPlayReason::Type EndPlayRea
 	{
 		BehaviorComponent->OnBehaviorCompleted.RemoveDynamic(this, &UVHVNPCQuestCommandComponent::HandleBehaviorCompleted);
 		BehaviorComponent->OnBehaviorStateChanged.RemoveDynamic(this, &UVHVNPCQuestCommandComponent::HandleBehaviorStateChanged);
+	}
+	if (PresentationComponent)
+	{
+		PresentationComponent->OnPresentationActionCompleted.RemoveDynamic(this, &UVHVNPCQuestCommandComponent::HandlePresentationActionCompleted);
+		PresentationComponent->StopCurrentActionSilently();
 	}
 	Super::EndPlay(EndPlayReason);
 }
@@ -72,6 +83,19 @@ bool UVHVNPCQuestCommandComponent::ReturnToPost()
 	BeginQuestOwnership();
 	AbortActiveCommand(true);
 	ActiveCommand = EVHVNPCQuestCommandType::ReturnToPost;
+	return QueueOrExecuteActiveCommand();
+}
+
+bool UVHVNPCQuestCommandComponent::PlayAction(const FName ActionID)
+{
+	if (ActionID.IsNone() || !BehaviorComponent || !PresentationComponent)
+	{
+		return false;
+	}
+	BeginQuestOwnership();
+	AbortActiveCommand(true);
+	ActiveCommand = EVHVNPCQuestCommandType::PlayAction;
+	ActiveActionID = ActionID;
 	return QueueOrExecuteActiveCommand();
 }
 
@@ -193,6 +217,9 @@ bool UVHVNPCQuestCommandComponent::ExecuteActiveCommand()
 	case EVHVNPCQuestCommandType::ReturnToPost:
 		bStarted = BehaviorComponent->ReturnToPost();
 		break;
+	case EVHVNPCQuestCommandType::PlayAction:
+		bStarted = PresentationComponent && PresentationComponent->PlayAction(ActiveActionID);
+		break;
 	default:
 		break;
 	}
@@ -213,6 +240,7 @@ void UVHVNPCQuestCommandComponent::CompleteActiveCommand(const bool bSuccess)
 	const EVHVNPCQuestCommandType CompletedCommand = ActiveCommand;
 	ActiveCommand = EVHVNPCQuestCommandType::None;
 	ActiveTargetID = NAME_None;
+	ActiveActionID = NAME_None;
 	ActiveWaitDuration = 0.0f;
 	bBehaviorOperationActive = false;
 	bCommandPending = false;
@@ -232,10 +260,15 @@ void UVHVNPCQuestCommandComponent::AbortActiveCommand(const bool bBroadcastFailu
 	const bool bShouldCancelBehavior = bBehaviorOperationActive;
 	ActiveCommand = EVHVNPCQuestCommandType::None;
 	ActiveTargetID = NAME_None;
+	ActiveActionID = NAME_None;
 	ActiveWaitDuration = 0.0f;
 	bBehaviorOperationActive = false;
 	bCommandPending = false;
-	if (bShouldCancelBehavior && BehaviorComponent)
+	if (bShouldCancelBehavior && AbortedCommand == EVHVNPCQuestCommandType::PlayAction && PresentationComponent)
+	{
+		PresentationComponent->StopCurrentAction();
+	}
+	else if (bShouldCancelBehavior && BehaviorComponent)
 	{
 		BehaviorComponent->CancelCurrentBehavior();
 	}
@@ -307,6 +340,10 @@ void UVHVNPCQuestCommandComponent::HandleBehaviorStateChanged(
 		&& bHasQuestOwnership
 		&& ActiveCommand != EVHVNPCQuestCommandType::None)
 	{
+		if (ActiveCommand == EVHVNPCQuestCommandType::PlayAction && PresentationComponent)
+		{
+			PresentationComponent->StopCurrentActionSilently();
+		}
 		bBehaviorOperationActive = false;
 		bCommandPending = true;
 		return;
@@ -331,5 +368,15 @@ void UVHVNPCQuestCommandComponent::HandleBehaviorStateChanged(
 	{
 		bCommandPending = false;
 		ExecuteActiveCommand();
+	}
+}
+
+void UVHVNPCQuestCommandComponent::HandlePresentationActionCompleted(const FName ActionID, const bool bSuccess)
+{
+	if (bBehaviorOperationActive
+		&& ActiveCommand == EVHVNPCQuestCommandType::PlayAction
+		&& ActiveActionID == ActionID)
+	{
+		CompleteActiveCommand(bSuccess);
 	}
 }

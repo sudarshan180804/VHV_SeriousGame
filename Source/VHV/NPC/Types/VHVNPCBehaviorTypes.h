@@ -30,5 +30,6 @@ enum class EVHVNPCQuestCommandType : uint8
 	MoveToTarget UMETA(DisplayName = "Move To Target"),
 	Wait UMETA(DisplayName = "Wait"),
 	ReturnToPost UMETA(DisplayName = "Return To Post"),
-	ReleaseToPatrol UMETA(DisplayName = "Release To Patrol")
+	ReleaseToPatrol UMETA(DisplayName = "Release To Patrol"),
+	PlayAction UMETA(DisplayName = "Play Presentation Action")
 };
