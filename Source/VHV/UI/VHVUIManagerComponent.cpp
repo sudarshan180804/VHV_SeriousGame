@@ -23,6 +23,7 @@
 #include "Player/Components/VHVPlayerInteractionComponent.h"
 #include "Player/Components/VHVInteractionComponent.h"
 #include "Quest/Systems/VHVQuestSubsystem.h"
+#include "Story/Systems/VHVStoryStateSubsystem.h"
 #include "UI/Quest/VHVQuestTrackerWidget.h"
 
 namespace
@@ -220,6 +221,8 @@ void UVHVUIManagerComponent::BeginPlay()
                 QuestTrackerWidget->SetQuestSubsystem(QuestSubsystem);
             }
         }
+
+        StoryStateSubsystem = World->GetGameInstance()->GetSubsystem<UVHVStoryStateSubsystem>();
     }
 
     APawn* Pawn = PC->GetPawn();
@@ -410,10 +413,12 @@ void UVHVUIManagerComponent::HandleTextbookActivityCompleted()
 
     if (CurrentNode->NextNodeID.IsEmpty())
     {
+        ApplyCurrentDialogueNodeCompletionEffects();
         CompleteConversation();
     }
     else
     {
+        ApplyCurrentDialogueNodeCompletionEffects();
         TraverseToNode(CurrentNode->NextNodeID);
     }
 }
@@ -1306,10 +1311,12 @@ void UVHVUIManagerComponent::AdvanceConversation()
 
     if (CurrentNode->NextNodeID.IsEmpty())
     {
+        ApplyCurrentDialogueNodeCompletionEffects();
         CompleteConversation();
         return;
     }
 
+    ApplyCurrentDialogueNodeCompletionEffects();
     TraverseToNode(CurrentNode->NextNodeID);
 }
 
@@ -1401,7 +1408,14 @@ bool UVHVUIManagerComponent::ConfirmChoice()
     }
 
     const FDialogueChoiceOption& SelectedOption = CurrentNode->Choices[SelectedChoiceIndex];
+    if (!IsDialogueChoiceAvailable(SelectedOption))
+    {
+        return false;
+    }
+
     UE_LOG(LogTemp, Log, TEXT("[VHVDialogue] Choice selected OptionID=%s NextNodeID=%s"), *SelectedOption.OptionID, *SelectedOption.NextNodeID);
+
+    ApplyCurrentDialogueNodeCompletionEffects(&SelectedOption.SelectionEffects);
 
     if (TextbookSubsystem && TextbookSubsystem->IsActivityActive())
     {
@@ -1421,6 +1435,16 @@ bool UVHVUIManagerComponent::ConfirmChoice()
     }
 
     return TraverseToNode(SelectedOption.NextNodeID, true);
+}
+
+bool UVHVUIManagerComponent::IsDialogueChoiceAvailable(const FDialogueChoiceOption& Choice) const
+{
+    if (Choice.AvailabilityConditions.Conditions.IsEmpty())
+    {
+        return true;
+    }
+
+    return StoryStateSubsystem && StoryStateSubsystem->EvaluateConditionSet(Choice.AvailabilityConditions);
 }
 
 bool UVHVUIManagerComponent::StartDialogueChoiceActivity(const FDialogueChoiceActivityReference& Reference)
@@ -1459,20 +1483,58 @@ bool UVHVUIManagerComponent::TraverseToNode(const FString& NodeID, bool bLogBran
         return false;
     }
 
-    const FDialogueNode* TargetNode = FindNodeByID(ActiveConversation.ConversationID, NodeID);
+    FString TargetNodeID = NodeID;
+    const FDialogueNode* TargetNode = nullptr;
+    TSet<FString> VisitedNodeIDs;
+
+    while (!TargetNodeID.IsEmpty())
+    {
+        if (VisitedNodeIDs.Contains(TargetNodeID))
+        {
+            UE_LOG(LogVHV, Error, TEXT("[VHVDialogue] Conversation '%s' stopped while skipping nodes: cycle detected at node '%s'."),
+                *ActiveConversation.ConversationID, *TargetNodeID);
+            return false;
+        }
+        VisitedNodeIDs.Add(TargetNodeID);
+
+        TargetNode = FindNodeByID(ActiveConversation.ConversationID, TargetNodeID);
+        if (!TargetNode)
+        {
+            UE_LOG(LogVHV, Error, TEXT("[VHVDialogue] Conversation '%s' cannot traverse to missing node '%s'."),
+                *ActiveConversation.ConversationID, *TargetNodeID);
+            return false;
+        }
+
+        const bool bConditionsPass = TargetNode->ActivationConditions.Conditions.IsEmpty()
+            || (StoryStateSubsystem && StoryStateSubsystem->EvaluateConditionSet(TargetNode->ActivationConditions));
+        if (bConditionsPass)
+        {
+            break;
+        }
+
+        UE_LOG(LogVHV, Log, TEXT("[VHVDialogue] Conversation '%s' skipped node '%s' because its activation conditions failed."),
+            *ActiveConversation.ConversationID, *TargetNodeID);
+        TargetNodeID = TargetNode->NextNodeID;
+        TargetNode = nullptr;
+    }
+
     if (!TargetNode)
     {
-        return false;
+        UE_LOG(LogVHV, Log, TEXT("[VHVDialogue] Conversation '%s' completed after conditional node skipping reached the end of the traversal."),
+            *ActiveConversation.ConversationID);
+        CompleteConversation();
+        return true;
     }
 
     ApplyUIState(EVHVUIState::Dialogue);
-    DialogueWidget->ShowConversation(ActiveConversation, NodeID);
-    ActiveConversationState.CurrentNodeID = NodeID;
+    DialogueWidget->ShowConversation(ActiveConversation, TargetNodeID);
+    ActiveConversationState.CurrentNodeID = TargetNodeID;
+    bCurrentDialogueNodeCompleted = false;
     CommitCurrentConversationState();
 
     if (bLogBranchEntry)
     {
-        UE_LOG(LogTemp, Log, TEXT("[VHVDialogue] Branch entered NodeID=%s"), *NodeID);
+        UE_LOG(LogTemp, Log, TEXT("[VHVDialogue] Branch entered NodeID=%s"), *TargetNodeID);
     }
 
     if (TargetNode->NodeType == EVHVDialogueNodeType::LearningActivity)
@@ -1481,6 +1543,32 @@ bool UVHVUIManagerComponent::TraverseToNode(const FString& NodeID, bool bLogBran
     }
 
     return true;
+}
+
+void UVHVUIManagerComponent::ApplyCurrentDialogueNodeCompletionEffects(const TArray<FVHVStoryEffect>* SelectionEffects)
+{
+    if (bCurrentDialogueNodeCompleted)
+    {
+        return;
+    }
+
+    bCurrentDialogueNodeCompleted = true;
+    if (!StoryStateSubsystem)
+    {
+        return;
+    }
+
+    const FDialogueNode* CurrentNode = FindNodeByID(ActiveConversation.ConversationID, ActiveConversationState.CurrentNodeID);
+    if (!CurrentNode)
+    {
+        return;
+    }
+
+    StoryStateSubsystem->ApplyEffects(CurrentNode->CompletionEffects);
+    if (SelectionEffects)
+    {
+        StoryStateSubsystem->ApplyEffects(*SelectionEffects);
+    }
 }
 
 void UVHVUIManagerComponent::CompleteConversation()

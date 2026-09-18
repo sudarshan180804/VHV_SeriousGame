@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Containers/Map.h"
+#include "VHV/Story/Types/VHVStoryStateTypes.h"
 #include "VHV/Textbook/Types/VHVTextbookTypes.h"
 #include "VHVDialogueTypes.generated.h"
 
@@ -30,6 +31,12 @@ struct VHV_API FDialogueChoiceOption
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
     bool bIsDefault = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Story State")
+    FVHVStoryConditionSet AvailabilityConditions;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Story State")
+    TArray<FVHVStoryEffect> SelectionEffects;
 };
 
 USTRUCT(BlueprintType)
@@ -66,6 +73,12 @@ struct VHV_API FDialogueNode
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Learning")
     FTextbookActivityReference LinkedActivity;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Story State")
+    FVHVStoryConditionSet ActivationConditions;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Story State")
+    TArray<FVHVStoryEffect> CompletionEffects;
 };
 
 USTRUCT(BlueprintType)

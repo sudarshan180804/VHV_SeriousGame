@@ -62,7 +62,8 @@ protected:
     FString CurrentNodeID;
     FDialogueData CurrentDialogue;
     int32 CurrentLineIndex = 0;
-    int32 SelectedChoiceIndex = 0;
+    int32 SelectedChoiceIndex = INDEX_NONE;
+    TArray<int32> AvailableChoiceIndices;
 
     UPROPERTY(BlueprintReadWrite, meta = (BindWidget))
     TObjectPtr<UTextBlock> SpeakerNameText;

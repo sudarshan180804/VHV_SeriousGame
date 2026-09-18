@@ -43,7 +43,8 @@ void UVHVDialogueWidget::ShowDialogue(const FDialogueData& InDialogue)
     CurrentNodeID = FString();
     CurrentDialogue = InDialogue;
     CurrentLineIndex = 0;
-    SelectedChoiceIndex = 0;
+    SelectedChoiceIndex = INDEX_NONE;
+    AvailableChoiceIndices.Reset();
 
     if (CurrentDialogue.Lines.Num() == 0)
     {
@@ -60,7 +61,8 @@ void UVHVDialogueWidget::ShowConversation(const FDialogueConversation& InConvers
     CurrentDialogue = FDialogueData();
     CurrentConversation = InConversation;
     CurrentLineIndex = 0;
-    SelectedChoiceIndex = 0;
+    SelectedChoiceIndex = INDEX_NONE;
+    AvailableChoiceIndices.Reset();
 
     if (CurrentConversation.Nodes.Num() == 0)
     {
@@ -88,7 +90,8 @@ void UVHVDialogueWidget::HideDialogue()
     CurrentNodeID = FString();
     CurrentDialogue = FDialogueData();
     CurrentLineIndex = 0;
-    SelectedChoiceIndex = 0;
+    SelectedChoiceIndex = INDEX_NONE;
+    AvailableChoiceIndices.Reset();
     ClearChoices();
     SetVisibility(ESlateVisibility::Collapsed);
 }
@@ -128,12 +131,14 @@ void UVHVDialogueWidget::SelectNextChoice()
     }
 
     const FDialogueNode* CurrentNode = FindNodeByID(CurrentNodeID);
-    if (!CurrentNode || CurrentNode->NodeType != EVHVDialogueNodeType::Choice || CurrentNode->Choices.Num() == 0)
+    if (!CurrentNode || CurrentNode->NodeType != EVHVDialogueNodeType::Choice || AvailableChoiceIndices.IsEmpty())
     {
         return;
     }
 
-    SelectedChoiceIndex = (SelectedChoiceIndex + 1) % CurrentNode->Choices.Num();
+    int32 AvailableIndex = AvailableChoiceIndices.IndexOfByKey(SelectedChoiceIndex);
+    AvailableIndex = (AvailableIndex + 1) % AvailableChoiceIndices.Num();
+    SelectedChoiceIndex = AvailableChoiceIndices[AvailableIndex];
     UpdateChoiceSelectionUI();
 }
 
@@ -145,12 +150,16 @@ void UVHVDialogueWidget::SelectPreviousChoice()
     }
 
     const FDialogueNode* CurrentNode = FindNodeByID(CurrentNodeID);
-    if (!CurrentNode || CurrentNode->NodeType != EVHVDialogueNodeType::Choice || CurrentNode->Choices.Num() == 0)
+    if (!CurrentNode || CurrentNode->NodeType != EVHVDialogueNodeType::Choice || AvailableChoiceIndices.IsEmpty())
     {
         return;
     }
 
-    SelectedChoiceIndex = (SelectedChoiceIndex - 1 + CurrentNode->Choices.Num()) % CurrentNode->Choices.Num();
+    int32 AvailableIndex = AvailableChoiceIndices.IndexOfByKey(SelectedChoiceIndex);
+    AvailableIndex = AvailableIndex == INDEX_NONE
+        ? AvailableChoiceIndices.Num() - 1
+        : (AvailableIndex - 1 + AvailableChoiceIndices.Num()) % AvailableChoiceIndices.Num();
+    SelectedChoiceIndex = AvailableChoiceIndices[AvailableIndex];
     UpdateChoiceSelectionUI();
 }
 
@@ -162,7 +171,7 @@ bool UVHVDialogueWidget::ConfirmChoice()
     }
 
     const FDialogueNode* CurrentNode = FindNodeByID(CurrentNodeID);
-    if (!CurrentNode || CurrentNode->NodeType != EVHVDialogueNodeType::Choice || CurrentNode->Choices.Num() == 0)
+    if (!CurrentNode || CurrentNode->NodeType != EVHVDialogueNodeType::Choice || !AvailableChoiceIndices.Contains(SelectedChoiceIndex))
     {
         return false;
     }
@@ -173,7 +182,7 @@ bool UVHVDialogueWidget::ConfirmChoice()
 void UVHVDialogueWidget::SelectChoiceAndConfirm(int32 ChoiceIndex)
 {
     const FDialogueNode* CurrentNode = FindNodeByID(CurrentNodeID);
-    if (!CurrentNode || CurrentNode->NodeType != EVHVDialogueNodeType::Choice || !CurrentNode->Choices.IsValidIndex(ChoiceIndex))
+    if (!CurrentNode || CurrentNode->NodeType != EVHVDialogueNodeType::Choice || !AvailableChoiceIndices.Contains(ChoiceIndex))
     {
         return;
     }
@@ -232,27 +241,41 @@ void UVHVDialogueWidget::UpdateFromNode()
     }
 
     ClearChoices();
+    AvailableChoiceIndices.Reset();
 
     if (CurrentNode->NodeType == EVHVDialogueNodeType::Choice)
     {
-        if (SelectedChoiceIndex >= CurrentNode->Choices.Num())
+        for (int32 Index = 0; Index < CurrentNode->Choices.Num(); ++Index)
         {
-            SelectedChoiceIndex = 0;
+            if (!OwningUIManager || OwningUIManager->IsDialogueChoiceAvailable(CurrentNode->Choices[Index]))
+            {
+                AvailableChoiceIndices.Add(Index);
+            }
+        }
+
+        SelectedChoiceIndex = AvailableChoiceIndices.IsEmpty() ? INDEX_NONE : AvailableChoiceIndices[0];
+        for (const int32 ChoiceIndex : AvailableChoiceIndices)
+        {
+            if (CurrentNode->Choices[ChoiceIndex].bIsDefault)
+            {
+                SelectedChoiceIndex = ChoiceIndex;
+                break;
+            }
         }
 
         EnsureChoiceContainer();
 
         if (ChoiceContainer)
         {
-            for (int32 Index = 0; Index < CurrentNode->Choices.Num(); ++Index)
+            for (const int32 ChoiceIndex : AvailableChoiceIndices)
             {
-                const FDialogueChoiceOption& Choice = CurrentNode->Choices[Index];
+                const FDialogueChoiceOption& Choice = CurrentNode->Choices[ChoiceIndex];
                 UVHVDialogueChoiceButton* ChoiceButton = NewObject<UVHVDialogueChoiceButton>(this);
-                ChoiceButton->InitializeChoice(this, Index);
+                ChoiceButton->InitializeChoice(this, ChoiceIndex);
 
                 UTextBlock* ChoiceText = NewObject<UTextBlock>(ChoiceButton);
                 ChoiceText->SetText(Choice.OptionText);
-                ChoiceText->SetColorAndOpacity(Index == SelectedChoiceIndex ? FLinearColor::White : FLinearColor(0.8f, 0.8f, 0.8f, 1.0f));
+                ChoiceText->SetColorAndOpacity(ChoiceIndex == SelectedChoiceIndex ? FLinearColor::White : FLinearColor(0.8f, 0.8f, 0.8f, 1.0f));
                 ChoiceButton->SetContent(ChoiceText);
                 ChoiceContainer->AddChild(ChoiceButton);
             }
@@ -287,13 +310,14 @@ void UVHVDialogueWidget::UpdateChoiceSelectionUI()
         return;
     }
 
-    for (int32 Index = 0; Index < ChoiceContainer->GetChildrenCount(); ++Index)
+    for (int32 RenderedIndex = 0; RenderedIndex < ChoiceContainer->GetChildrenCount(); ++RenderedIndex)
     {
-        if (UVHVDialogueChoiceButton* ChoiceButton = Cast<UVHVDialogueChoiceButton>(ChoiceContainer->GetChildAt(Index)))
+        if (UVHVDialogueChoiceButton* ChoiceButton = Cast<UVHVDialogueChoiceButton>(ChoiceContainer->GetChildAt(RenderedIndex)))
         {
             if (UTextBlock* ChoiceText = Cast<UTextBlock>(ChoiceButton->GetContent()))
             {
-                ChoiceText->SetColorAndOpacity(Index == SelectedChoiceIndex ? FLinearColor::White : FLinearColor(0.8f, 0.8f, 0.8f, 1.0f));
+                const int32 ChoiceIndex = AvailableChoiceIndices.IsValidIndex(RenderedIndex) ? AvailableChoiceIndices[RenderedIndex] : INDEX_NONE;
+                ChoiceText->SetColorAndOpacity(ChoiceIndex == SelectedChoiceIndex ? FLinearColor::White : FLinearColor(0.8f, 0.8f, 0.8f, 1.0f));
             }
         }
     }
@@ -334,24 +358,12 @@ void UVHVDialogueWidget::SetCurrentNode(const FString& NodeID)
     }
 
     CurrentNodeID = NodeID;
-    SelectedChoiceIndex = 0;
+    SelectedChoiceIndex = INDEX_NONE;
     const FDialogueNode* Node = FindNodeByID(NodeID);
     if (!Node)
     {
         HideDialogue();
         return;
-    }
-
-    if (Node->NodeType == EVHVDialogueNodeType::Choice && Node->Choices.Num() > 0)
-    {
-        for (int32 Index = 0; Index < Node->Choices.Num(); ++Index)
-        {
-            if (Node->Choices[Index].bIsDefault)
-            {
-                SelectedChoiceIndex = Index;
-                break;
-            }
-        }
     }
 
     UpdateFromNode();

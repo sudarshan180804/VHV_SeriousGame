@@ -22,6 +22,7 @@ class UVHVMatchingCardWidget;
 class UVHVTextbookSubsystem;
 class UVHVQuestSubsystem;
 class UVHVQuestTrackerWidget;
+class UVHVStoryStateSubsystem;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnVHVConversationSessionEnded);
 
@@ -153,6 +154,8 @@ public:
     UFUNCTION(BlueprintCallable, Category = "VHV|UI")
     bool ConfirmChoice();
 
+    bool IsDialogueChoiceAvailable(const FDialogueChoiceOption& Choice) const;
+
     UFUNCTION()
     void ConfirmChoiceInput();
 
@@ -208,6 +211,11 @@ protected:
     UPROPERTY()
     TObjectPtr<UVHVQuestSubsystem> QuestSubsystem;
 
+    UPROPERTY()
+    TObjectPtr<UVHVStoryStateSubsystem> StoryStateSubsystem;
+
+    bool bCurrentDialogueNodeCompleted = false;
+
     UFUNCTION()
     void HandleInteractionTargetChanged(UVHVInteractionComponent* NewTarget);
 
@@ -250,5 +258,6 @@ protected:
     bool StartConversationInternal(const FDialogueConversation& InConversation, const FString& ExplicitStartNodeID);
     bool StartDialogueChoiceActivity(const FDialogueChoiceActivityReference& Reference);
     bool TraverseToNode(const FString& NodeID, bool bLogBranchEntry = false);
+    void ApplyCurrentDialogueNodeCompletionEffects(const TArray<FVHVStoryEffect>* SelectionEffects = nullptr);
     void CompleteConversation();
 };
