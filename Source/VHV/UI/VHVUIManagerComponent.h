@@ -23,6 +23,7 @@ class UVHVTextbookSubsystem;
 class UVHVQuestSubsystem;
 class UVHVQuestTrackerWidget;
 class UVHVStoryStateSubsystem;
+struct FVHVDialogueCheckpointSaveState;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnVHVConversationSessionEnded);
 
@@ -173,6 +174,10 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "VHV|UI")
     FConversationRuntimeState GetConversationState() const;
+
+    void ExportDialogueCheckpointSaveState(TArray<FVHVDialogueCheckpointSaveState>& OutSaveStates) const;
+    bool ValidateDialogueCheckpointSaveState(const TArray<FVHVDialogueCheckpointSaveState>& SaveStates) const;
+    bool ImportDialogueCheckpointSaveState(const TArray<FVHVDialogueCheckpointSaveState>& SaveStates);
 
     UFUNCTION(BlueprintCallable, Category = "VHV|UI")
     void ShowDialogue(const FDialogueData& InDialogue);

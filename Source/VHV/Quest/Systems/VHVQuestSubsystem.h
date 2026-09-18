@@ -12,6 +12,7 @@ class UVHVWorldActionSubsystem;
 class AVHVNPCBehaviorTarget;
 class UVHVNPCQuestCommandComponent;
 class UWorld;
+struct FVHVQuestSaveState;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnVHVQuestEvent, FName, QuestID);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnVHVQuestObjectiveEvent, FName, QuestID, FName, ObjectiveID);
@@ -62,6 +63,13 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "VHV|Quest")
     bool IsCurrentObjectiveWaitingForActivation() const;
+
+    UFUNCTION(BlueprintPure, Category = "VHV|Quest")
+    bool IsTransientObjectiveExecutionActive() const;
+
+    void ExportSaveState(FVHVQuestSaveState& OutSaveState) const;
+    bool ValidateSaveState(const FVHVQuestSaveState& SaveState) const;
+    bool ImportSaveState(const FVHVQuestSaveState& SaveState);
 
     UFUNCTION(BlueprintCallable, Category = "VHV|Quest")
     bool RequestCurrentObjectiveActivation();

@@ -1,5 +1,6 @@
 #include "VHVTextbookSubsystem.h"
 
+#include "Save/VHVSaveTypes.h"
 #include "VHV/Story/Systems/VHVStoryStateSubsystem.h"
 
 void UVHVTextbookSubsystem::Initialize(FSubsystemCollectionBase& Collection)
@@ -741,4 +742,150 @@ void UVHVTextbookSubsystem::SetProgressionMode(const EVHVTextbookProgressionMode
 EVHVTextbookProgressionMode UVHVTextbookSubsystem::GetProgressionMode() const
 {
     return ProgressionMode;
+}
+
+void UVHVTextbookSubsystem::ExportSaveState(FVHVTextbookSaveState& OutSaveState) const
+{
+    OutSaveState = FVHVTextbookSaveState();
+    if (!CurrentLevelData)
+    {
+        return;
+    }
+
+    OutSaveState.bHasState = true;
+    OutSaveState.LevelDataAssetPath = FSoftObjectPath(CurrentLevelData->GetPathName());
+    OutSaveState.ProgressionMode = ProgressionMode;
+    OutSaveState.bJourneyStarted = RuntimeState.bJourneyStarted;
+    OutSaveState.bDayStarted = RuntimeState.bDayStarted;
+    OutSaveState.bDayCompleted = RuntimeState.bDayCompleted;
+    OutSaveState.bTopicCompleted = RuntimeState.bTopicCompleted;
+    OutSaveState.CompletedActivityIDs = RuntimeState.CompletedActivityIDs.Array();
+    OutSaveState.MasteredTopicIDs = RuntimeState.MasteredTopicIDs.Array();
+    OutSaveState.CompletedActivityIDs.Sort();
+    OutSaveState.MasteredTopicIDs.Sort();
+
+    if (CurrentLevelData->DayData.Topics.IsValidIndex(RuntimeState.CurrentTopicIndex))
+    {
+        const FTopicData& Topic = CurrentLevelData->DayData.Topics[RuntimeState.CurrentTopicIndex];
+        OutSaveState.CurrentTopicID = Topic.TopicID;
+        if (Topic.Activities.IsValidIndex(RuntimeState.CurrentActivityIndex))
+        {
+            OutSaveState.CurrentActivityID = Topic.Activities[RuntimeState.CurrentActivityIndex].ActivityID;
+        }
+    }
+}
+
+bool UVHVTextbookSubsystem::ValidateSaveState(const FVHVTextbookSaveState& SaveState) const
+{
+    if (!SaveState.bHasState)
+    {
+        return true;
+    }
+
+    UVHVLevelData* LevelData = Cast<UVHVLevelData>(SaveState.LevelDataAssetPath.TryLoad());
+    if (!LevelData)
+    {
+        UE_LOG(LogTemp, Error, TEXT("[VHVTextbook] Saved Level Data '%s' could not be loaded."), *SaveState.LevelDataAssetPath.ToString());
+        return false;
+    }
+
+    const FTopicData* CurrentTopic = LevelData->DayData.Topics.FindByPredicate([&SaveState](const FTopicData& Topic)
+    {
+        return Topic.TopicID == SaveState.CurrentTopicID;
+    });
+    if (!SaveState.CurrentTopicID.IsEmpty() && !CurrentTopic)
+    {
+        UE_LOG(LogTemp, Error, TEXT("[VHVTextbook] Saved Topic ID '%s' does not exist in Level Data '%s'."), *SaveState.CurrentTopicID, *LevelData->GetName());
+        return false;
+    }
+    if (!SaveState.CurrentActivityID.IsEmpty()
+        && (!CurrentTopic || !CurrentTopic->Activities.ContainsByPredicate([&SaveState](const FTextbookActivityData& Activity)
+        {
+            return Activity.ActivityID == SaveState.CurrentActivityID;
+        })))
+    {
+        UE_LOG(LogTemp, Error, TEXT("[VHVTextbook] Saved Activity ID '%s' does not exist in saved Topic '%s'."), *SaveState.CurrentActivityID, *SaveState.CurrentTopicID);
+        return false;
+    }
+
+    for (const FString& TopicID : SaveState.MasteredTopicIDs)
+    {
+        if (TopicID.IsEmpty() || !LevelData->DayData.Topics.ContainsByPredicate([&TopicID](const FTopicData& Topic) { return Topic.TopicID == TopicID; }))
+        {
+            UE_LOG(LogTemp, Error, TEXT("[VHVTextbook] Saved mastered Topic ID '%s' is invalid for Level Data '%s'."), *TopicID, *LevelData->GetName());
+            return false;
+        }
+    }
+    for (const FString& ActivityID : SaveState.CompletedActivityIDs)
+    {
+        bool bFound = false;
+        for (const FTopicData& Topic : LevelData->DayData.Topics)
+        {
+            bFound |= Topic.Activities.ContainsByPredicate([&ActivityID](const FTextbookActivityData& Activity) { return Activity.ActivityID == ActivityID; });
+        }
+        if (ActivityID.IsEmpty() || !bFound)
+        {
+            UE_LOG(LogTemp, Error, TEXT("[VHVTextbook] Saved completed Activity ID '%s' is invalid for Level Data '%s'."), *ActivityID, *LevelData->GetName());
+            return false;
+        }
+    }
+    return true;
+}
+
+bool UVHVTextbookSubsystem::ImportSaveState(const FVHVTextbookSaveState& SaveState)
+{
+    if (!ValidateSaveState(SaveState))
+    {
+        return false;
+    }
+
+    if (!SaveState.bHasState)
+    {
+        CurrentLevelData = nullptr;
+        RuntimeState = FTextbookRuntimeState();
+        ProgressionMode = EVHVTextbookProgressionMode::InternalTextbook;
+        return true;
+    }
+
+    UVHVLevelData* LevelData = Cast<UVHVLevelData>(SaveState.LevelDataAssetPath.TryLoad());
+    if (!LevelData)
+    {
+        return false;
+    }
+    CurrentLevelData = LevelData;
+    RuntimeState = FTextbookRuntimeState();
+    ProgressionMode = SaveState.ProgressionMode;
+    RuntimeState.bJourneyStarted = SaveState.bJourneyStarted;
+    RuntimeState.bDayStarted = SaveState.bDayStarted;
+    RuntimeState.bDayCompleted = SaveState.bDayCompleted;
+    RuntimeState.bTopicCompleted = SaveState.bTopicCompleted;
+    RuntimeState.CurrentPhase = ELearningPhase::Ask;
+
+    RuntimeState.CurrentTopicIndex = LevelData->DayData.Topics.IndexOfByPredicate([&SaveState](const FTopicData& Topic)
+    {
+        return Topic.TopicID == SaveState.CurrentTopicID;
+    });
+    if (RuntimeState.CurrentTopicIndex == INDEX_NONE)
+    {
+        RuntimeState.CurrentTopicIndex = 0;
+    }
+    if (LevelData->DayData.Topics.IsValidIndex(RuntimeState.CurrentTopicIndex))
+    {
+        RuntimeState.CurrentActivityIndex = LevelData->DayData.Topics[RuntimeState.CurrentTopicIndex].Activities.IndexOfByPredicate(
+            [&SaveState](const FTextbookActivityData& Activity) { return Activity.ActivityID == SaveState.CurrentActivityID; });
+        if (RuntimeState.CurrentActivityIndex == INDEX_NONE)
+        {
+            RuntimeState.CurrentActivityIndex = 0;
+        }
+    }
+
+    for (const FString& ActivityID : SaveState.CompletedActivityIDs)
+    {
+        RuntimeState.CompletedActivityIDs.Add(ActivityID);
+    }
+    for (const FString& TopicID : SaveState.MasteredTopicIDs)
+    {
+        RuntimeState.MasteredTopicIDs.Add(TopicID);
+    }
+    return true;
 }

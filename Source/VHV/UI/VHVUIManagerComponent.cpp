@@ -23,6 +23,7 @@
 #include "Player/Components/VHVPlayerInteractionComponent.h"
 #include "Player/Components/VHVInteractionComponent.h"
 #include "Quest/Systems/VHVQuestSubsystem.h"
+#include "Save/VHVSaveTypes.h"
 #include "Story/Systems/VHVStoryStateSubsystem.h"
 #include "UI/Quest/VHVQuestTrackerWidget.h"
 
@@ -1748,6 +1749,65 @@ bool UVHVUIManagerComponent::IsConversationSessionActive() const
 FConversationRuntimeState UVHVUIManagerComponent::GetConversationState() const
 {
     return ActiveConversationState;
+}
+
+void UVHVUIManagerComponent::ExportDialogueCheckpointSaveState(TArray<FVHVDialogueCheckpointSaveState>& OutSaveStates) const
+{
+    OutSaveStates.Reset();
+    for (const TPair<FString, FConversationRuntimeState>& Pair : ConversationStates)
+    {
+        const FConversationRuntimeState& State = Pair.Value;
+        if (State.ConversationID.IsEmpty())
+        {
+            continue;
+        }
+
+        FVHVDialogueCheckpointSaveState SavedState;
+        SavedState.ConversationID = State.ConversationID;
+        SavedState.LatestCheckpointID = State.LatestCheckpointID;
+        SavedState.CurrentNodeID = State.CurrentNodeID;
+        SavedState.bCompleted = State.bCompleted;
+        OutSaveStates.Add(MoveTemp(SavedState));
+    }
+    OutSaveStates.Sort([](const FVHVDialogueCheckpointSaveState& A, const FVHVDialogueCheckpointSaveState& B)
+    {
+        return A.ConversationID < B.ConversationID;
+    });
+}
+
+bool UVHVUIManagerComponent::ValidateDialogueCheckpointSaveState(const TArray<FVHVDialogueCheckpointSaveState>& SaveStates) const
+{
+    TSet<FString> ConversationIDs;
+    for (const FVHVDialogueCheckpointSaveState& SavedState : SaveStates)
+    {
+        if (SavedState.ConversationID.IsEmpty() || ConversationIDs.Contains(SavedState.ConversationID))
+        {
+            UE_LOG(LogVHV, Error, TEXT("[VHVDialogue] Saved dialogue checkpoint has an empty or duplicate Conversation ID '%s'."), *SavedState.ConversationID);
+            return false;
+        }
+        ConversationIDs.Add(SavedState.ConversationID);
+    }
+    return true;
+}
+
+bool UVHVUIManagerComponent::ImportDialogueCheckpointSaveState(const TArray<FVHVDialogueCheckpointSaveState>& SaveStates)
+{
+    if (!ValidateDialogueCheckpointSaveState(SaveStates) || bConversationSessionActive)
+    {
+        return false;
+    }
+
+    ConversationStates.Reset();
+    for (const FVHVDialogueCheckpointSaveState& SavedState : SaveStates)
+    {
+        FConversationRuntimeState State;
+        State.ConversationID = SavedState.ConversationID;
+        State.LatestCheckpointID = SavedState.LatestCheckpointID;
+        State.CurrentNodeID = SavedState.CurrentNodeID;
+        State.bCompleted = SavedState.bCompleted;
+        ConversationStates.Add(State.ConversationID, MoveTemp(State));
+    }
+    return true;
 }
 
 void UVHVUIManagerComponent::ShowDialogue(const FDialogueData& InDialogue)

@@ -8,6 +8,7 @@
 #include "VHVTextbookSubsystem.generated.h"
 
 class UVHVStoryStateSubsystem;
+struct FVHVTextbookSaveState;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnLearningPhaseChanged, ELearningPhase, NewPhase);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnActivityCompleted);
@@ -136,6 +137,10 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "VHV|Textbook")
     bool IsActivityActive() const;
+
+    void ExportSaveState(FVHVTextbookSaveState& OutSaveState) const;
+    bool ValidateSaveState(const FVHVTextbookSaveState& SaveState) const;
+    bool ImportSaveState(const FVHVTextbookSaveState& SaveState);
 
     UFUNCTION(BlueprintCallable, Category = "VHV|Textbook")
     void ExitCurrentLearningSession();

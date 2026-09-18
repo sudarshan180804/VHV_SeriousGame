@@ -5,6 +5,7 @@
 #include "NPC/Components/VHVNPCQuestCommandComponent.h"
 #include "NPC/Quest/VHVNPCBehaviorTarget.h"
 #include "Quest/Components/VHVQuestParticipantComponent.h"
+#include "Save/VHVSaveTypes.h"
 #include "Story/Systems/VHVStoryStateSubsystem.h"
 #include "Textbook/Data/VHVLevelData.h"
 #include "Textbook/Systems/VHVTextbookSubsystem.h"
@@ -263,6 +264,235 @@ bool UVHVQuestSubsystem::IsQuestFlowActive() const
 bool UVHVQuestSubsystem::IsCurrentObjectiveWaitingForActivation() const
 {
     return GetActiveObjective() && bCurrentObjectiveWaitingOnConditions && !bCurrentObjectiveActivated;
+}
+
+bool UVHVQuestSubsystem::IsTransientObjectiveExecutionActive() const
+{
+    return ActiveNPCObjectiveCommandComponent != nullptr || ActiveWorldActionRequestID.IsValid();
+}
+
+void UVHVQuestSubsystem::ExportSaveState(FVHVQuestSaveState& OutSaveState) const
+{
+    OutSaveState = FVHVQuestSaveState();
+    if (!ActiveQuestArc)
+    {
+        return;
+    }
+
+    OutSaveState.bHasState = true;
+    OutSaveState.QuestArcAssetPath = FSoftObjectPath(ActiveQuestArc->GetPathName());
+    OutSaveState.QuestArcID = RuntimeState.QuestArcID;
+    OutSaveState.ActiveQuestID = RuntimeState.ActiveQuestID;
+    OutSaveState.TrackedQuestID = RuntimeState.TrackedQuestID;
+    OutSaveState.CompletedQuestIDs = RuntimeState.CompletedQuestIDs.Array();
+    OutSaveState.CompletedQuestIDs.Sort(FNameLexicalLess());
+    OutSaveState.bArcActive = RuntimeState.bArcActive;
+    OutSaveState.bArcCompleted = RuntimeState.bArcCompleted;
+
+    for (const FVHVQuestRuntimeState& RuntimeQuest : RuntimeState.QuestStates)
+    {
+        FVHVQuestSaveEntry SavedQuest;
+        SavedQuest.QuestID = RuntimeQuest.QuestID;
+        SavedQuest.Status = RuntimeQuest.Status;
+        SavedQuest.CompletedObjectiveIDs = RuntimeQuest.CompletedObjectiveIDs.Array();
+        SavedQuest.CompletedObjectiveIDs.Sort(FNameLexicalLess());
+        if (const FVHVQuestDefinition* Definition = FindQuestDefinition(RuntimeQuest.QuestID);
+            Definition && Definition->Objectives.IsValidIndex(RuntimeQuest.CurrentObjectiveIndex))
+        {
+            SavedQuest.CurrentObjectiveID = Definition->Objectives[RuntimeQuest.CurrentObjectiveIndex].ObjectiveID;
+        }
+        OutSaveState.QuestStates.Add(MoveTemp(SavedQuest));
+    }
+}
+
+bool UVHVQuestSubsystem::ValidateSaveState(const FVHVQuestSaveState& SaveState) const
+{
+    if (!SaveState.bHasState)
+    {
+        return true;
+    }
+
+    UVHVQuestArcData* QuestArc = Cast<UVHVQuestArcData>(SaveState.QuestArcAssetPath.TryLoad());
+    if (!QuestArc || !ValidateQuestArc(QuestArc) || QuestArc->QuestArcID != SaveState.QuestArcID)
+    {
+        UE_LOG(LogVHV, Error, TEXT("[VHVQuest] Saved quest arc '%s' at '%s' is missing, invalid, or has a mismatched Arc ID."),
+            *SaveState.QuestArcID.ToString(), *SaveState.QuestArcAssetPath.ToString());
+        return false;
+    }
+
+    TSet<FName> SavedQuestIDs;
+    for (const FVHVQuestSaveEntry& SavedQuest : SaveState.QuestStates)
+    {
+        const FVHVQuestDefinition* Definition = QuestArc->Quests.FindByPredicate([&SavedQuest](const FVHVQuestDefinition& Quest)
+        {
+            return Quest.QuestID == SavedQuest.QuestID;
+        });
+        if (!Definition || SavedQuest.QuestID.IsNone() || SavedQuestIDs.Contains(SavedQuest.QuestID))
+        {
+            UE_LOG(LogVHV, Error, TEXT("[VHVQuest] Saved quest entry '%s' is missing from the authored arc or duplicated."), *SavedQuest.QuestID.ToString());
+            return false;
+        }
+        SavedQuestIDs.Add(SavedQuest.QuestID);
+
+        if (!SavedQuest.CurrentObjectiveID.IsNone()
+            && !Definition->Objectives.ContainsByPredicate([&SavedQuest](const FVHVQuestObjectiveDefinition& Objective)
+            {
+                return Objective.ObjectiveID == SavedQuest.CurrentObjectiveID;
+            }))
+        {
+            UE_LOG(LogVHV, Error, TEXT("[VHVQuest] Saved current Objective ID '%s' does not exist in quest '%s'."),
+                *SavedQuest.CurrentObjectiveID.ToString(), *SavedQuest.QuestID.ToString());
+            return false;
+        }
+        if (SavedQuest.Status == EVHVQuestStatus::Active && SavedQuest.CurrentObjectiveID.IsNone())
+        {
+            UE_LOG(LogVHV, Error, TEXT("[VHVQuest] Active saved quest '%s' has no current Objective ID."), *SavedQuest.QuestID.ToString());
+            return false;
+        }
+        for (const FName CompletedObjectiveID : SavedQuest.CompletedObjectiveIDs)
+        {
+            if (CompletedObjectiveID.IsNone() || !Definition->Objectives.ContainsByPredicate([CompletedObjectiveID](const FVHVQuestObjectiveDefinition& Objective)
+            {
+                return Objective.ObjectiveID == CompletedObjectiveID;
+            }))
+            {
+                UE_LOG(LogVHV, Error, TEXT("[VHVQuest] Saved completed Objective ID '%s' does not exist in quest '%s'."),
+                    *CompletedObjectiveID.ToString(), *SavedQuest.QuestID.ToString());
+                return false;
+            }
+        }
+    }
+
+    if (SavedQuestIDs.Num() != QuestArc->Quests.Num())
+    {
+        UE_LOG(LogVHV, Error, TEXT("[VHVQuest] Saved quest state does not contain every quest in arc '%s'."), *QuestArc->QuestArcID.ToString());
+        return false;
+    }
+    if (!SaveState.ActiveQuestID.IsNone())
+    {
+        const FVHVQuestSaveEntry* ActiveEntry = SaveState.QuestStates.FindByPredicate([&SaveState](const FVHVQuestSaveEntry& Entry)
+        {
+            return Entry.QuestID == SaveState.ActiveQuestID;
+        });
+        if (!ActiveEntry || ActiveEntry->Status != EVHVQuestStatus::Active)
+        {
+            UE_LOG(LogVHV, Error, TEXT("[VHVQuest] Saved Active Quest ID '%s' is not an active saved quest."), *SaveState.ActiveQuestID.ToString());
+            return false;
+        }
+    }
+    if (!SaveState.TrackedQuestID.IsNone() && !SavedQuestIDs.Contains(SaveState.TrackedQuestID))
+    {
+        UE_LOG(LogVHV, Error, TEXT("[VHVQuest] Saved Tracked Quest ID '%s' does not exist in the saved arc."), *SaveState.TrackedQuestID.ToString());
+        return false;
+    }
+    for (const FName CompletedQuestID : SaveState.CompletedQuestIDs)
+    {
+        if (CompletedQuestID.IsNone() || !SavedQuestIDs.Contains(CompletedQuestID))
+        {
+            UE_LOG(LogVHV, Error, TEXT("[VHVQuest] Saved Completed Quest ID '%s' does not exist in the saved arc."), *CompletedQuestID.ToString());
+            return false;
+        }
+    }
+    return true;
+}
+
+bool UVHVQuestSubsystem::ImportSaveState(const FVHVQuestSaveState& SaveState)
+{
+    if (!ValidateSaveState(SaveState))
+    {
+        return false;
+    }
+
+    if (ActiveNPCObjectiveCommandComponent)
+    {
+        ActiveNPCObjectiveCommandComponent->OnQuestCommandCompleted.RemoveDynamic(this, &UVHVQuestSubsystem::HandleNPCObjectiveCommandCompleted);
+        ActiveNPCObjectiveCommandComponent->CancelQuestCommand();
+    }
+    ClearActiveNPCActionTracking();
+    if (ActiveWorldActionSubsystem && ActiveWorldActionRequestID.IsValid())
+    {
+        ActiveWorldActionSubsystem->OnWorldActionCompleted.RemoveDynamic(this, &UVHVQuestSubsystem::HandleWorldActionCompleted);
+        ActiveWorldActionSubsystem->CompleteWorldAction(ActiveWorldActionRequestID, false);
+    }
+    ClearActiveWorldActionTracking();
+    bCurrentObjectiveActivated = false;
+    bCurrentObjectiveWaitingOnConditions = false;
+    bCompletingCurrentObjective = false;
+
+    if (!SaveState.bHasState)
+    {
+        ActiveQuestArc = nullptr;
+        RuntimeState = FVHVQuestArcRuntimeState();
+        if (TextbookSubsystem)
+        {
+            TextbookSubsystem->SetProgressionMode(EVHVTextbookProgressionMode::InternalTextbook);
+        }
+        OnTrackedQuestChanged.Broadcast(NAME_None);
+        return true;
+    }
+
+    UVHVQuestArcData* QuestArc = Cast<UVHVQuestArcData>(SaveState.QuestArcAssetPath.TryLoad());
+    if (!QuestArc)
+    {
+        return false;
+    }
+    ActiveQuestArc = QuestArc;
+    FVHVQuestArcRuntimeState RestoredState;
+    RestoredState.QuestArcID = SaveState.QuestArcID;
+    RestoredState.ActiveQuestID = SaveState.ActiveQuestID;
+    RestoredState.TrackedQuestID = SaveState.TrackedQuestID;
+    RestoredState.bArcActive = SaveState.bArcActive;
+    RestoredState.bArcCompleted = SaveState.bArcCompleted;
+    for (const FName CompletedQuestID : SaveState.CompletedQuestIDs)
+    {
+        RestoredState.CompletedQuestIDs.Add(CompletedQuestID);
+    }
+
+    for (const FVHVQuestDefinition& Definition : QuestArc->Quests)
+    {
+        const FVHVQuestSaveEntry* SavedQuest = SaveState.QuestStates.FindByPredicate([&Definition](const FVHVQuestSaveEntry& Entry)
+        {
+            return Entry.QuestID == Definition.QuestID;
+        });
+        check(SavedQuest);
+
+        FVHVQuestRuntimeState RuntimeQuest;
+        RuntimeQuest.QuestID = SavedQuest->QuestID;
+        RuntimeQuest.Status = SavedQuest->Status;
+        RuntimeQuest.CurrentObjectiveIndex = Definition.Objectives.IndexOfByPredicate([SavedQuest](const FVHVQuestObjectiveDefinition& Objective)
+        {
+            return Objective.ObjectiveID == SavedQuest->CurrentObjectiveID;
+        });
+        if (RuntimeQuest.CurrentObjectiveIndex == INDEX_NONE)
+        {
+            RuntimeQuest.CurrentObjectiveIndex = Definition.Objectives.Num();
+        }
+        for (const FName ObjectiveID : SavedQuest->CompletedObjectiveIDs)
+        {
+            RuntimeQuest.CompletedObjectiveIDs.Add(ObjectiveID);
+        }
+        RestoredState.QuestStates.Add(MoveTemp(RuntimeQuest));
+    }
+
+    RuntimeState = MoveTemp(RestoredState);
+    EnsureStoryStateDelegateBindings();
+    if (TextbookSubsystem)
+    {
+        TextbookSubsystem->SetProgressionMode(RuntimeState.bArcActive
+            ? EVHVTextbookProgressionMode::QuestManaged
+            : EVHVTextbookProgressionMode::InternalTextbook);
+    }
+
+    OnTrackedQuestChanged.Broadcast(RuntimeState.TrackedQuestID);
+    for (const FVHVQuestRuntimeState& QuestState : RuntimeState.QuestStates)
+    {
+        OnQuestUpdated.Broadcast(QuestState.QuestID);
+    }
+    if (!RuntimeState.ActiveQuestID.IsNone())
+    {
+        ActivateCurrentObjective();
+    }
+    return true;
 }
 
 bool UVHVQuestSubsystem::RequestCurrentObjectiveActivation()

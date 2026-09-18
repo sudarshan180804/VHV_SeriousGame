@@ -1,5 +1,6 @@
 #include "Story/Systems/VHVStoryStateSubsystem.h"
 
+#include "Save/VHVSaveTypes.h"
 #include "VHV.h"
 
 bool UVHVStoryStateSubsystem::HasFlag(const FName FlagID) const
@@ -221,4 +222,94 @@ TArray<FName> UVHVStoryStateSubsystem::GetSetFlagIDs() const
 TMap<FName, int32> UVHVStoryStateSubsystem::GetCounterValues() const
 {
     return Counters;
+}
+
+void UVHVStoryStateSubsystem::ExportSaveState(FVHVStoryStateSaveState& OutSaveState) const
+{
+    OutSaveState = FVHVStoryStateSaveState();
+    OutSaveState.SetFlagIDs = SetFlags.Array();
+    OutSaveState.SetFlagIDs.Sort(FNameLexicalLess());
+    OutSaveState.CounterValues = Counters;
+}
+
+bool UVHVStoryStateSubsystem::ValidateSaveState(const FVHVStoryStateSaveState& SaveState) const
+{
+    for (const FName FlagID : SaveState.SetFlagIDs)
+    {
+        if (FlagID.IsNone())
+        {
+            UE_LOG(LogVHV, Error, TEXT("[VHVStoryState] Saved Story State contains an empty Flag ID."));
+            return false;
+        }
+    }
+    for (const TPair<FName, int32>& Counter : SaveState.CounterValues)
+    {
+        if (Counter.Key.IsNone())
+        {
+            UE_LOG(LogVHV, Error, TEXT("[VHVStoryState] Saved Story State contains an empty Counter ID."));
+            return false;
+        }
+    }
+    return true;
+}
+
+bool UVHVStoryStateSubsystem::ImportSaveState(const FVHVStoryStateSaveState& SaveState, const bool bBroadcastChanges)
+{
+    if (!ValidateSaveState(SaveState))
+    {
+        return false;
+    }
+
+    const TSet<FName> PreviousFlags = SetFlags;
+    const TMap<FName, int32> PreviousCounters = Counters;
+    SetFlags.Reset();
+    for (const FName FlagID : SaveState.SetFlagIDs)
+    {
+        SetFlags.Add(FlagID);
+    }
+    Counters = SaveState.CounterValues;
+
+    for (auto It = Counters.CreateIterator(); It; ++It)
+    {
+        if (It.Value() == 0)
+        {
+            It.RemoveCurrent();
+        }
+    }
+
+    if (bBroadcastChanges)
+    {
+        TSet<FName> AllFlagIDs = PreviousFlags;
+        AllFlagIDs.Append(SetFlags);
+        for (const FName FlagID : AllFlagIDs)
+        {
+            const bool bWasSet = PreviousFlags.Contains(FlagID);
+            const bool bIsSet = SetFlags.Contains(FlagID);
+            if (bWasSet != bIsSet)
+            {
+                OnStoryFlagChanged.Broadcast(FlagID, bIsSet);
+            }
+        }
+
+        TSet<FName> AllCounterIDs;
+        for (const TPair<FName, int32>& Counter : PreviousCounters)
+        {
+            AllCounterIDs.Add(Counter.Key);
+        }
+        for (const TPair<FName, int32>& Counter : Counters)
+        {
+            AllCounterIDs.Add(Counter.Key);
+        }
+        for (const FName CounterID : AllCounterIDs)
+        {
+            const int32 PreviousValue = PreviousCounters.FindRef(CounterID);
+            const int32 NewValue = Counters.FindRef(CounterID);
+            if (PreviousValue != NewValue)
+            {
+                OnStoryCounterChanged.Broadcast(CounterID, NewValue);
+            }
+        }
+    }
+
+    return true;
 }

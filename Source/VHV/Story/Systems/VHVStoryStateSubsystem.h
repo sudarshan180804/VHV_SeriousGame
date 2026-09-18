@@ -5,6 +5,8 @@
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "VHVStoryStateSubsystem.generated.h"
 
+struct FVHVStoryStateSaveState;
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnVHVStoryFlagChanged, FName, FlagID, bool, bValue);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnVHVStoryCounterChanged, FName, CounterID, int32, NewValue);
 
@@ -52,6 +54,10 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "VHV|Story State|Debug")
     TMap<FName, int32> GetCounterValues() const;
+
+    void ExportSaveState(FVHVStoryStateSaveState& OutSaveState) const;
+    bool ValidateSaveState(const FVHVStoryStateSaveState& SaveState) const;
+    bool ImportSaveState(const FVHVStoryStateSaveState& SaveState, bool bBroadcastChanges = false);
 
     UPROPERTY(BlueprintAssignable, Category = "VHV|Story State|Events")
     FOnVHVStoryFlagChanged OnStoryFlagChanged;
