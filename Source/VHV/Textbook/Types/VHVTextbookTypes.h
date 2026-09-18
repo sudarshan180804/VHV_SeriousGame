@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
+#include "VHV/Story/Types/VHVStoryStateTypes.h"
 #include "VHVTextbookTypes.generated.h"
 
 // ============================================================
@@ -289,6 +290,16 @@ struct FTextbookActivityData
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Progression")
     bool bRequireCorrectAnswerToAdvance = false;
+
+    // --------------------------------------------------------
+    // Story State Effects
+    // --------------------------------------------------------
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Story State")
+    TArray<FVHVStoryEffect> SuccessEffects;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Story State")
+    TArray<FVHVStoryEffect> FailureEffects;
 };
 
 // ============================================================

@@ -1,9 +1,12 @@
 #include "VHVTextbookSubsystem.h"
 
+#include "VHV/Story/Systems/VHVStoryStateSubsystem.h"
+
 void UVHVTextbookSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
     Super::Initialize(Collection);
 
+    StoryStateSubsystem = Collection.InitializeDependency<UVHVStoryStateSubsystem>();
     CurrentLevelData = nullptr;
     RuntimeState = FTextbookRuntimeState();
     ProgressionMode = EVHVTextbookProgressionMode::InternalTextbook;
@@ -12,6 +15,7 @@ void UVHVTextbookSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 void UVHVTextbookSubsystem::Deinitialize()
 {
     CurrentLevelData = nullptr;
+    StoryStateSubsystem = nullptr;
 
     Super::Deinitialize();
 }
@@ -102,11 +106,17 @@ void UVHVTextbookSubsystem::EnterTeachPhase()
 
 void UVHVTextbookSubsystem::SubmitAnswer(const bool bWasCorrect, const bool bWasPartial)
 {
+    if (!CurrentLevelData || !RuntimeState.bActivityActive || RuntimeState.CurrentPhase != ELearningPhase::Ask)
+    {
+        return;
+    }
+
     RuntimeState.AttemptCount++;
     RuntimeState.bAnswerSubmitted = true;
     RuntimeState.bAnswerCorrect = bWasCorrect;
     RuntimeState.bAnswerPartial = bWasPartial;
 
+    ApplyCurrentActivityResultEffects(bWasCorrect, bWasPartial);
     EnterFeedbackPhase();
 }
 
@@ -232,6 +242,9 @@ bool UVHVTextbookSubsystem::SubmitOrdering(const TArray<FString>& OrderedItemIDs
     RuntimeState.AttemptCount++;
     RuntimeState.bAnswerSubmitted = true;
     RuntimeState.bAnswerCorrect = bCorrect;
+    RuntimeState.bAnswerPartial = false;
+
+    ApplyCurrentActivityResultEffects(bCorrect, false);
 
     if (bCorrect)
     {
@@ -394,6 +407,23 @@ bool UVHVTextbookSubsystem::IsValidMatchingDefinition(const FTextbookActivityDat
         RightTexts.Add(Pair.RightText);
     }
     return true;
+}
+
+void UVHVTextbookSubsystem::ApplyCurrentActivityResultEffects(const bool bWasCorrect, const bool bWasPartial)
+{
+    if (!StoryStateSubsystem || bWasPartial)
+    {
+        return;
+    }
+
+    const FTextbookActivityData CurrentActivity = GetCurrentActivity();
+    if (CurrentActivity.ActivityType == ETextbookActivityType::Observation
+        || CurrentActivity.ActivityType == ETextbookActivityType::DialogueChoice)
+    {
+        return;
+    }
+
+    StoryStateSubsystem->ApplyEffects(bWasCorrect ? CurrentActivity.SuccessEffects : CurrentActivity.FailureEffects);
 }
 
 void UVHVTextbookSubsystem::CompleteCurrentActivity()

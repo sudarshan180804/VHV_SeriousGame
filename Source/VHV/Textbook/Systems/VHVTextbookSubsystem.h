@@ -7,6 +7,8 @@
 #include "VHV/Textbook/Data/VHVLevelData.h"
 #include "VHVTextbookSubsystem.generated.h"
 
+class UVHVStoryStateSubsystem;
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnLearningPhaseChanged, ELearningPhase, NewPhase);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnActivityCompleted);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnTopicCompleted);
@@ -158,6 +160,7 @@ private:
 
     bool IsValidOrderingDefinition(const FTextbookActivityData& Activity) const;
     bool IsValidMatchingDefinition(const FTextbookActivityData& Activity) const;
+    void ApplyCurrentActivityResultEffects(bool bWasCorrect, bool bWasPartial);
 
     // ========================================================
     // CURRICULUM DATA
@@ -175,4 +178,7 @@ private:
 
     UPROPERTY()
     EVHVTextbookProgressionMode ProgressionMode = EVHVTextbookProgressionMode::InternalTextbook;
+
+    UPROPERTY()
+    TObjectPtr<UVHVStoryStateSubsystem> StoryStateSubsystem;
 };

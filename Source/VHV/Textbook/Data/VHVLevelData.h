@@ -12,6 +12,10 @@ class VHV_API UVHVLevelData : public UPrimaryDataAsset
 
 public:
 
+#if WITH_EDITOR
+	virtual EDataValidationResult IsDataValid(class FDataValidationContext& Context) const override;
+#endif
+
 	// ========================================================
 	// LEVEL / UNIT IDENTITY
 	// ========================================================
