@@ -50,10 +50,11 @@ struct VHV_API FDialogueNode
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
     EVHVDialogueNodeType NodeType = EVHVDialogueNodeType::Text;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue", meta = (Categories = "VHV.Participant"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue", meta = (DisplayName = "Speaker", Categories = "VHV.Participant"))
     FGameplayTag SpeakerTag;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue", meta = (AdvancedDisplay, DisplayName = "Speaker ID (Legacy)"))
+    // Legacy serialized fallback. Hidden from authoring; do not remove until old assets are fully migrated.
+    UPROPERTY(BlueprintReadOnly, Category = "Dialogue", meta = (DisplayName = "Speaker ID (Legacy)"))
     FString SpeakerID;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
@@ -71,10 +72,11 @@ struct VHV_API FDialogueNode
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
     bool bIsCheckpoint = false;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue", meta = (Categories = "VHV.Checkpoint", EditCondition = "bIsCheckpoint", EditConditionHides))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue", meta = (DisplayName = "Checkpoint", Categories = "VHV.Checkpoint", EditCondition = "bIsCheckpoint", EditConditionHides))
     FGameplayTag CheckpointTag;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue", meta = (AdvancedDisplay, DisplayName = "Checkpoint ID (Legacy)", EditCondition = "bIsCheckpoint", EditConditionHides))
+    // Legacy serialized fallback. Hidden from authoring; do not remove until old assets are fully migrated.
+    UPROPERTY(BlueprintReadOnly, Category = "Dialogue", meta = (DisplayName = "Checkpoint ID (Legacy)"))
     FString CheckpointID;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Learning")
@@ -128,10 +130,11 @@ struct VHV_API FDialogueLine
 {
     GENERATED_BODY()
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue", meta = (Categories = "VHV.Participant"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue", meta = (DisplayName = "Speaker", Categories = "VHV.Participant"))
     FGameplayTag SpeakerTag;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue", meta = (AdvancedDisplay, DisplayName = "Speaker ID (Legacy)"))
+    // Legacy serialized fallback. Hidden from authoring; do not remove until old assets are fully migrated.
+    UPROPERTY(BlueprintReadOnly, Category = "Dialogue", meta = (DisplayName = "Speaker ID (Legacy)"))
     FString SpeakerID;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")

@@ -12,10 +12,11 @@ struct VHV_API FVHVNPCPresentationAction
 {
     GENERATED_BODY()
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Presentation", meta = (Categories = "VHV.NPCAction"))
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Presentation", meta = (DisplayName = "NPC Action", Categories = "VHV.NPCAction"))
     FGameplayTag ActionTag;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Presentation", meta = (AdvancedDisplay, DisplayName = "Action ID (Legacy)"))
+    // Legacy serialized fallback. Hidden from authoring; do not remove until old assets are fully migrated.
+    UPROPERTY(BlueprintReadOnly, Category = "Presentation", meta = (DisplayName = "Action ID (Legacy)"))
     FName ActionID;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Presentation")

@@ -13,10 +13,11 @@ class VHV_API UVHVQuestParticipantComponent : public UActorComponent
 public:
     UVHVQuestParticipantComponent();
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|Quest", meta = (Categories = "VHV.Participant"))
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|Quest", meta = (DisplayName = "Participant", Categories = "VHV.Participant"))
     FGameplayTag ParticipantTag;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|Quest", meta = (AdvancedDisplay, DisplayName = "Participant ID (Legacy)"))
+    // Legacy serialized fallback. Hidden from authoring; do not remove until old assets are fully migrated.
+    UPROPERTY(BlueprintReadOnly, Category = "VHV|Quest", meta = (DisplayName = "Participant ID (Legacy)"))
     FName ParticipantID;
 
     UFUNCTION(BlueprintPure, Category = "VHV|Quest")

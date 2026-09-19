@@ -29,10 +29,11 @@ struct VHV_API FVHVStoryCondition
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Story State")
     EVHVStoryConditionType ConditionType = EVHVStoryConditionType::FlagSet;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Story State", meta = (Categories = "VHV.Story"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Story State", meta = (DisplayName = "Story State", Categories = "VHV.Story"))
     FGameplayTag StateTag;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Story State", meta = (AdvancedDisplay, DisplayName = "State ID (Legacy)"))
+    // Legacy serialized fallback. Hidden from authoring; do not remove until old assets are fully migrated.
+    UPROPERTY(BlueprintReadOnly, Category = "Story State", meta = (DisplayName = "State ID (Legacy)"))
     FName StateID;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Story State", meta = (EditCondition = "ConditionType == EVHVStoryConditionType::CounterEqual || ConditionType == EVHVStoryConditionType::CounterGreaterOrEqual || ConditionType == EVHVStoryConditionType::CounterLessOrEqual", EditConditionHides))
@@ -76,10 +77,11 @@ struct VHV_API FVHVStoryEffect
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Story State")
     EVHVStoryEffectType EffectType = EVHVStoryEffectType::SetFlag;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Story State", meta = (Categories = "VHV.Story"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Story State", meta = (DisplayName = "Story State", Categories = "VHV.Story"))
     FGameplayTag StateTag;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Story State", meta = (AdvancedDisplay, DisplayName = "State ID (Legacy)"))
+    // Legacy serialized fallback. Hidden from authoring; do not remove until old assets are fully migrated.
+    UPROPERTY(BlueprintReadOnly, Category = "Story State", meta = (DisplayName = "State ID (Legacy)"))
     FName StateID;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Story State", meta = (EditCondition = "EffectType == EVHVStoryEffectType::SetCounter || EffectType == EVHVStoryEffectType::AddCounter", EditConditionHides))

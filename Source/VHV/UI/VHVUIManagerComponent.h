@@ -23,6 +23,7 @@ class UVHVTextbookSubsystem;
 class UVHVQuestSubsystem;
 class UVHVQuestTrackerWidget;
 class UVHVStoryStateSubsystem;
+class UUserWidget;
 struct FVHVDialogueCheckpointSaveState;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnVHVConversationSessionEnded);
@@ -203,6 +204,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "VHV|Textbook")
     bool SubmitObservation();
 
+    /** Routes the existing IA_Interact action to the active modal activity. */
+    bool HandleActivityInteractionInput();
+
 protected:
     UPROPERTY()
     TObjectPtr<UVHVPlayerInteractionComponent> PlayerInteractionComponent;
@@ -253,8 +257,9 @@ protected:
     void AdvanceHint();
     void AdvanceTeach();
     void SetMovementLocked(bool bLocked);
-    void SetQuestionInputState(bool bActive);
-    void SetDialogueInputState(bool bActive);
+    UUserWidget* ResolveModalFocusTarget(EVHVUIState State) const;
+    void ApplyModalInputAndFocus(EVHVUIState State);
+    void FocusModalWidget(EVHVUIState ExpectedState);
     void RestoreGameplayAfterQuestModalIfNeeded();
     void EndConversationSession();
     void CommitCurrentConversationState();

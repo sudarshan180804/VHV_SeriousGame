@@ -142,12 +142,12 @@ void UVHVMatchingWidget::EndConnectionDrag()
 FReply UVHVMatchingWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
 {
     const FKey Key = InKeyEvent.GetKey();
-    if (Key == EKeys::Up || Key == EKeys::Gamepad_DPad_Up || Key == EKeys::Gamepad_LeftStick_Up)
+    if (Key == EKeys::Up || Key == EKeys::W || Key == EKeys::Gamepad_DPad_Up || Key == EKeys::Gamepad_LeftStick_Up)
     {
         MoveFocus(-1);
         return FReply::Handled();
     }
-    if (Key == EKeys::Down || Key == EKeys::Gamepad_DPad_Down || Key == EKeys::Gamepad_LeftStick_Down)
+    if (Key == EKeys::Down || Key == EKeys::S || Key == EKeys::Gamepad_DPad_Down || Key == EKeys::Gamepad_LeftStick_Down)
     {
         MoveFocus(1);
         return FReply::Handled();
@@ -162,9 +162,9 @@ FReply UVHVMatchingWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FK
         SetFocusedColumn(false);
         return FReply::Handled();
     }
-    if (Key == EKeys::SpaceBar || Key == EKeys::E || Key == EKeys::Gamepad_FaceButton_Left)
+    if (Key == EKeys::SpaceBar || Key == EKeys::Gamepad_FaceButton_Left)
     {
-        AssignFocusedRightToFocusedLeft();
+        ActivateFocusedSelection();
         return FReply::Handled();
     }
     if (Key == EKeys::BackSpace || Key == EKeys::Delete || Key == EKeys::Gamepad_FaceButton_Right)
@@ -179,6 +179,17 @@ FReply UVHVMatchingWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FK
     }
 
     return Super::NativeOnKeyDown(InGeometry, InKeyEvent);
+}
+
+bool UVHVMatchingWidget::ActivateFocusedSelection()
+{
+    if (!MatchingPairs.IsValidIndex(FocusedLeftIndex) || !RightDisplayOrder.IsValidIndex(FocusedRightDisplayIndex))
+    {
+        return false;
+    }
+
+    AssignFocusedRightToFocusedLeft();
+    return true;
 }
 
 bool UVHVMatchingWidget::NativeOnDragOver(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)

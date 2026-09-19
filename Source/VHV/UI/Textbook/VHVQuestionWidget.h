@@ -37,7 +37,6 @@ public:
 	UVHVQuestionWidget();
 
 	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
-	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 
 	UFUNCTION(BlueprintCallable, Category = "VHV|Textbook")
 	void SetQuestionData(const FQuestionData& InQuestion);
@@ -57,6 +56,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "VHV|Textbook")
 	TArray<int32> GetSelectedOptionIndices() const;
 
+	/** Applies the activity interaction action to the currently focused option. */
+	bool ActivateFocusedOption();
+
+	/** Uses the existing question text area for a non-destructive invalid-submit response. */
+	void ShowSelectionRequiredFeedback();
+
 	UFUNCTION()
 	void SetOwningUIManager(UVHVUIManagerComponent* InUIManager);
 
@@ -68,6 +73,7 @@ protected:
 	void UpdateSelectionVisuals();
 	void ClearOptionButtons();
 	void ToggleSelectedOption(int32 OptionIndex);
+	void ClearInputFeedback();
 
 	FQuestionData CurrentQuestion;
 	int32 SelectedOptionIndex = INDEX_NONE;

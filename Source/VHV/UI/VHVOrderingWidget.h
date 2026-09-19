@@ -18,6 +18,8 @@ class VHV_API UVHVOrderingWidget : public UVHVUserWidgetBase
     GENERATED_BODY()
 
 public:
+    UVHVOrderingWidget();
+
     UFUNCTION(BlueprintCallable, Category = "VHV|Textbook")
     void SetOrderingItems(const TArray<FOrderingItem>& Items);
 
@@ -42,6 +44,7 @@ public:
     void MoveFocusedCard(int32 Direction);
     void SetFocusedIndex(int32 NewIndex);
     void SetKeyboardReorderMode(bool bReorder);
+    bool ToggleFocusedCardGrab();
     void ClearDragState();
     void SynchronizeCardWidgets();
     void UpdatePositionLabels();

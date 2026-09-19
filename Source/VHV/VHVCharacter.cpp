@@ -6,6 +6,7 @@
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/PlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/Controller.h"
 #include "EnhancedInputComponent.h"
@@ -14,6 +15,7 @@
 
 #include "VHV.h"
 #include "VHV/Player/Components/VHVPlayerInteractionComponent.h"
+#include "VHV/UI/VHVUIManagerComponent.h"
 
 AVHVCharacter::AVHVCharacter()
 {
@@ -200,6 +202,17 @@ void AVHVCharacter::DoJumpEnd()
 
 void AVHVCharacter::Interact()
 {
+	if (const APlayerController* PlayerController = Cast<APlayerController>(GetController()))
+	{
+		if (UVHVUIManagerComponent* UIManager = PlayerController->FindComponentByClass<UVHVUIManagerComponent>())
+		{
+			if (UIManager->HandleActivityInteractionInput())
+			{
+				return;
+			}
+		}
+	}
+
 	UE_LOG(
 		LogVHV,
 		Warning,

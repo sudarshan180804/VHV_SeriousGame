@@ -15,10 +15,11 @@ class VHV_API AVHVNPCBehaviorTarget : public AActor
 public:
 	AVHVNPCBehaviorTarget();
 
-	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "VHV|NPC|Quest", meta = (Categories = "VHV.BehaviorTarget"))
+	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "VHV|NPC|Quest", meta = (DisplayName = "Behavior Target", Categories = "VHV.BehaviorTarget"))
 	FGameplayTag TargetTag;
 
-	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "VHV|NPC|Quest", meta = (AdvancedDisplay, DisplayName = "Target ID (Legacy)"))
+	// Legacy serialized fallback. Hidden from authoring; do not remove until old assets are fully migrated.
+	UPROPERTY(BlueprintReadOnly, Category = "VHV|NPC|Quest", meta = (DisplayName = "Target ID (Legacy)"))
 	FName TargetID;
 
 	UFUNCTION(BlueprintPure, Category = "VHV|NPC|Quest")

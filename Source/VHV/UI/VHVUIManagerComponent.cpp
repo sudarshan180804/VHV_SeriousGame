@@ -18,7 +18,9 @@
 #include "Components/SizeBoxSlot.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Components/GridSlot.h"
+#include "Blueprint/UserWidget.h"
 #include "Engine/AssetManager.h"
+#include "TimerManager.h"
 #include "Textbook/Systems/VHVTextbookSubsystem.h"
 #include "Player/Components/VHVPlayerInteractionComponent.h"
 #include "Player/Components/VHVInteractionComponent.h"
@@ -542,32 +544,63 @@ void UVHVUIManagerComponent::EnsureMatchingWidget()
     }
 }
 
-void UVHVUIManagerComponent::SetQuestionInputState(bool bActive)
+UUserWidget* UVHVUIManagerComponent::ResolveModalFocusTarget(const EVHVUIState State) const
 {
-    APlayerController* PC = Cast<APlayerController>(GetOwner());
-    if (!PC)
+    if (State == EVHVUIState::Dialogue)
     {
-        return;
+        return DialogueWidget;
     }
 
-    if (bActive)
+    if (State == EVHVUIState::LearningFeedback || State == EVHVUIState::LearningHint)
     {
-        FInputModeGameAndUI InputMode;
-        InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-        PC->SetInputMode(InputMode);
-        PC->bShowMouseCursor = true;
-        SetMovementLocked(true);
+        return FeedbackWidget;
     }
-    else
+
+    if (State == EVHVUIState::LearningTeach)
     {
-        FInputModeGameOnly InputMode;
-        PC->SetInputMode(InputMode);
-        PC->bShowMouseCursor = false;
-        SetMovementLocked(false);
+        return TeachWidget;
+    }
+
+    if (State != EVHVUIState::LearningAsk || !TextbookSubsystem || !TextbookSubsystem->IsActivityActive())
+    {
+        return QuestionWidget;
+    }
+
+    switch (TextbookSubsystem->GetCurrentActivity().ActivityType)
+    {
+    case ETextbookActivityType::Ordering:
+        return OrderingWidget;
+    case ETextbookActivityType::Matching:
+        return MatchingWidget;
+    case ETextbookActivityType::Observation:
+        return ObservationWidget;
+    case ETextbookActivityType::DialogueChoice:
+        return DialogueWidget;
+    default:
+        return QuestionWidget;
     }
 }
 
-void UVHVUIManagerComponent::SetDialogueInputState(bool bActive)
+void UVHVUIManagerComponent::FocusModalWidget(const EVHVUIState ExpectedState)
+{
+    if (CurrentUIState != ExpectedState)
+    {
+        return;
+    }
+
+    APlayerController* PC = Cast<APlayerController>(GetOwner());
+    UUserWidget* FocusTarget = ResolveModalFocusTarget(ExpectedState);
+    if (!PC || !FocusTarget || FocusTarget->GetVisibility() == ESlateVisibility::Collapsed)
+    {
+        return;
+    }
+
+    FocusTarget->SetIsFocusable(true);
+    FocusTarget->SetUserFocus(PC);
+    FocusTarget->SetKeyboardFocus();
+}
+
+void UVHVUIManagerComponent::ApplyModalInputAndFocus(const EVHVUIState State)
 {
     APlayerController* PC = Cast<APlayerController>(GetOwner());
     if (!PC)
@@ -575,20 +608,30 @@ void UVHVUIManagerComponent::SetDialogueInputState(bool bActive)
         return;
     }
 
-    if (bActive)
+    UUserWidget* FocusTarget = ResolveModalFocusTarget(State);
+    FInputModeGameAndUI InputMode;
+    InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+    InputMode.SetHideCursorDuringCapture(false);
+    if (FocusTarget)
     {
-        FInputModeGameAndUI InputMode;
-        InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-        PC->SetInputMode(InputMode);
-        PC->bShowMouseCursor = true;
-        SetMovementLocked(true);
+        FocusTarget->SetIsFocusable(true);
+        InputMode.SetWidgetToFocus(FocusTarget->TakeWidget());
     }
-    else
+    PC->SetInputMode(InputMode);
+    PC->bShowMouseCursor = true;
+    SetMovementLocked(true);
+    FocusModalWidget(State);
+
+    // Newly shown or repopulated widgets finish their Slate focus path on the
+    // next tick. Reassert focus then so consecutive quest activities cannot
+    // retain a stale path to the previous modal.
+    if (UWorld* World = GetWorld())
     {
-        FInputModeGameOnly InputMode;
-        PC->SetInputMode(InputMode);
-        PC->bShowMouseCursor = false;
-        SetMovementLocked(false);
+        World->GetTimerManager().SetTimerForNextTick(
+            FTimerDelegate::CreateWeakLambda(this, [this, State]()
+            {
+                FocusModalWidget(State);
+            }));
     }
 }
 
@@ -667,30 +710,11 @@ void UVHVUIManagerComponent::ApplyUIState(EVHVUIState NewState)
     case EVHVUIState::LearningFeedback:
     case EVHVUIState::LearningTeach:
     {
-        FInputModeGameAndUI InputMode;
-        PC->SetInputMode(InputMode);
-        PC->bShowMouseCursor = true;
-        SetMovementLocked(true);
+        ApplyModalInputAndFocus(NewState);
         if (MainHUD)
         {
             MainHUD->SetInteractionPromptVisible(false);
         }
-        if (NewState == EVHVUIState::LearningAsk && ObservationWidget && TextbookSubsystem && TextbookSubsystem->IsActivityActive() && TextbookSubsystem->GetCurrentActivity().ActivityType == ETextbookActivityType::Observation)
-        {
-            ObservationWidget->SetIsFocusable(true);
-            ObservationWidget->SetKeyboardFocus();
-        }
-        else if (NewState == EVHVUIState::LearningAsk && QuestionWidget)
-        {
-            QuestionWidget->SetIsFocusable(true);
-            QuestionWidget->SetKeyboardFocus();
-        }
-        else if (NewState == EVHVUIState::LearningAsk && MatchingWidget)
-        {
-            MatchingWidget->SetIsFocusable(true);
-            MatchingWidget->SetKeyboardFocus();
-        }
-
         break;
     }
     default:
@@ -755,7 +779,6 @@ void UVHVUIManagerComponent::RefreshCurrentAskQuestionUI()
             }
             ObservationWidget->SetVisibility(ESlateVisibility::Visible);
             ObservationWidget->SetIsFocusable(true);
-            ObservationWidget->SetKeyboardFocus();
         }
 
         HideQuestionUI();
@@ -784,7 +807,6 @@ void UVHVUIManagerComponent::RefreshCurrentAskQuestionUI()
             }
             OrderingWidget->SetVisibility(ESlateVisibility::Visible);
             OrderingWidget->SetIsFocusable(true);
-            OrderingWidget->SetKeyboardFocus();
         }
 
         if (QuestionWidget)
@@ -824,7 +846,6 @@ void UVHVUIManagerComponent::RefreshCurrentAskQuestionUI()
             }
             MatchingWidget->SetVisibility(ESlateVisibility::Visible);
             MatchingWidget->SetIsFocusable(true);
-            MatchingWidget->SetKeyboardFocus();
         }
         HideQuestionUI();
         HideOrderingUI();
@@ -1107,7 +1128,7 @@ void UVHVUIManagerComponent::AdvanceTeach()
     HideTeachUI();
     if (bQuestManaged && CurrentUIState == EVHVUIState::LearningTeach && !TextbookSubsystem->IsActivityActive())
     {
-        ApplyUIState(EVHVUIState::Gameplay);
+        RestoreGameplayAfterQuestModalIfNeeded();
     }
     RefreshInteractionPrompt();
 }
@@ -1353,7 +1374,7 @@ bool UVHVUIManagerComponent::StartLinkedLearningActivity(const FTextbookActivity
 
 bool UVHVUIManagerComponent::TrySubmitCurrentQuestionAnswer()
 {
-    if (!TextbookSubsystem || TextbookSubsystem->GetCurrentPhase() != ELearningPhase::Ask || !QuestionWidget || !QuestionWidget->HasSelection())
+    if (!TextbookSubsystem || TextbookSubsystem->GetCurrentPhase() != ELearningPhase::Ask || !QuestionWidget)
     {
         return false;
     }
@@ -1361,6 +1382,12 @@ bool UVHVUIManagerComponent::TrySubmitCurrentQuestionAnswer()
     const FTextbookActivityData CurrentActivity = TextbookSubsystem->GetCurrentActivity();
     if (CurrentActivity.ActivityType == ETextbookActivityType::MultiChoice)
     {
+        if (!QuestionWidget->HasSelection())
+        {
+            QuestionWidget->ShowSelectionRequiredFeedback();
+            FocusModalWidget(EVHVUIState::LearningAsk);
+            return false;
+        }
         return TextbookSubsystem->SubmitMultiChoice(QuestionWidget->GetSelectedOptionIndices());
     }
 
@@ -1372,6 +1399,44 @@ bool UVHVUIManagerComponent::TrySubmitCurrentQuestionAnswer()
 
     const bool bWasCorrect = CurrentActivity.Question.Options[SelectedIndex].bIsCorrect;
     TextbookSubsystem->SubmitAnswer(bWasCorrect);
+    return true;
+}
+
+bool UVHVUIManagerComponent::HandleActivityInteractionInput()
+{
+    if (CurrentUIState != EVHVUIState::LearningAsk || !TextbookSubsystem ||
+        TextbookSubsystem->GetCurrentPhase() != ELearningPhase::Ask || !TextbookSubsystem->IsActivityActive())
+    {
+        return false;
+    }
+
+    switch (TextbookSubsystem->GetCurrentActivity().ActivityType)
+    {
+    case ETextbookActivityType::SingleChoice:
+    case ETextbookActivityType::MultiChoice:
+        if (QuestionWidget)
+        {
+            QuestionWidget->ActivateFocusedOption();
+        }
+        break;
+    case ETextbookActivityType::Ordering:
+        if (OrderingWidget)
+        {
+            OrderingWidget->ToggleFocusedCardGrab();
+        }
+        break;
+    case ETextbookActivityType::Matching:
+        if (MatchingWidget)
+        {
+            MatchingWidget->ActivateFocusedSelection();
+        }
+        break;
+    default:
+        break;
+    }
+
+    // LearningAsk owns interaction while modal, including activities without a
+    // select operation, so this press cannot also activate a world target.
     return true;
 }
 

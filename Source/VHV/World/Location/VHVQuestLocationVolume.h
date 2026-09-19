@@ -46,10 +46,11 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VHV|Location")
     TObjectPtr<UBoxComponent> BoxComponent;
 
-    UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "VHV|Location", meta = (Categories = "VHV.Location"))
+    UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "VHV|Location", meta = (DisplayName = "Location", Categories = "VHV.Location"))
     FGameplayTag LocationTag;
 
-    UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "VHV|Location", meta = (AdvancedDisplay, DisplayName = "Location ID (Legacy)"))
+    // Legacy serialized fallback. Hidden from authoring; do not remove until old assets are fully migrated.
+    UPROPERTY(BlueprintReadOnly, Category = "VHV|Location", meta = (DisplayName = "Location ID (Legacy)"))
     FName LocationID;
 
     UFUNCTION(BlueprintPure, Category = "VHV|Location")

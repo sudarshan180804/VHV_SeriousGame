@@ -41,10 +41,11 @@ struct FTextbookActivityReference
 {
     GENERATED_BODY()
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Textbook Reference", meta = (Categories = "VHV.Activity"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Textbook Reference", meta = (DisplayName = "Activity", Categories = "VHV.Activity"))
     FGameplayTag ActivityTag;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Textbook Reference", meta = (AdvancedDisplay, DisplayName = "Activity ID (Legacy)"))
+    // Legacy serialized fallback. Hidden from authoring; do not remove until old assets are fully migrated.
+    UPROPERTY(BlueprintReadOnly, Category = "Textbook Reference", meta = (DisplayName = "Activity ID (Legacy)"))
     FString ActivityID;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Textbook Reference")
@@ -216,10 +217,11 @@ struct FTextbookActivityData
 {
     GENERATED_BODY()
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Activity", meta = (Categories = "VHV.Activity"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Activity", meta = (DisplayName = "Activity", Categories = "VHV.Activity"))
     FGameplayTag ActivityTag;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Activity", meta = (AdvancedDisplay, DisplayName = "Activity ID (Legacy)"))
+    // Legacy serialized fallback. Hidden from authoring; do not remove until old assets are fully migrated.
+    UPROPERTY(BlueprintReadOnly, Category = "Activity", meta = (DisplayName = "Activity ID (Legacy)"))
     FString ActivityID;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Activity")

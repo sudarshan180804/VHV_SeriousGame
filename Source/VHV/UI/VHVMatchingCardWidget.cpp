@@ -103,12 +103,26 @@ void UVHVMatchingCardWidget::SetVisualState(const bool bIsFocused, const bool bI
 
 FReply UVHVMatchingCardWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
-    if (InMouseEvent.IsMouseButtonDown(EKeys::LeftMouseButton) && OwningMatchingWidget && bIsLeftColumn)
+    if (InMouseEvent.IsMouseButtonDown(EKeys::LeftMouseButton) && OwningMatchingWidget)
     {
-        return FReply::Handled().DetectDrag(TakeWidget(), EKeys::LeftMouseButton);
+        return bIsLeftColumn
+            ? FReply::Handled().DetectDrag(TakeWidget(), EKeys::LeftMouseButton)
+            : FReply::Handled();
     }
 
     return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
+}
+
+FReply UVHVMatchingCardWidget::NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+    if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton && OwningMatchingWidget)
+    {
+        OwningMatchingWidget->HandleCardSelected(bIsLeftColumn, ItemIndex);
+        OwningMatchingWidget->SetKeyboardFocus();
+        return FReply::Handled();
+    }
+
+    return Super::NativeOnMouseButtonUp(InGeometry, InMouseEvent);
 }
 
 void UVHVMatchingCardWidget::NativeOnDragDetected(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent, UDragDropOperation*& OutOperation)

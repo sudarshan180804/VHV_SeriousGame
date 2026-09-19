@@ -29,6 +29,7 @@ public:
     TArray<FMatchingPair> GetCurrentMatches() const;
 
     void HandleCardSelected(bool bIsLeftColumn, int32 ItemIndex);
+    bool ActivateFocusedSelection();
     void BeginConnectionDrag(int32 LeftIndex, const FVector2D& ScreenPosition);
     void UpdateConnectionDrag(const FVector2D& ScreenPosition, int32 HoveredRightIndex = INDEX_NONE);
     void CommitConnectionDrag(int32 RightDisplayIndex);

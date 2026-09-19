@@ -7,6 +7,37 @@
 #include "Components/HorizontalBox.h"
 #include "Components/VerticalBox.h"
 #include "Components/TextBlock.h"
+#include "InputCoreTypes.h"
+
+UVHVDialogueWidget::UVHVDialogueWidget()
+{
+    SetIsFocusable(true);
+}
+
+FReply UVHVDialogueWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
+{
+    const FKey Key = InKeyEvent.GetKey();
+    if (Key == EKeys::Up || Key == EKeys::W || Key == EKeys::Gamepad_DPad_Up || Key == EKeys::Gamepad_LeftStick_Up)
+    {
+        SelectPreviousChoice();
+        return FReply::Handled();
+    }
+    if (Key == EKeys::Down || Key == EKeys::S || Key == EKeys::Gamepad_DPad_Down || Key == EKeys::Gamepad_LeftStick_Down)
+    {
+        SelectNextChoice();
+        return FReply::Handled();
+    }
+    if (Key == EKeys::Enter || Key == EKeys::SpaceBar || Key == EKeys::Gamepad_FaceButton_Bottom)
+    {
+        if (OwningUIManager)
+        {
+            OwningUIManager->AdvanceConversation();
+        }
+        return FReply::Handled();
+    }
+
+    return Super::NativeOnKeyDown(InGeometry, InKeyEvent);
+}
 
 void UVHVDialogueWidget::SetOwningUIManager(UVHVUIManagerComponent* InUIManager)
 {

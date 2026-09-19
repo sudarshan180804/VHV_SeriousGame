@@ -8,6 +8,11 @@
 #include "Framework/Application/SlateApplication.h"
 #include "InputCoreTypes.h"
 
+UVHVOrderingWidget::UVHVOrderingWidget()
+{
+    SetIsFocusable(true);
+}
+
 void UVHVOrderingWidget::SetOrderingItems(const TArray<FOrderingItem>& Items)
 {
     SourceItems = Items;
@@ -72,29 +77,13 @@ FReply UVHVOrderingWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FK
 {
     const FKey Key = InKeyEvent.GetKey();
 
-    if (Key == EKeys::E)
+    if (Key == EKeys::SpaceBar || Key == EKeys::Gamepad_FaceButton_Left)
     {
-        if (CurrentOrder.Num() == 0 || FocusedIndex == INDEX_NONE)
-        {
-            return FReply::Handled();
-        }
-
-        if (bKeyboardReorderMode)
-        {
-            bKeyboardReorderMode = false;
-            UpdateSelectionVisuals();
-            UE_LOG(LogTemp, Warning, TEXT("[VHVOrdering] Release Grab ItemID=%s"), *FocusedItemID);
-            return FReply::Handled();
-        }
-
-        bKeyboardReorderMode = true;
-        KeyboardReorderIndex = FocusedIndex;
-        UpdateSelectionVisuals();
-        UE_LOG(LogTemp, Warning, TEXT("[VHVOrdering] Grab ItemID=%s"), *FocusedItemID);
+        ToggleFocusedCardGrab();
         return FReply::Handled();
     }
 
-    if (Key == EKeys::Up)
+    if (Key == EKeys::Up || Key == EKeys::W || Key == EKeys::Gamepad_DPad_Up || Key == EKeys::Gamepad_LeftStick_Up)
     {
         if (CurrentOrder.Num() == 0)
         {
@@ -123,7 +112,7 @@ FReply UVHVOrderingWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FK
         return FReply::Handled();
     }
 
-    if (Key == EKeys::Down)
+    if (Key == EKeys::Down || Key == EKeys::S || Key == EKeys::Gamepad_DPad_Down || Key == EKeys::Gamepad_LeftStick_Down)
     {
         if (CurrentOrder.Num() == 0)
         {
@@ -163,6 +152,21 @@ FReply UVHVOrderingWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FK
     }
 
     return Super::NativeOnKeyDown(InGeometry, InKeyEvent);
+}
+
+bool UVHVOrderingWidget::ToggleFocusedCardGrab()
+{
+    if (CurrentOrder.Num() == 0 || FocusedIndex == INDEX_NONE)
+    {
+        return false;
+    }
+
+    if (!bKeyboardReorderMode)
+    {
+        KeyboardReorderIndex = FocusedIndex;
+    }
+    SetKeyboardReorderMode(!bKeyboardReorderMode);
+    return true;
 }
 
 bool UVHVOrderingWidget::NativeOnDragOver(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)

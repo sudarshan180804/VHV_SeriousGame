@@ -16,10 +16,11 @@ class VHV_API UVHVWorldActionReceiverComponent : public UActorComponent
 public:
     UVHVWorldActionReceiverComponent();
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|World Action", meta = (Categories = "VHV.WorldReceiver"))
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|World Action", meta = (DisplayName = "World Receiver", Categories = "VHV.WorldReceiver"))
     FGameplayTag ReceiverTag;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|World Action", meta = (AdvancedDisplay, DisplayName = "Receiver ID (Legacy)"))
+    // Legacy serialized fallback. Hidden from authoring; do not remove until old assets are fully migrated.
+    UPROPERTY(BlueprintReadOnly, Category = "VHV|World Action", meta = (DisplayName = "Receiver ID (Legacy)"))
     FName ReceiverID;
 
     UFUNCTION(BlueprintPure, Category = "VHV|World Action")

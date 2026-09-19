@@ -11,25 +11,6 @@ void UVHVQuestionWidget::SetOwningUIManager(UVHVUIManagerComponent* InUIManager)
     OwningUIManager = InUIManager;
 }
 
-FReply UVHVQuestionWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
-{
-    if (OwningUIManager && CurrentQuestion.Options.Num() > 0)
-    {
-        const int32 HitIndex = OptionButtons.IndexOfByPredicate([&](const UButton* Button)
-        {
-            return Button && Button->IsHovered();
-        });
-
-        if (HitIndex != INDEX_NONE)
-        {
-            HandleOptionSelected(HitIndex);
-            return FReply::Handled();
-        }
-    }
-
-    return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
-}
-
 void UVHVQuestionOptionButtonProxy::OnOptionClicked()
 {
     if (OwnerWidget)
@@ -95,7 +76,7 @@ FReply UVHVQuestionWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FK
     }
 
     const FKey Key = InKeyEvent.GetKey();
-    if (Key == EKeys::Up || Key == EKeys::Gamepad_DPad_Up || Key == EKeys::Gamepad_LeftStick_Up)
+    if (Key == EKeys::Up || Key == EKeys::W || Key == EKeys::Gamepad_DPad_Up || Key == EKeys::Gamepad_LeftStick_Up)
     {
         if (SelectedOptionIndex == INDEX_NONE)
         {
@@ -109,7 +90,7 @@ FReply UVHVQuestionWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FK
         return FReply::Handled();
     }
 
-    if (Key == EKeys::Down || Key == EKeys::Gamepad_DPad_Down || Key == EKeys::Gamepad_LeftStick_Down)
+    if (Key == EKeys::Down || Key == EKeys::S || Key == EKeys::Gamepad_DPad_Down || Key == EKeys::Gamepad_LeftStick_Down)
     {
         if (SelectedOptionIndex == INDEX_NONE)
         {
@@ -156,6 +137,7 @@ void UVHVQuestionWidget::SetSelectedOptionIndex(int32 Index)
     }
 
     SelectedOptionIndex = Index;
+    ClearInputFeedback();
     UpdateSelectionVisuals();
 }
 
@@ -176,6 +158,17 @@ TArray<int32> UVHVQuestionWidget::GetSelectedOptionIndices() const
     return Result;
 }
 
+bool UVHVQuestionWidget::ActivateFocusedOption()
+{
+    if (!CurrentQuestion.Options.IsValidIndex(SelectedOptionIndex))
+    {
+        return false;
+    }
+
+    HandleOptionSelected(SelectedOptionIndex);
+    return true;
+}
+
 void UVHVQuestionWidget::HandleOptionSelected(int32 OptionIndex)
 {
     if (!CurrentQuestion.Options.IsValidIndex(OptionIndex))
@@ -186,14 +179,14 @@ void UVHVQuestionWidget::HandleOptionSelected(int32 OptionIndex)
     if (bMultiChoiceEnabled)
     {
         ToggleSelectedOption(OptionIndex);
-        return;
+    }
+    else
+    {
+        // Mouse and keyboard use the same two-step select/confirm path.
+        SetSelectedOptionIndex(OptionIndex);
     }
 
-    SetSelectedOptionIndex(OptionIndex);
-    if (OwningUIManager)
-    {
-        OwningUIManager->TrySubmitCurrentQuestionAnswer();
-    }
+    SetKeyboardFocus();
 }
 
 void UVHVQuestionWidget::ToggleSelectedOption(int32 OptionIndex)
@@ -204,6 +197,7 @@ void UVHVQuestionWidget::ToggleSelectedOption(int32 OptionIndex)
     }
 
     SelectedOptionIndex = OptionIndex;
+    ClearInputFeedback();
     if (SelectedOptionIndices.Contains(OptionIndex))
     {
         SelectedOptionIndices.Remove(OptionIndex);
@@ -215,6 +209,24 @@ void UVHVQuestionWidget::ToggleSelectedOption(int32 OptionIndex)
 
     UE_LOG(LogTemp, Log, TEXT("[VHVTextbook] MultiChoice selected OptionIndex=%d Selected=%s"), OptionIndex, SelectedOptionIndices.Contains(OptionIndex) ? TEXT("true") : TEXT("false"));
     UpdateSelectionVisuals();
+}
+
+void UVHVQuestionWidget::ShowSelectionRequiredFeedback()
+{
+    if (QuestionText)
+    {
+        QuestionText->SetText(FText::FromString(FString::Printf(
+            TEXT("%s\nSelect at least one option before submitting."),
+            *CurrentQuestion.QuestionText)));
+    }
+}
+
+void UVHVQuestionWidget::ClearInputFeedback()
+{
+    if (QuestionText)
+    {
+        QuestionText->SetText(FText::FromString(CurrentQuestion.QuestionText));
+    }
 }
 
 void UVHVQuestionWidget::UpdateSelectionVisuals()

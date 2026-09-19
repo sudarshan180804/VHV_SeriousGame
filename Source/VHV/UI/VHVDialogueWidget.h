@@ -15,6 +15,9 @@ class VHV_API UVHVDialogueWidget : public UVHVUserWidgetBase
     GENERATED_BODY()
 
 public:
+    UVHVDialogueWidget();
+
+    virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
     virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 
     UFUNCTION(BlueprintCallable, Category = "VHV|UI")
