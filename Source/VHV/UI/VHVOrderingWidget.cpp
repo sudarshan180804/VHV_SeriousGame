@@ -1,16 +1,267 @@
 #include "UI/VHVOrderingWidget.h"
 
-#include "Layout/Geometry.h"
+#include "UI/Textbook/VHVActivityUIStyle.h"
 #include "UI/VHVOrderingCardWidget.h"
 #include "UI/VHVUIManagerComponent.h"
 #include "Blueprint/DragDropOperation.h"
-#include "Components/VerticalBoxSlot.h"
-#include "Framework/Application/SlateApplication.h"
+#include "Engine/Texture2D.h"
 #include "InputCoreTypes.h"
+#include "UObject/ConstructorHelpers.h"
+#include "Widgets/Images/SImage.h"
+#include "Widgets/Input/SButton.h"
+#include "Widgets/Layout/SBorder.h"
+#include "Widgets/Layout/SBox.h"
+#include "Widgets/Layout/SConstraintCanvas.h"
+#include "Widgets/Layout/SScaleBox.h"
+#include "Widgets/SBoxPanel.h"
+#include "Widgets/SOverlay.h"
+#include "Widgets/Text/STextBlock.h"
 
 UVHVOrderingWidget::UVHVOrderingWidget()
 {
     SetIsFocusable(true);
+
+    static ConstructorHelpers::FObjectFinder<UTexture2D> BackgroundFinder(
+        TEXT("/Game/VHV_Stuff/UI/Backgrounds/T_BG_OrderingVillage.T_BG_OrderingVillage"));
+    if (BackgroundFinder.Succeeded())
+    {
+        OrderingBackgroundTexture = BackgroundFinder.Object;
+    }
+}
+
+TSharedRef<SWidget> UVHVOrderingWidget::RebuildWidget()
+{
+    BackgroundBrush.DrawAs = ESlateBrushDrawType::Image;
+    BackgroundBrush.SetResourceObject(OrderingBackgroundTexture);
+    if (OrderingBackgroundTexture)
+    {
+        BackgroundBrush.SetImageSize(FVector2D(
+            OrderingBackgroundTexture->GetSizeX(), OrderingBackgroundTexture->GetSizeY()));
+    }
+    BackgroundShadeBrush = VHVActivityUIStyle::RoundedBrush(FLinearColor(0.0f, 0.0f, 0.0f, 0.12f), 0.0f);
+    HeaderDividerBrush = VHVActivityUIStyle::RoundedBrush(VHVActivityUIStyle::DividerGold(), 1.0f);
+    KeycapBrush = VHVActivityUIStyle::RoundedBrush(
+        VHVActivityUIStyle::FromSRGB(29, 34, 38, 145), 6.0f,
+        VHVActivityUIStyle::BorderNeutral(), VHVActivityUIStyle::BorderNormalWidth);
+
+    ConfirmButtonStyle = FButtonStyle()
+        .SetNormal(VHVActivityUIStyle::RoundedBrush(
+            VHVActivityUIStyle::GlassSelected(), 28.0f,
+            VHVActivityUIStyle::BorderGold(), VHVActivityUIStyle::BorderSelectedWidth))
+        .SetHovered(VHVActivityUIStyle::RoundedBrush(
+            VHVActivityUIStyle::FromSRGB(52, 44, 31, 184), 28.0f,
+            VHVActivityUIStyle::GoldSelected(), VHVActivityUIStyle::BorderSelectedWidth))
+        .SetPressed(VHVActivityUIStyle::RoundedBrush(
+            VHVActivityUIStyle::GlassFocused(), 28.0f,
+            VHVActivityUIStyle::BorderGold(), VHVActivityUIStyle::BorderSelectedWidth))
+        .SetDisabled(VHVActivityUIStyle::RoundedBrush(
+            VHVActivityUIStyle::GlassCard(), 28.0f,
+            VHVActivityUIStyle::BorderNeutral(), VHVActivityUIStyle::BorderNormalWidth))
+        .SetNormalPadding(FMargin(0.0f))
+        .SetPressedPadding(FMargin(1.0f, 2.0f, 0.0f, 0.0f));
+
+    const auto MakeKeycap = [this](const TCHAR* KeyText) -> TSharedRef<SWidget>
+    {
+        return SNew(SBorder)
+            .BorderImage(&KeycapBrush)
+            .Padding(FMargin(8.0f, 3.0f))
+            [
+                SNew(STextBlock)
+                .Font(VHVActivityUIStyle::MediumFont(13))
+                .ColorAndOpacity(VHVActivityUIStyle::TextPrimary())
+                .Text(FText::FromString(KeyText))
+            ];
+    };
+
+    TSharedRef<SWidget> Result =
+        SNew(SOverlay)
+        + SOverlay::Slot()
+        [
+            SNew(SScaleBox)
+            .Stretch(EStretch::ScaleToFill)
+            .Clipping(EWidgetClipping::ClipToBounds)
+            [
+                SNew(SImage)
+                .Image(&BackgroundBrush)
+            ]
+        ]
+        + SOverlay::Slot()
+        [
+            SNew(SBorder)
+            .BorderImage(&BackgroundShadeBrush)
+        ]
+        + SOverlay::Slot()
+        [
+            SNew(SConstraintCanvas)
+            + SConstraintCanvas::Slot()
+            .Anchors(FAnchors(0.18f, 0.085f, 0.82f, 0.285f))
+            .Offset(FMargin(0.0f))
+            [
+                SNew(SVerticalBox)
+                + SVerticalBox::Slot()
+                .AutoHeight()
+                .HAlign(HAlign_Center)
+                [
+                    SNew(STextBlock)
+                    .Font(VHVActivityUIStyle::MediumFont(VHVActivityUIStyle::HeaderFontSize))
+                    .ColorAndOpacity(VHVActivityUIStyle::HeaderGold())
+                    .ShadowOffset(FVector2D(1.0f, 2.0f))
+                    .ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.55f))
+                    .Text(FText::FromString(TEXT("ORDERING")))
+                ]
+                + SVerticalBox::Slot()
+                .AutoHeight()
+                .HAlign(HAlign_Center)
+                .Padding(FMargin(0.0f, 9.0f, 0.0f, 18.0f))
+                [
+                    SNew(SBox)
+                    .WidthOverride(VHVActivityUIStyle::HeaderDividerWidth)
+                    .HeightOverride(VHVActivityUIStyle::HeaderDividerHeight)
+                    [
+                        SNew(SBorder)
+                        .BorderImage(&HeaderDividerBrush)
+                    ]
+                ]
+                + SVerticalBox::Slot()
+                .AutoHeight()
+                .HAlign(HAlign_Center)
+                [
+                    SNew(STextBlock)
+                    .Font(VHVActivityUIStyle::MediumFont(VHVActivityUIStyle::OrderingTitleFontSize))
+                    .ColorAndOpacity(VHVActivityUIStyle::TextPrimary())
+                    .Justification(ETextJustify::Center)
+                    .ShadowOffset(FVector2D(1.0f, 2.0f))
+                    .ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.62f))
+                    .Text(FText::FromString(TEXT("Put the steps in the correct order")))
+                ]
+                + SVerticalBox::Slot()
+                .AutoHeight()
+                .HAlign(HAlign_Center)
+                .Padding(FMargin(0.0f, 12.0f, 0.0f, 0.0f))
+                [
+                    SNew(STextBlock)
+                    .Font(VHVActivityUIStyle::RegularFont(VHVActivityUIStyle::InstructionFontSize))
+                    .ColorAndOpacity(VHVActivityUIStyle::TextSecondary())
+                    .Justification(ETextJustify::Center)
+                    .ShadowOffset(FVector2D(1.0f, 1.0f))
+                    .ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.55f))
+                    .Text(FText::FromString(TEXT("Drag the cards left or right to arrange them.")))
+                ]
+            ]
+            + SConstraintCanvas::Slot()
+            .Anchors(FAnchors(0.05f, 0.315f, 0.95f, 0.755f))
+            .Offset(FMargin(0.0f))
+            [
+                SNew(SScaleBox)
+                .Stretch(EStretch::ScaleToFit)
+                .StretchDirection(EStretchDirection::DownOnly)
+                [
+                    SAssignNew(CardsSlateContainer, SHorizontalBox)
+                ]
+            ]
+            + SConstraintCanvas::Slot()
+            .Anchors(FAnchors(0.32f, 0.775f, 0.68f, 0.82f))
+            .Offset(FMargin(0.0f))
+            [
+                SAssignNew(SubmitHintSlate, STextBlock)
+                .Font(VHVActivityUIStyle::RegularFont(15))
+                .ColorAndOpacity(VHVActivityUIStyle::TextSecondary())
+                .Justification(ETextJustify::Center)
+            ]
+            + SConstraintCanvas::Slot()
+            .Anchors(FAnchors(0.44f, 0.855f, 0.79f, 0.915f))
+            .Offset(FMargin(0.0f))
+            [
+                SNew(SHorizontalBox)
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .VAlign(VAlign_Center)
+                [
+                    MakeKeycap(TEXT("E"))
+                ]
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .VAlign(VAlign_Center)
+                .Padding(FMargin(7.0f, 0.0f, 20.0f, 0.0f))
+                [
+                    SNew(STextBlock)
+                    .Font(VHVActivityUIStyle::RegularFont(14))
+                    .ColorAndOpacity(VHVActivityUIStyle::TextSecondary())
+                    .Text(FText::FromString(TEXT("Pick Up / Drop")))
+                ]
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .VAlign(VAlign_Center)
+                [
+                    MakeKeycap(TEXT("A / D"))
+                ]
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .VAlign(VAlign_Center)
+                .Padding(FMargin(7.0f, 0.0f, 20.0f, 0.0f))
+                [
+                    SNew(STextBlock)
+                    .Font(VHVActivityUIStyle::RegularFont(14))
+                    .ColorAndOpacity(VHVActivityUIStyle::TextSecondary())
+                    .Text(FText::FromString(TEXT("Move")))
+                ]
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .VAlign(VAlign_Center)
+                [
+                    MakeKeycap(TEXT("ENTER"))
+                ]
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .VAlign(VAlign_Center)
+                .Padding(FMargin(7.0f, 0.0f, 0.0f, 0.0f))
+                [
+                    SNew(STextBlock)
+                    .Font(VHVActivityUIStyle::RegularFont(14))
+                    .ColorAndOpacity(VHVActivityUIStyle::TextSecondary())
+                    .Text(FText::FromString(TEXT("Confirm")))
+                ]
+            ]
+            + SConstraintCanvas::Slot()
+            .Anchors(FAnchors(0.945f, 0.875f))
+            .Alignment(FVector2D(1.0f, 0.5f))
+            .Offset(FMargin(
+                0.0f,
+                0.0f,
+                VHVActivityUIStyle::OrderingConfirmWidth,
+                VHVActivityUIStyle::OrderingConfirmHeight))
+            [
+                SNew(SBox)
+                .WidthOverride(VHVActivityUIStyle::OrderingConfirmWidth)
+                .HeightOverride(VHVActivityUIStyle::OrderingConfirmHeight)
+                [
+                    SNew(SButton)
+                    .ButtonStyle(&ConfirmButtonStyle)
+                    .HAlign(HAlign_Center)
+                    .VAlign(VAlign_Center)
+                    .ContentPadding(FMargin(22.0f, 10.0f))
+                    .OnClicked(FOnClicked::CreateUObject(this, &UVHVOrderingWidget::HandleConfirmClicked))
+                    [
+                        SNew(STextBlock)
+                        .Font(VHVActivityUIStyle::MediumFont(16))
+                        .ColorAndOpacity(VHVActivityUIStyle::TextPrimary())
+                        .Text(FText::FromString(TEXT("Confirm Order")))
+                    ]
+                ]
+            ]
+        ];
+
+    RefreshDisplay();
+    UpdateSubmitHint();
+    return Result;
+}
+
+void UVHVOrderingWidget::ReleaseSlateResources(const bool bReleaseChildren)
+{
+    Super::ReleaseSlateResources(bReleaseChildren);
+    CardsSlateContainer.Reset();
+    SubmitHintSlate.Reset();
+    CardWidgets.Reset();
 }
 
 void UVHVOrderingWidget::SetOrderingItems(const TArray<FOrderingItem>& Items)
@@ -26,10 +277,8 @@ void UVHVOrderingWidget::SetOrderingItems(const TArray<FOrderingItem>& Items)
         KeyboardReorderIndex = INDEX_NONE;
         bKeyboardReorderMode = false;
         ClearDragState();
-        if (SubmitHint)
-        {
-            SubmitHint->SetText(FText::FromString(TEXT("Invalid ordering setup")));
-        }
+        UpdateSubmitHint();
+        RefreshDisplay();
         return;
     }
 
@@ -83,75 +332,33 @@ FReply UVHVOrderingWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FK
         return FReply::Handled();
     }
 
-    if (Key == EKeys::Up || Key == EKeys::W || Key == EKeys::Gamepad_DPad_Up || Key == EKeys::Gamepad_LeftStick_Up)
+    if (Key == EKeys::Left || Key == EKeys::A || Key == EKeys::Gamepad_DPad_Left || Key == EKeys::Gamepad_LeftStick_Left)
     {
-        if (CurrentOrder.Num() == 0)
-        {
-            return FReply::Handled();
-        }
-
-        if (bKeyboardReorderMode)
-        {
-            if (FocusedIndex > 0)
-            {
-                const int32 FromIndex = FocusedIndex;
-                const int32 ToIndex = FocusedIndex - 1;
-                if (MoveItem(FromIndex, ToIndex))
-                {
-                    UE_LOG(LogTemp, Warning, TEXT("[VHVOrdering] Move Grabbed ItemID=%s NewIndex=%d"), *FocusedItemID, FocusedIndex);
-                }
-            }
-            return FReply::Handled();
-        }
-
-        const int32 NextIndex = FMath::Max(0, FocusedIndex - 1);
-        if (FocusedIndex != NextIndex)
-        {
-            SetFocusedIndex(NextIndex);
-        }
+        MoveFocusedCard(-1);
         return FReply::Handled();
     }
 
-    if (Key == EKeys::Down || Key == EKeys::S || Key == EKeys::Gamepad_DPad_Down || Key == EKeys::Gamepad_LeftStick_Down)
+    if (Key == EKeys::Right || Key == EKeys::D || Key == EKeys::Gamepad_DPad_Right || Key == EKeys::Gamepad_LeftStick_Right)
     {
-        if (CurrentOrder.Num() == 0)
-        {
-            return FReply::Handled();
-        }
-
-        if (bKeyboardReorderMode)
-        {
-            if (FocusedIndex < CurrentOrder.Num() - 1)
-            {
-                const int32 FromIndex = FocusedIndex;
-                const int32 ToIndex = FocusedIndex + 1;
-                if (MoveItem(FromIndex, ToIndex))
-                {
-                    UE_LOG(LogTemp, Warning, TEXT("[VHVOrdering] Move Grabbed ItemID=%s NewIndex=%d"), *FocusedItemID, FocusedIndex);
-                }
-            }
-            return FReply::Handled();
-        }
-
-        const int32 NextIndex = FMath::Min(CurrentOrder.Num() - 1, FocusedIndex + 1);
-        if (FocusedIndex != NextIndex)
-        {
-            SetFocusedIndex(NextIndex);
-        }
+        MoveFocusedCard(1);
         return FReply::Handled();
     }
 
-    if (Key == EKeys::Enter)
+    if (Key == EKeys::Enter || Key == EKeys::Gamepad_FaceButton_Bottom)
     {
-        if (OwningUIManager)
-        {
-            UE_LOG(LogTemp, Warning, TEXT("[VHVOrdering] Submitting order"));
-            OwningUIManager->SubmitOrderingAnswer(GetCurrentOrder());
-        }
-        return FReply::Handled();
+        return HandleConfirmClicked();
     }
 
     return Super::NativeOnKeyDown(InGeometry, InKeyEvent);
+}
+
+FReply UVHVOrderingWidget::HandleConfirmClicked()
+{
+    if (OwningUIManager && CurrentOrder.Num() >= 2)
+    {
+        OwningUIManager->SubmitOrderingAnswer(GetCurrentOrder());
+    }
+    return FReply::Handled();
 }
 
 bool UVHVOrderingWidget::ToggleFocusedCardGrab()
@@ -169,18 +376,23 @@ bool UVHVOrderingWidget::ToggleFocusedCardGrab()
     return true;
 }
 
-bool UVHVOrderingWidget::NativeOnDragOver(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
+bool UVHVOrderingWidget::NativeOnDragOver(
+    const FGeometry& InGeometry,
+    const FDragDropEvent& InDragDropEvent,
+    UDragDropOperation* InOperation)
 {
     if (Cast<UVHVOrderingCardWidget>(InOperation ? InOperation->Payload : nullptr))
     {
         UpdateMouseDrag(InDragDropEvent);
         return true;
     }
-
     return Super::NativeOnDragOver(InGeometry, InDragDropEvent, InOperation);
 }
 
-bool UVHVOrderingWidget::NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
+bool UVHVOrderingWidget::NativeOnDrop(
+    const FGeometry& InGeometry,
+    const FDragDropEvent& InDragDropEvent,
+    UDragDropOperation* InOperation)
 {
     if (Cast<UVHVOrderingCardWidget>(InOperation ? InOperation->Payload : nullptr))
     {
@@ -188,7 +400,6 @@ bool UVHVOrderingWidget::NativeOnDrop(const FGeometry& InGeometry, const FDragDr
         CommitMouseReorder();
         return true;
     }
-
     return Super::NativeOnDrop(InGeometry, InDragDropEvent, InOperation);
 }
 
@@ -203,22 +414,25 @@ void UVHVOrderingWidget::BeginMouseDrag(const FString& ItemID)
     bMouseDragging = true;
     MouseDragItemID = ItemID;
     MouseDragSourceIndex = SourceIndex;
-    // Slots are always measured against the order with the dragged item removed.
     MouseInsertionIndex = FMath::Clamp(SourceIndex, 0, CurrentOrder.Num() - 1);
     MouseDropTargetIndex = INDEX_NONE;
+    FocusedItemID = ItemID;
+    FocusedIndex = SourceIndex;
     UpdateMouseDropTarget();
-    UE_LOG(LogTemp, Warning, TEXT("[VHVOrdering] Mouse drag started ItemID=%s"), *ItemID);
+    UpdateSelectionVisuals();
+    UpdateSubmitHint();
 }
 
 void UVHVOrderingWidget::UpdateMouseDrag(const FDragDropEvent& InDragDropEvent)
 {
-    if (!bMouseDragging || !CardsContainer)
+    if (!bMouseDragging || !CardsSlateContainer)
     {
         return;
     }
 
-    const FVector2D CursorLocalToContainer = CardsContainer->GetCachedGeometry().AbsoluteToLocal(InDragDropEvent.GetScreenSpacePosition());
-    const int32 ProposedSlot = CalculateMouseInsertionSlot(CursorLocalToContainer);
+    const FVector2D CursorLocal = CardsSlateContainer->GetCachedGeometry().AbsoluteToLocal(
+        InDragDropEvent.GetScreenSpacePosition());
+    const int32 ProposedSlot = CalculateMouseInsertionSlot(CursorLocal);
     if (MouseInsertionIndex != ProposedSlot)
     {
         MouseInsertionIndex = ProposedSlot;
@@ -244,36 +458,36 @@ void UVHVOrderingWidget::CommitMouseReorder()
     UpdatedOrder.RemoveAt(SourceIndex);
     const int32 FinalSlot = FMath::Clamp(MouseInsertionIndex, 0, UpdatedOrder.Num());
     UpdatedOrder.Insert(MouseDragItemID, FinalSlot);
-
     CurrentOrder = UpdatedOrder;
+
     CurrentOrderingItems.Reset();
     for (const FString& ItemID : CurrentOrder)
     {
         CurrentOrderingItems.Add(ResolveItemByID(ItemID));
     }
 
-    SynchronizeCardWidgets();
     FocusedItemID = MouseDragItemID;
     FocusedIndex = CurrentOrder.Find(MouseDragItemID);
-    UE_LOG(LogTemp, Warning, TEXT("[VHVOrdering] Mouse reorder ItemID=%s NewIndex=%d"), *MouseDragItemID, FocusedIndex);
+    SynchronizeCardWidgets();
     EndMouseDrag();
-    UpdateSelectionVisuals();
 }
 
 void UVHVOrderingWidget::EndMouseDrag()
 {
     ClearDragState();
-    UE_LOG(LogTemp, Warning, TEXT("[VHVOrdering] Mouse drag ended"));
+    UpdateSelectionVisuals();
+    UpdateSubmitHint();
+    SetKeyboardFocus();
 }
 
 void UVHVOrderingWidget::RefreshDisplay()
 {
-    if (!CardsContainer)
+    if (!CardsSlateContainer)
     {
         return;
     }
 
-    CardsContainer->ClearChildren();
+    CardsSlateContainer->ClearChildren();
     CardWidgets.Reset();
 
     TSubclassOf<UVHVOrderingCardWidget> WidgetClass = UVHVOrderingCardWidget::StaticClass();
@@ -286,33 +500,30 @@ void UVHVOrderingWidget::RefreshDisplay()
         WidgetClass = OwningUIManager->OrderingCardWidgetClass;
     }
 
-    UE_LOG(LogTemp, Warning, TEXT("[VHVOrdering] Card class valid=%s"), WidgetClass ? TEXT("true") : TEXT("false"));
-
     for (int32 Index = 0; Index < CurrentOrder.Num(); ++Index)
     {
-        const FString ItemID = CurrentOrder[Index];
-        const FOrderingItem Item = ResolveItemByID(ItemID);
         UVHVOrderingCardWidget* CardWidget = CreateWidget<UVHVOrderingCardWidget>(this, WidgetClass);
         if (!CardWidget)
         {
             continue;
         }
 
-        UE_LOG(LogTemp, Warning, TEXT("[VHVOrdering] Creating card ItemID=%s"), *ItemID);
+        const FString ItemID = CurrentOrder[Index];
         CardWidget->SetOwningOrderingWidget(this);
         CardWidget->SetCardIndex(Index);
-        CardWidget->SetOrderingItem(Item);
+        CardWidget->SetOrderingItem(ResolveItemByID(ItemID));
         CardWidget->SetVisualState(FocusedItemID == ItemID, false);
-        CardsContainer->AddChild(CardWidget);
 
-        if (UVerticalBoxSlot* CardSlot = Cast<UVerticalBoxSlot>(CardWidget->Slot))
-        {
-            CardSlot->SetPadding(FMargin(0.0f, 6.0f, 0.0f, 6.0f));
-            CardSlot->SetHorizontalAlignment(HAlign_Fill);
-        }
-
+        const float HalfGap = VHVActivityUIStyle::OrderingCardGap * 0.5f;
+        CardsSlateContainer->AddSlot()
+        .AutoWidth()
+        .VAlign(VAlign_Center)
+        .Padding(FMargin(Index == 0 ? 0.0f : HalfGap, 0.0f,
+            Index + 1 == CurrentOrder.Num() ? 0.0f : HalfGap, 0.0f))
+        [
+            CardWidget->TakeWidget()
+        ];
         CardWidgets.Add(CardWidget);
-        UE_LOG(LogTemp, Warning, TEXT("[VHVOrdering] Card added successfully=%s"), CardWidget->GetParent() ? TEXT("true") : TEXT("false"));
     }
 
     UpdatePositionLabels();
@@ -322,20 +533,18 @@ void UVHVOrderingWidget::RefreshDisplay()
 
 void UVHVOrderingWidget::ApplyRandomizedSourceOrder()
 {
-    TArray<FString> OrderedIDs;
-    OrderedIDs.Reserve(SourceItems.Num());
+    CurrentOrder.Reset();
+    CurrentOrder.Reserve(SourceItems.Num());
     for (const FOrderingItem& Item : SourceItems)
     {
-        OrderedIDs.Add(Item.ItemID);
+        CurrentOrder.Add(Item.ItemID);
     }
 
-    for (int32 Index = OrderedIDs.Num() - 1; Index > 0; --Index)
+    for (int32 Index = CurrentOrder.Num() - 1; Index > 0; --Index)
     {
-        const int32 SwapIndex = FMath::RandRange(0, Index);
-        OrderedIDs.Swap(Index, SwapIndex);
+        CurrentOrder.Swap(Index, FMath::RandRange(0, Index));
     }
 
-    CurrentOrder = OrderedIDs;
     CurrentOrderingItems.Reset();
     for (const FString& ItemID : CurrentOrder)
     {
@@ -347,8 +556,7 @@ void UVHVOrderingWidget::ShuffleItems(TArray<FOrderingItem>& Items)
 {
     for (int32 Index = Items.Num() - 1; Index > 0; --Index)
     {
-        const int32 SwapIndex = FMath::RandRange(0, Index);
-        Items.Swap(Index, SwapIndex);
+        Items.Swap(Index, FMath::RandRange(0, Index));
     }
 }
 
@@ -371,13 +579,12 @@ FOrderingItem UVHVOrderingWidget::ResolveItemByID(const FString& ItemID) const
 int32 UVHVOrderingWidget::CalculateMouseInsertionSlot(const FVector2D& CursorLocalToContainer) const
 {
     const int32 SourceIndex = MouseDragItemID.IsEmpty() ? INDEX_NONE : CurrentOrder.Find(MouseDragItemID);
-    if (SourceIndex == INDEX_NONE)
+    if (SourceIndex == INDEX_NONE || !CardsSlateContainer)
     {
         return 0;
     }
 
     TArray<int32> ReducedIndices;
-    ReducedIndices.Reserve(CurrentOrder.Num() - 1);
     for (int32 Index = 0; Index < CurrentOrder.Num(); ++Index)
     {
         if (Index != SourceIndex)
@@ -385,73 +592,54 @@ int32 UVHVOrderingWidget::CalculateMouseInsertionSlot(const FVector2D& CursorLoc
             ReducedIndices.Add(Index);
         }
     }
-
     if (ReducedIndices.Num() == 0)
     {
         return 0;
     }
 
-    const int32 FirstVisibleCardIndex = ReducedIndices[0];
-    const int32 LastVisibleCardIndex = ReducedIndices[ReducedIndices.Num() - 1];
-    const FGeometry* FirstCardGeometry = nullptr;
-    const FGeometry* LastCardGeometry = nullptr;
-    if (CardWidgets.IsValidIndex(FirstVisibleCardIndex) && CardWidgets[FirstVisibleCardIndex])
+    const FGeometry& ContainerGeometry = CardsSlateContainer->GetCachedGeometry();
+    const auto GetCardCenterX = [this, &ContainerGeometry](const int32 Index) -> float
     {
-        FirstCardGeometry = &CardWidgets[FirstVisibleCardIndex]->GetCachedGeometry();
-    }
-    if (CardWidgets.IsValidIndex(LastVisibleCardIndex) && CardWidgets[LastVisibleCardIndex])
-    {
-        LastCardGeometry = &CardWidgets[LastVisibleCardIndex]->GetCachedGeometry();
-    }
-    if (!FirstCardGeometry || !LastCardGeometry)
+        if (!CardWidgets.IsValidIndex(Index) || !CardWidgets[Index])
+        {
+            return 0.0f;
+        }
+        const FGeometry& CardGeometry = CardWidgets[Index]->GetCachedGeometry();
+        return ContainerGeometry.AbsoluteToLocal(CardGeometry.GetAbsolutePosition()).X
+            + CardGeometry.GetLocalSize().X * 0.5f;
+    };
+
+    const float FirstCenter = GetCardCenterX(ReducedIndices[0]);
+    const float LastCenter = GetCardCenterX(ReducedIndices.Last());
+    if (CursorLocalToContainer.X <= FirstCenter)
     {
         return 0;
     }
-    const FGeometry& ContainerGeometry = CardsContainer->GetCachedGeometry();
-    const float FirstCardCenterY = ContainerGeometry.AbsoluteToLocal(FirstCardGeometry->GetAbsolutePosition()).Y + (FirstCardGeometry->GetLocalSize().Y * 0.5f);
-    const float LastCardCenterY = ContainerGeometry.AbsoluteToLocal(LastCardGeometry->GetAbsolutePosition()).Y + (LastCardGeometry->GetLocalSize().Y * 0.5f);
-
-    if (CursorLocalToContainer.Y <= FirstCardCenterY)
-    {
-        return 0;
-    }
-
-    if (CursorLocalToContainer.Y >= LastCardCenterY)
+    if (CursorLocalToContainer.X >= LastCenter)
     {
         return ReducedIndices.Num();
     }
 
     for (int32 ReducedIndex = 0; ReducedIndex < ReducedIndices.Num() - 1; ++ReducedIndex)
     {
-        const int32 CurrentCardIndex = ReducedIndices[ReducedIndex];
-        const int32 NextCardIndex = ReducedIndices[ReducedIndex + 1];
-        if (!CardWidgets.IsValidIndex(CurrentCardIndex) || !CardWidgets[CurrentCardIndex] || !CardWidgets.IsValidIndex(NextCardIndex) || !CardWidgets[NextCardIndex])
-        {
-            continue;
-        }
-
-        const FGeometry& CurrentCardGeometry = CardWidgets[CurrentCardIndex]->GetCachedGeometry();
-        const FGeometry& NextCardGeometry = CardWidgets[NextCardIndex]->GetCachedGeometry();
-        const float CurrentCenter = ContainerGeometry.AbsoluteToLocal(CurrentCardGeometry.GetAbsolutePosition()).Y + (CurrentCardGeometry.GetLocalSize().Y * 0.5f);
-        const float NextCenter = ContainerGeometry.AbsoluteToLocal(NextCardGeometry.GetAbsolutePosition()).Y + (NextCardGeometry.GetLocalSize().Y * 0.5f);
-        const float Midpoint = (CurrentCenter + NextCenter) * 0.5f;
-        if (CursorLocalToContainer.Y < Midpoint)
+        const float CurrentCenter = GetCardCenterX(ReducedIndices[ReducedIndex]);
+        const float NextCenter = GetCardCenterX(ReducedIndices[ReducedIndex + 1]);
+        if (CursorLocalToContainer.X < (CurrentCenter + NextCenter) * 0.5f)
         {
             return ReducedIndex + 1;
         }
     }
-
     return ReducedIndices.Num();
 }
 
-bool UVHVOrderingWidget::MoveItem(int32 FromIndex, int32 ToIndex)
+bool UVHVOrderingWidget::MoveItem(const int32 FromIndex, const int32 ToIndex)
 {
     if (!CurrentOrder.IsValidIndex(FromIndex))
     {
         return false;
     }
 
-    const int32 InsertIndex = FMath::Clamp(ToIndex, 0, CurrentOrder.Num());
+    const int32 InsertIndex = FMath::Clamp(ToIndex, 0, CurrentOrder.Num() - 1);
     if (FromIndex == InsertIndex)
     {
         return false;
@@ -467,16 +655,14 @@ bool UVHVOrderingWidget::MoveItem(int32 FromIndex, int32 ToIndex)
         CurrentOrderingItems.Add(ResolveItemByID(ItemID));
     }
 
-    SynchronizeCardWidgets();
     FocusedItemID = MovedItemID;
     FocusedIndex = CurrentOrder.Find(MovedItemID);
     KeyboardReorderIndex = FocusedIndex;
-    UpdateSelectionVisuals();
-    UpdatePositionLabels();
+    SynchronizeCardWidgets();
     return true;
 }
 
-void UVHVOrderingWidget::MoveFocusedCard(int32 Direction)
+void UVHVOrderingWidget::MoveFocusedCard(const int32 Direction)
 {
     if (CurrentOrder.Num() == 0)
     {
@@ -486,14 +672,9 @@ void UVHVOrderingWidget::MoveFocusedCard(int32 Direction)
     if (bKeyboardReorderMode)
     {
         const int32 NewIndex = FocusedIndex + Direction;
-        if (NewIndex < 0 || NewIndex >= CurrentOrder.Num())
+        if (NewIndex >= 0 && NewIndex < CurrentOrder.Num())
         {
-            return;
-        }
-
-        if (MoveItem(FocusedIndex, NewIndex))
-        {
-            UE_LOG(LogTemp, Warning, TEXT("[VHVOrdering] Move Grabbed ItemID=%s NewIndex=%d"), *FocusedItemID, FocusedIndex);
+            MoveItem(FocusedIndex, NewIndex);
         }
         return;
     }
@@ -503,44 +684,29 @@ void UVHVOrderingWidget::MoveFocusedCard(int32 Direction)
         SetFocusedIndex(0);
         return;
     }
-
-    const int32 NextIndex = FMath::Clamp(FocusedIndex + Direction, 0, CurrentOrder.Num() - 1);
-    if (NextIndex == FocusedIndex)
-    {
-        return;
-    }
-
-    SetFocusedIndex(NextIndex);
+    SetFocusedIndex(FMath::Clamp(FocusedIndex + Direction, 0, CurrentOrder.Num() - 1));
 }
 
-void UVHVOrderingWidget::SetFocusedIndex(int32 NewIndex)
+void UVHVOrderingWidget::SetFocusedIndex(const int32 NewIndex)
 {
     if (CurrentOrder.Num() == 0)
     {
         FocusedIndex = INDEX_NONE;
         FocusedItemID.Reset();
-        UpdateSelectionVisuals();
-        return;
-    }
-
-    FocusedIndex = FMath::Clamp(NewIndex, 0, CurrentOrder.Num() - 1);
-    FocusedItemID = CurrentOrder[FocusedIndex];
-    UpdateSelectionVisuals();
-    UE_LOG(LogTemp, Warning, TEXT("[VHVOrdering] Focus ItemID=%s"), *FocusedItemID);
-}
-
-void UVHVOrderingWidget::SetKeyboardReorderMode(bool bReorder)
-{
-    bKeyboardReorderMode = bReorder;
-    UpdateSelectionVisuals();
-    if (bKeyboardReorderMode)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[VHVOrdering] Grab ItemID=%s"), *FocusedItemID);
     }
     else
     {
-        UE_LOG(LogTemp, Warning, TEXT("[VHVOrdering] Release Grab ItemID=%s"), *FocusedItemID);
+        FocusedIndex = FMath::Clamp(NewIndex, 0, CurrentOrder.Num() - 1);
+        FocusedItemID = CurrentOrder[FocusedIndex];
     }
+    UpdateSelectionVisuals();
+}
+
+void UVHVOrderingWidget::SetKeyboardReorderMode(const bool bReorder)
+{
+    bKeyboardReorderMode = bReorder;
+    UpdateSelectionVisuals();
+    UpdateSubmitHint();
 }
 
 void UVHVOrderingWidget::UpdateCardPresentationStates()
@@ -559,24 +725,18 @@ void UVHVOrderingWidget::ClearDragState()
 
 void UVHVOrderingWidget::SynchronizeCardWidgets()
 {
-    if (!CardsContainer)
+    if (!CardsSlateContainer)
     {
         return;
     }
 
     TArray<TObjectPtr<UVHVOrderingCardWidget>> OrderedCards;
     OrderedCards.Reserve(CurrentOrder.Num());
-
     for (const FString& ItemID : CurrentOrder)
     {
         for (UVHVOrderingCardWidget* CardWidget : CardWidgets)
         {
-            if (!CardWidget)
-            {
-                continue;
-            }
-
-            if (CardWidget->GetItemID() == ItemID)
+            if (CardWidget && CardWidget->GetItemID() == ItemID)
             {
                 OrderedCards.Add(CardWidget);
                 break;
@@ -585,21 +745,25 @@ void UVHVOrderingWidget::SynchronizeCardWidgets()
     }
 
     CardWidgets = OrderedCards;
+    CardsSlateContainer->ClearChildren();
     for (int32 Index = 0; Index < CardWidgets.Num(); ++Index)
     {
-        if (!CardWidgets[Index])
+        UVHVOrderingCardWidget* CardWidget = CardWidgets[Index];
+        if (!CardWidget)
         {
             continue;
         }
 
-        CardsContainer->InsertChildAt(Index, CardWidgets[Index]);
-        if (UVerticalBoxSlot* CardSlot = Cast<UVerticalBoxSlot>(CardWidgets[Index]->Slot))
-        {
-            CardSlot->SetPadding(FMargin(0.0f, 6.0f, 0.0f, 6.0f));
-            CardSlot->SetHorizontalAlignment(HAlign_Fill);
-        }
-        CardWidgets[Index]->SetCardIndex(Index);
-        CardWidgets[Index]->SetOrderingItem(ResolveItemByID(CardWidgets[Index]->GetItemID()));
+        CardWidget->SetCardIndex(Index);
+        const float HalfGap = VHVActivityUIStyle::OrderingCardGap * 0.5f;
+        CardsSlateContainer->AddSlot()
+        .AutoWidth()
+        .VAlign(VAlign_Center)
+        .Padding(FMargin(Index == 0 ? 0.0f : HalfGap, 0.0f,
+            Index + 1 == CardWidgets.Num() ? 0.0f : HalfGap, 0.0f))
+        [
+            CardWidget->TakeWidget()
+        ];
     }
 
     UpdatePositionLabels();
@@ -613,24 +777,23 @@ void UVHVOrderingWidget::UpdatePositionLabels()
         if (CardWidgets[Index])
         {
             CardWidgets[Index]->SetCardIndex(Index);
-            CardWidgets[Index]->UpdatePositionText();
         }
     }
 }
 
 void UVHVOrderingWidget::UpdateSelectionVisuals()
 {
-    for (int32 Index = 0; Index < CardWidgets.Num(); ++Index)
+    for (UVHVOrderingCardWidget* CardWidget : CardWidgets)
     {
-        if (!CardWidgets[Index])
+        if (!CardWidget)
         {
             continue;
         }
 
-        const FString ItemID = CardWidgets[Index]->GetItemID();
-        const bool bIsFocused = FocusedItemID == ItemID;
-        const bool bIsSelected = bKeyboardReorderMode && FocusedItemID == ItemID;
-        CardWidgets[Index]->SetVisualState(bIsFocused, bIsSelected);
+        const bool bIsFocused = FocusedItemID == CardWidget->GetItemID();
+        const bool bIsGrabbed = bIsFocused && (bKeyboardReorderMode
+            || (bMouseDragging && MouseDragItemID == CardWidget->GetItemID()));
+        CardWidget->SetVisualState(bIsFocused, bIsGrabbed);
     }
 }
 
@@ -648,66 +811,54 @@ void UVHVOrderingWidget::ClearMouseDropTarget()
 
 void UVHVOrderingWidget::UpdateMouseDropTarget()
 {
+    ClearMouseDropTarget();
     if (!bMouseDragging || MouseInsertionIndex == INDEX_NONE)
     {
-        ClearMouseDropTarget();
         return;
     }
-    const int32 SourceIndex = MouseDragItemID.IsEmpty() ? INDEX_NONE : CurrentOrder.Find(MouseDragItemID);
+
+    const int32 SourceIndex = CurrentOrder.Find(MouseDragItemID);
     if (SourceIndex == INDEX_NONE)
     {
         return;
     }
 
-    TArray<FString> ReducedOrder;
-    ReducedOrder.Reserve(CurrentOrder.Num() - 1);
-    for (int32 Index = 0; Index < CurrentOrder.Num(); ++Index)
+    TArray<FString> ReducedOrder = CurrentOrder;
+    ReducedOrder.RemoveAt(SourceIndex);
+    if (ReducedOrder.Num() == 0)
     {
-        if (Index != SourceIndex)
-        {
-            ReducedOrder.Add(CurrentOrder[Index]);
-        }
+        return;
     }
 
-    int32 NewTargetIndex = INDEX_NONE;
-    if (ReducedOrder.Num() > 0)
+    const int32 ReducedTargetIndex = MouseInsertionIndex == 0
+        ? 0
+        : FMath::Min(MouseInsertionIndex - 1, ReducedOrder.Num() - 1);
+    MouseDropTargetIndex = CurrentOrder.Find(ReducedOrder[ReducedTargetIndex]);
+    if (CardWidgets.IsValidIndex(MouseDropTargetIndex) && CardWidgets[MouseDropTargetIndex])
     {
-        const int32 ReducedTargetIndex = MouseInsertionIndex == 0 ? 0 : FMath::Min(MouseInsertionIndex - 1, ReducedOrder.Num() - 1);
-        const FString TargetItemID = ReducedOrder[ReducedTargetIndex];
-        NewTargetIndex = CurrentOrder.Find(TargetItemID);
-    }
-
-    if (MouseDropTargetIndex != NewTargetIndex)
-    {
-        if (CardWidgets.IsValidIndex(MouseDropTargetIndex) && CardWidgets[MouseDropTargetIndex])
-        {
-            CardWidgets[MouseDropTargetIndex]->SetMouseDropTarget(false);
-        }
-        if (CardWidgets.IsValidIndex(NewTargetIndex) && CardWidgets[NewTargetIndex])
-        {
-            CardWidgets[NewTargetIndex]->SetMouseDropTarget(true);
-        }
-
-        MouseDropTargetIndex = NewTargetIndex;
-        if (NewTargetIndex != INDEX_NONE)
-        {
-            UE_LOG(LogTemp, Warning, TEXT("[VHVOrdering] Mouse drop target ItemID=%s InsertionSlot=%d"), *CurrentOrder[NewTargetIndex], MouseInsertionIndex);
-        }
+        CardWidgets[MouseDropTargetIndex]->SetMouseDropTarget(true);
     }
 }
 
 void UVHVOrderingWidget::UpdateSubmitHint()
 {
-    if (!SubmitHint)
-    {
-        return;
-    }
-
+    FText Hint;
     if (CurrentOrder.Num() < 2)
     {
-        SubmitHint->SetText(FText::FromString(TEXT("Invalid ordering")));
-        return;
+        Hint = FText::FromString(TEXT("Invalid ordering setup"));
+    }
+    else if (bKeyboardReorderMode || bMouseDragging)
+    {
+        Hint = FText::FromString(TEXT("Card picked up — move left or right, then drop."));
     }
 
-    SubmitHint->SetText(FText::FromString(TEXT("Use ↑/↓ to focus, E to reorder, and Enter to submit")));
+    if (SubmitHint)
+    {
+        SubmitHint->SetText(Hint);
+    }
+    if (SubmitHintSlate)
+    {
+        SubmitHintSlate->SetText(Hint);
+        SubmitHintSlate->SetVisibility(Hint.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible);
+    }
 }

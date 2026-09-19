@@ -839,6 +839,7 @@ void UVHVUIManagerComponent::RefreshCurrentAskQuestionUI()
         if (MatchingWidget)
         {
             MatchingWidget->SetOwningUIManager(this);
+            MatchingWidget->SetPromptText(CurrentActivity.PromptText);
             MatchingWidget->SetMatchingPairs(CurrentActivity.MatchingPairs);
             if (!MatchingWidget->GetParent())
             {
@@ -934,7 +935,8 @@ void UVHVUIManagerComponent::RefreshCurrentHintUI()
         ApplyPanelSlotLayout(FeedbackWidget, MainHUD->TextbookLayer);
     }
 
-    FeedbackWidget->SetFeedbackText(FText::FromString(HintText));
+    FeedbackWidget->SetFeedbackPresentation(
+        FText::FromString(HintText), UVHVFeedbackWidget::ETone::Neutral, true);
     FeedbackWidget->SetVisibility(ESlateVisibility::Visible);
     MainHUD->SetInteractionPromptVisible(false);
 }
@@ -971,7 +973,9 @@ void UVHVUIManagerComponent::RefreshCurrentFeedbackUI()
         ? CurrentActivity.CorrectFeedback
         : (RuntimeState.bAnswerPartial ? CurrentActivity.PartialFeedback : CurrentActivity.IncorrectFeedback);
 
-    FeedbackWidget->SetFeedbackText(FText::FromString(FeedbackText));
+    FeedbackWidget->SetFeedbackPresentation(
+        FText::FromString(FeedbackText),
+        RuntimeState.bAnswerCorrect ? UVHVFeedbackWidget::ETone::Positive : UVHVFeedbackWidget::ETone::Caution);
     FeedbackWidget->SetVisibility(ESlateVisibility::Visible);
     MainHUD->SetInteractionPromptVisible(false);
 }
@@ -1380,14 +1384,17 @@ bool UVHVUIManagerComponent::TrySubmitCurrentQuestionAnswer()
     }
 
     const FTextbookActivityData CurrentActivity = TextbookSubsystem->GetCurrentActivity();
+    if ((CurrentActivity.ActivityType == ETextbookActivityType::SingleChoice ||
+         CurrentActivity.ActivityType == ETextbookActivityType::MultiChoice) &&
+        !QuestionWidget->HasSelection())
+    {
+        QuestionWidget->ShowSelectionRequiredFeedback();
+        FocusModalWidget(EVHVUIState::LearningAsk);
+        return false;
+    }
+
     if (CurrentActivity.ActivityType == ETextbookActivityType::MultiChoice)
     {
-        if (!QuestionWidget->HasSelection())
-        {
-            QuestionWidget->ShowSelectionRequiredFeedback();
-            FocusModalWidget(EVHVUIState::LearningAsk);
-            return false;
-        }
         return TextbookSubsystem->SubmitMultiChoice(QuestionWidget->GetSelectedOptionIndices());
     }
 

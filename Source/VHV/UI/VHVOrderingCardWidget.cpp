@@ -1,9 +1,176 @@
 #include "UI/VHVOrderingCardWidget.h"
 
+#include "UI/Textbook/VHVActivityUIStyle.h"
 #include "UI/VHVOrderingWidget.h"
 #include "Blueprint/DragDropOperation.h"
-#include "Blueprint/WidgetTree.h"
-#include "Components/Border.h"
+#include "Engine/Texture2D.h"
+#include "InputCoreTypes.h"
+#include "Widgets/Images/SImage.h"
+#include "Widgets/Layout/SBorder.h"
+#include "Widgets/Layout/SBox.h"
+#include "Widgets/Layout/SScaleBox.h"
+#include "Widgets/SBoxPanel.h"
+#include "Widgets/SOverlay.h"
+#include "Widgets/Text/STextBlock.h"
+
+UVHVOrderingCardWidget::UVHVOrderingCardWidget(const FObjectInitializer& ObjectInitializer)
+    : Super(ObjectInitializer)
+{
+    SetRenderTransformPivot(FVector2D(0.5f, 0.5f));
+}
+
+TSharedRef<SWidget> UVHVOrderingCardWidget::RebuildWidget()
+{
+    CardBrush = VHVActivityUIStyle::RoundedBrush(
+        VHVActivityUIStyle::GlassCard(), VHVActivityUIStyle::OrderingCardRadius,
+        VHVActivityUIStyle::BorderNeutral(), VHVActivityUIStyle::BorderNormalWidth);
+    ShadowBrush = VHVActivityUIStyle::RoundedBrush(
+        VHVActivityUIStyle::ShadowCard(), VHVActivityUIStyle::OrderingCardRadius + 2.0f);
+    BadgeBrush = VHVActivityUIStyle::RoundedBrush(
+        VHVActivityUIStyle::IndicatorNormal(), VHVActivityUIStyle::OrderingBadgeDiameter * 0.5f,
+        VHVActivityUIStyle::BorderNeutral(), VHVActivityUIStyle::BorderNormalWidth);
+    MediaSurfaceBrush = VHVActivityUIStyle::RoundedBrush(
+        VHVActivityUIStyle::GlassMain(), 18.0f,
+        VHVActivityUIStyle::PanelBorder(), VHVActivityUIStyle::BorderNormalWidth);
+    MediaBrush.DrawAs = ESlateBrushDrawType::Image;
+    MediaBrush.SetResourceObject(MediaTexture);
+
+    TSharedRef<SWidget> Result =
+        SNew(SBox)
+        .WidthOverride(VHVActivityUIStyle::OrderingCardWidth)
+        .HeightOverride(VHVActivityUIStyle::OrderingCardHeight)
+        [
+            SNew(SOverlay)
+            + SOverlay::Slot()
+            .Padding(FMargin(4.0f, 6.0f, -4.0f, -7.0f))
+            [
+                SNew(SBorder)
+                .BorderImage(&ShadowBrush)
+            ]
+            + SOverlay::Slot()
+            [
+                SAssignNew(CardBorderSlate, SBorder)
+                .BorderImage(&CardBrush)
+                .Padding(VHVActivityUIStyle::OrderingCardPadding)
+                [
+                    SNew(SVerticalBox)
+                    + SVerticalBox::Slot()
+                    .AutoHeight()
+                    [
+                        SNew(SHorizontalBox)
+                        + SHorizontalBox::Slot()
+                        .AutoWidth()
+                        .VAlign(VAlign_Center)
+                        [
+                            SNew(SBox)
+                            .WidthOverride(VHVActivityUIStyle::OrderingBadgeDiameter)
+                            .HeightOverride(VHVActivityUIStyle::OrderingBadgeDiameter)
+                            [
+                                SNew(SBorder)
+                                .BorderImage(&BadgeBrush)
+                                .HAlign(HAlign_Center)
+                                .VAlign(VAlign_Center)
+                                [
+                                    SAssignNew(PositionTextSlate, STextBlock)
+                                    .Font(VHVActivityUIStyle::MediumFont(20))
+                                    .ColorAndOpacity(VHVActivityUIStyle::TextPrimary())
+                                ]
+                            ]
+                        ]
+                        + SHorizontalBox::Slot()
+                        .FillWidth(1.0f)
+                        [
+                            SNew(SSpacer)
+                        ]
+                        + SHorizontalBox::Slot()
+                        .AutoWidth()
+                        .VAlign(VAlign_Center)
+                        [
+                            SNew(STextBlock)
+                            .Font(VHVActivityUIStyle::MediumFont(16))
+                            .ColorAndOpacity(VHVActivityUIStyle::TextSecondary())
+                            .Text(FText::FromString(TEXT("|||")))
+                        ]
+                    ]
+                    + SVerticalBox::Slot()
+                    .AutoHeight()
+                    .Padding(FMargin(0.0f, 18.0f, 0.0f, 20.0f))
+                    [
+                        SAssignNew(MediaAreaSlate, SBox)
+                        .HeightOverride(VHVActivityUIStyle::OrderingMediaHeight)
+                        .Visibility(MediaTexture ? EVisibility::Visible : EVisibility::Collapsed)
+                        [
+                            SNew(SBorder)
+                            .BorderImage(&MediaSurfaceBrush)
+                            .Padding(3.0f)
+                            [
+                                SNew(SScaleBox)
+                                .Stretch(EStretch::ScaleToFill)
+                                [
+                                    SAssignNew(MediaImageSlate, SImage)
+                                    .Image(&MediaBrush)
+                                ]
+                            ]
+                        ]
+                    ]
+                    + SVerticalBox::Slot()
+                    .FillHeight(1.0f)
+                    .HAlign(HAlign_Center)
+                    .VAlign(VAlign_Center)
+                    [
+                        SAssignNew(CardTextSlate, STextBlock)
+                        .Font(VHVActivityUIStyle::MediumFont(27))
+                        .ColorAndOpacity(VHVActivityUIStyle::TextSecondary())
+                        .Justification(ETextJustify::Center)
+                        .AutoWrapText(true)
+                        .LineHeightPercentage(1.08f)
+                    ]
+                    + SVerticalBox::Slot()
+                    .AutoHeight()
+                    .Padding(FMargin(0.0f, 12.0f, 0.0f, 0.0f))
+                    [
+                        SAssignNew(DescriptionTextSlate, STextBlock)
+                        .Font(VHVActivityUIStyle::RegularFont(16))
+                        .ColorAndOpacity(VHVActivityUIStyle::TextSecondary())
+                        .Justification(ETextJustify::Center)
+                        .AutoWrapText(true)
+                        .Visibility(EVisibility::Collapsed)
+                    ]
+                ]
+            ]
+        ];
+
+    if (CardTextSlate)
+    {
+        CardTextSlate->SetText(FText::FromString(BaseDisplayText));
+    }
+    UpdatePositionText();
+    RefreshVisualState();
+    return Result;
+}
+
+void UVHVOrderingCardWidget::ReleaseSlateResources(const bool bReleaseChildren)
+{
+    Super::ReleaseSlateResources(bReleaseChildren);
+    CardBorderSlate.Reset();
+    MediaAreaSlate.Reset();
+    MediaImageSlate.Reset();
+    CardTextSlate.Reset();
+    DescriptionTextSlate.Reset();
+    PositionTextSlate.Reset();
+}
+
+void UVHVOrderingCardWidget::NativeTick(const FGeometry& MyGeometry, const float InDeltaTime)
+{
+    Super::NativeTick(MyGeometry, InDeltaTime);
+    const float TargetLift = bGrabbed ? VHVActivityUIStyle::OrderingGrabLift : 0.0f;
+    const float TargetScale = bGrabbed ? 1.025f : 1.0f;
+    const float InterpSpeed = 1.0f / VHVActivityUIStyle::AnimationFast;
+    CurrentLift = FMath::FInterpTo(CurrentLift, TargetLift, InDeltaTime, InterpSpeed);
+    CurrentScale = FMath::FInterpTo(CurrentScale, TargetScale, InDeltaTime, InterpSpeed);
+    SetRenderTranslation(FVector2D(0.0f, -CurrentLift));
+    SetRenderScale(FVector2D(CurrentScale));
+}
 
 void UVHVOrderingCardWidget::SetOrderingItem(const FOrderingItem& Item)
 {
@@ -13,7 +180,10 @@ void UVHVOrderingCardWidget::SetOrderingItem(const FOrderingItem& Item)
     {
         CardText->SetText(FText::FromString(BaseDisplayText));
     }
-    UE_LOG(LogTemp, Warning, TEXT("[VHVOrdering] Created item ItemID=%s"), *Item.ItemID);
+    if (CardTextSlate)
+    {
+        CardTextSlate->SetText(FText::FromString(BaseDisplayText));
+    }
 }
 
 FString UVHVOrderingCardWidget::GetItemID() const
@@ -31,116 +201,131 @@ void UVHVOrderingCardWidget::SetOwningOrderingWidget(UVHVOrderingWidget* InOrder
     OwningOrderingWidget = InOrderingWidget;
 }
 
-void UVHVOrderingCardWidget::SetSelected(bool bSelected)
+void UVHVOrderingCardWidget::SetSelected(const bool bSelected)
 {
-    if (!CardText)
-    {
-        return;
-    }
-
-    const FLinearColor TextColor = bSelected ? FLinearColor(0.95f, 1.0f, 0.98f, 1.0f) : FLinearColor::White;
-    CardText->SetColorAndOpacity(TextColor);
-    if (PositionText)
-    {
-        PositionText->SetColorAndOpacity(TextColor);
-    }
+    bFocused = bSelected;
+    RefreshVisualState();
 }
 
-void UVHVOrderingCardWidget::SetGrabbed(bool bGrabbed)
+void UVHVOrderingCardWidget::SetGrabbed(const bool bInGrabbed)
 {
-    if (!CardBorder)
-    {
-        return;
-    }
-
-    if (bGrabbed)
-    {
-        CardBorder->SetPadding(FMargin(8.0f));
-        CardBorder->SetRenderScale(FVector2D(1.03f, 1.03f));
-        CardBorder->SetBrushColor(FLinearColor(0.18f, 0.52f, 0.72f, 1.0f));
-    }
-    else if (CardText)
-    {
-        CardBorder->SetPadding(FMargin(4.0f));
-        CardBorder->SetRenderScale(FVector2D(1.0f, 1.0f));
-        ApplyCardColor();
-    }
+    bGrabbed = bInGrabbed;
+    RefreshVisualState();
 }
 
-void UVHVOrderingCardWidget::SetVisualState(bool bIsFocused, bool bIsGrabbed)
+void UVHVOrderingCardWidget::SetVisualState(const bool bIsFocused, const bool bIsGrabbed)
 {
-    FString DisplayText = BaseDisplayText;
-    if (bIsGrabbed)
-    {
-        DisplayText = FString::Printf(TEXT("< [G] %s >"), *BaseDisplayText);
-        SetGrabbed(true);
-        SetSelected(true);
-    }
-    else if (bIsFocused)
-    {
-        DisplayText = FString::Printf(TEXT("< %s >"), *BaseDisplayText);
-        SetGrabbed(false);
-        SetSelected(true);
-    }
-    else
-    {
-        SetGrabbed(false);
-        SetSelected(false);
-        if (CardBorder)
-        {
-            CardBorder->SetRenderScale(FVector2D(1.0f, 1.0f));
-        }
-    }
-
-    if (CardText)
-    {
-        CardText->SetText(FText::FromString(DisplayText));
-    }
+    bFocused = bIsFocused;
+    bGrabbed = bIsGrabbed;
+    RefreshVisualState();
 }
 
-void UVHVOrderingCardWidget::SetDropHighlight(bool bActive)
+void UVHVOrderingCardWidget::SetDropHighlight(const bool bActive)
 {
-    if (!CardText)
-    {
-        return;
-    }
-
-    const FLinearColor TextColor = bActive ? FLinearColor(0.96f, 1.0f, 0.98f, 1.0f) : FLinearColor::White;
-    CardText->SetColorAndOpacity(TextColor);
-    if (PositionText)
-    {
-        PositionText->SetColorAndOpacity(TextColor);
-    }
+    SetMouseDropTarget(bActive);
 }
 
-void UVHVOrderingCardWidget::SetMouseDropTarget(bool bActive)
+void UVHVOrderingCardWidget::SetMouseDropTarget(const bool bActive)
 {
     bMouseDropTarget = bActive;
-    if (!CardBorder)
+    RefreshVisualState();
+}
+
+void UVHVOrderingCardWidget::SetMediaTexture(UTexture2D* Texture)
+{
+    MediaTexture = Texture;
+    MediaBrush.SetResourceObject(MediaTexture);
+    if (MediaTexture)
+    {
+        MediaBrush.SetImageSize(FVector2D(MediaTexture->GetSizeX(), MediaTexture->GetSizeY()));
+    }
+    if (MediaAreaSlate)
+    {
+        MediaAreaSlate->SetVisibility(MediaTexture ? EVisibility::Visible : EVisibility::Collapsed);
+    }
+    if (MediaImageSlate)
+    {
+        MediaImageSlate->Invalidate(EInvalidateWidgetReason::Paint);
+    }
+}
+
+void UVHVOrderingCardWidget::SetDescription(const FText& Description)
+{
+    if (!DescriptionTextSlate)
     {
         return;
     }
+    DescriptionTextSlate->SetText(Description);
+    DescriptionTextSlate->SetVisibility(Description.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible);
+}
 
-    if (bActive)
+void UVHVOrderingCardWidget::RefreshVisualState()
+{
+    const bool bEmphasized = bGrabbed || bMouseDropTarget;
+    const FLinearColor Fill = bGrabbed
+        ? VHVActivityUIStyle::GlassSelected()
+        : (bMouseDropTarget || bFocused ? VHVActivityUIStyle::GlassFocused() : VHVActivityUIStyle::GlassCard());
+    const FLinearColor Outline = bEmphasized
+        ? VHVActivityUIStyle::BorderGold()
+        : (bFocused ? VHVActivityUIStyle::BorderFocused() : VHVActivityUIStyle::BorderNeutral());
+    const float OutlineWidth = bEmphasized
+        ? VHVActivityUIStyle::BorderSelectedWidth
+        : (bFocused ? 1.25f : VHVActivityUIStyle::BorderNormalWidth);
+
+    CardBrush = VHVActivityUIStyle::RoundedBrush(
+        Fill, VHVActivityUIStyle::OrderingCardRadius, Outline, OutlineWidth);
+    ShadowBrush = VHVActivityUIStyle::RoundedBrush(
+        bGrabbed ? VHVActivityUIStyle::SelectedGlow() : VHVActivityUIStyle::ShadowCard(),
+        VHVActivityUIStyle::OrderingCardRadius + 2.0f);
+    BadgeBrush = VHVActivityUIStyle::RoundedBrush(
+        bGrabbed ? VHVActivityUIStyle::IndicatorSelected() : VHVActivityUIStyle::IndicatorNormal(),
+        VHVActivityUIStyle::OrderingBadgeDiameter * 0.5f,
+        Outline,
+        OutlineWidth);
+
+    const FLinearColor PrimaryColor = bFocused || bEmphasized
+        ? VHVActivityUIStyle::TextPrimary()
+        : VHVActivityUIStyle::TextSecondary();
+    const FLinearColor BadgeTextColor = bGrabbed
+        ? VHVActivityUIStyle::GoldSelected()
+        : VHVActivityUIStyle::TextPrimary();
+
+    if (CardTextSlate)
     {
-        CardBorder->SetBrushColor(FLinearColor(0.75f, 0.05f, 0.05f, 1.0f));
-        return;
+        CardTextSlate->SetColorAndOpacity(PrimaryColor);
     }
-
-    ApplyCardColor();
+    if (PositionTextSlate)
+    {
+        PositionTextSlate->SetColorAndOpacity(BadgeTextColor);
+    }
+    if (CardText)
+    {
+        CardText->SetColorAndOpacity(PrimaryColor);
+    }
+    if (PositionText)
+    {
+        PositionText->SetColorAndOpacity(BadgeTextColor);
+    }
+    if (CardBorderSlate)
+    {
+        CardBorderSlate->Invalidate(EInvalidateWidgetReason::Paint);
+    }
+    InvalidateLayoutAndVolatility();
 }
 
 FReply UVHVOrderingCardWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
-    if (InMouseEvent.IsMouseButtonDown(EKeys::LeftMouseButton))
+    if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
     {
         return FReply::Handled().DetectDrag(TakeWidget(), EKeys::LeftMouseButton);
     }
-
     return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
 }
 
-void UVHVOrderingCardWidget::NativeOnDragDetected(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent, UDragDropOperation*& OutOperation)
+void UVHVOrderingCardWidget::NativeOnDragDetected(
+    const FGeometry& InGeometry,
+    const FPointerEvent& InMouseEvent,
+    UDragDropOperation*& OutOperation)
 {
     OutOperation = NewObject<UDragDropOperation>();
     if (!OutOperation)
@@ -149,14 +334,13 @@ void UVHVOrderingCardWidget::NativeOnDragDetected(const FGeometry& InGeometry, c
     }
 
     OutOperation->Payload = this;
-    // The drag visual is a detached widget. The source card remains the single
-    // real card in CardsContainer throughout the drag.
     UVHVOrderingCardWidget* DragVisual = CreateWidget<UVHVOrderingCardWidget>(GetOwningPlayer(), GetClass());
     if (DragVisual)
     {
         DragVisual->SetOrderingItem(CurrentItem);
         DragVisual->SetCardIndex(CardIndex);
-        DragVisual->SetVisualState(false, false);
+        DragVisual->SetMediaTexture(MediaTexture);
+        DragVisual->SetVisualState(true, true);
         OutOperation->DefaultDragVisual = DragVisual;
     }
     OutOperation->Pivot = EDragPivot::MouseDown;
@@ -167,14 +351,12 @@ void UVHVOrderingCardWidget::NativeOnDragDetected(const FGeometry& InGeometry, c
     }
 }
 
-bool UVHVOrderingCardWidget::NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
+bool UVHVOrderingCardWidget::NativeOnDrop(
+    const FGeometry& InGeometry,
+    const FDragDropEvent& InDragDropEvent,
+    UDragDropOperation* InOperation)
 {
-    if (!OwningOrderingWidget)
-    {
-        return false;
-    }
-
-    if (!Cast<UVHVOrderingCardWidget>(InOperation ? InOperation->Payload : nullptr))
+    if (!OwningOrderingWidget || !Cast<UVHVOrderingCardWidget>(InOperation ? InOperation->Payload : nullptr))
     {
         return false;
     }
@@ -184,68 +366,45 @@ bool UVHVOrderingCardWidget::NativeOnDrop(const FGeometry& InGeometry, const FDr
     return true;
 }
 
-bool UVHVOrderingCardWidget::NativeOnDragOver(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
+bool UVHVOrderingCardWidget::NativeOnDragOver(
+    const FGeometry& InGeometry,
+    const FDragDropEvent& InDragDropEvent,
+    UDragDropOperation* InOperation)
 {
     if (OwningOrderingWidget && Cast<UVHVOrderingCardWidget>(InOperation ? InOperation->Payload : nullptr))
     {
         OwningOrderingWidget->UpdateMouseDrag(InDragDropEvent);
         return true;
     }
-
     return false;
 }
 
-void UVHVOrderingCardWidget::NativeOnDragCancelled(const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
+void UVHVOrderingCardWidget::NativeOnDragCancelled(
+    const FDragDropEvent& InDragDropEvent,
+    UDragDropOperation* InOperation)
 {
     if (OwningOrderingWidget && Cast<UVHVOrderingCardWidget>(InOperation ? InOperation->Payload : nullptr))
     {
         OwningOrderingWidget->EndMouseDrag();
     }
-
     Super::NativeOnDragCancelled(InDragDropEvent, InOperation);
 }
 
-void UVHVOrderingCardWidget::SetCardIndex(int32 InCardIndex)
+void UVHVOrderingCardWidget::SetCardIndex(const int32 InCardIndex)
 {
     CardIndex = InCardIndex;
-    if (CardColorIndex == INDEX_NONE)
-    {
-        CardColorIndex = InCardIndex % 3;
-    }
     UpdatePositionText();
-    ApplyCardColor();
 }
 
 void UVHVOrderingCardWidget::UpdatePositionText()
 {
-    if (!PositionText)
+    const FText Position = FText::AsNumber(CardIndex + 1);
+    if (PositionText)
     {
-        return;
+        PositionText->SetText(Position);
     }
-
-    PositionText->SetText(FText::AsNumber(CardIndex + 1));
-}
-
-void UVHVOrderingCardWidget::ApplyCardColor()
-{
-    if (!CardBorder)
+    if (PositionTextSlate)
     {
-        return;
+        PositionTextSlate->SetText(Position);
     }
-
-    FLinearColor BorderColor;
-    switch (CardColorIndex)
-    {
-    case 0:
-        BorderColor = FLinearColor(0.15f, 0.45f, 0.72f, 1.0f);
-        break;
-    case 1:
-        BorderColor = FLinearColor(0.20f, 0.58f, 0.42f, 1.0f);
-        break;
-    default:
-        BorderColor = FLinearColor(0.74f, 0.54f, 0.18f, 1.0f);
-        break;
-    }
-
-    CardBorder->SetBrushColor(BorderColor);
 }

@@ -4,90 +4,103 @@
 
 #include "CoreMinimal.h"
 #include "UI/VHVUserWidgetBase.h"
-#include "Components/TextBlock.h"
-#include "Components/VerticalBox.h"
-#include "Components/Button.h"
 #include "VHV/Textbook/Types/VHVTextbookTypes.h"
 #include "VHVQuestionWidget.generated.h"
 
+class SConstraintCanvas;
+class STextBlock;
+class SVerticalBox;
+class SVHVChoiceCard;
+class UTextBlock;
+class UVerticalBox;
 class UVHVUIManagerComponent;
-
-UCLASS()
-class VHV_API UVHVQuestionOptionButtonProxy : public UObject
-{
-	GENERATED_BODY()
-
-public:
-	UPROPERTY()
-	int32 OptionIndex = INDEX_NONE;
-
-	UPROPERTY()
-	TObjectPtr<class UVHVQuestionWidget> OwnerWidget;
-
-	UFUNCTION()
-	void OnOptionClicked();
-};
 
 UCLASS()
 class VHV_API UVHVQuestionWidget : public UVHVUserWidgetBase
 {
-	GENERATED_BODY()
+    GENERATED_BODY()
 
 public:
-	UVHVQuestionWidget();
+    UVHVQuestionWidget();
 
-	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
+    virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 
-	UFUNCTION(BlueprintCallable, Category = "VHV|Textbook")
-	void SetQuestionData(const FQuestionData& InQuestion);
+    UFUNCTION(BlueprintCallable, Category = "VHV|Textbook")
+    void SetQuestionData(const FQuestionData& InQuestion);
 
-	UFUNCTION(BlueprintCallable, Category = "VHV|Textbook")
-	void SetMultiChoiceEnabled(bool bInMultiChoiceEnabled);
+    UFUNCTION(BlueprintCallable, Category = "VHV|Textbook")
+    void SetMultiChoiceEnabled(bool bInMultiChoiceEnabled);
 
-	UFUNCTION(BlueprintCallable, Category = "VHV|Textbook")
-	int32 GetSelectedOptionIndex() const;
+    UFUNCTION(BlueprintCallable, Category = "VHV|Textbook")
+    int32 GetSelectedOptionIndex() const;
 
-	UFUNCTION(BlueprintCallable, Category = "VHV|Textbook")
-	void SetSelectedOptionIndex(int32 Index);
+    UFUNCTION(BlueprintCallable, Category = "VHV|Textbook")
+    void SetSelectedOptionIndex(int32 Index);
 
-	UFUNCTION(BlueprintCallable, Category = "VHV|Textbook")
-	bool HasSelection() const;
+    UFUNCTION(BlueprintCallable, Category = "VHV|Textbook")
+    bool HasSelection() const;
 
-	UFUNCTION(BlueprintCallable, Category = "VHV|Textbook")
-	TArray<int32> GetSelectedOptionIndices() const;
+    UFUNCTION(BlueprintCallable, Category = "VHV|Textbook")
+    TArray<int32> GetSelectedOptionIndices() const;
 
-	/** Applies the activity interaction action to the currently focused option. */
-	bool ActivateFocusedOption();
+    /** Applies the existing IA_Interact action to the currently focused option. */
+    bool ActivateFocusedOption();
 
-	/** Uses the existing question text area for a non-destructive invalid-submit response. */
-	void ShowSelectionRequiredFeedback();
+    /** Uses the instruction line for a non-destructive invalid-submit response. */
+    void ShowSelectionRequiredFeedback();
 
-	UFUNCTION()
-	void SetOwningUIManager(UVHVUIManagerComponent* InUIManager);
+    UFUNCTION()
+    void SetOwningUIManager(UVHVUIManagerComponent* InUIManager);
 
-	UFUNCTION()
-	void HandleOptionSelected(int32 OptionIndex);
+    UFUNCTION()
+    void HandleOptionSelected(int32 OptionIndex);
 
 protected:
+    virtual TSharedRef<SWidget> RebuildWidget() override;
+    virtual void ReleaseSlateResources(bool bReleaseChildren) override;
+    virtual void NativeConstruct() override;
+    virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
-	void UpdateSelectionVisuals();
-	void ClearOptionButtons();
-	void ToggleSelectedOption(int32 OptionIndex);
-	void ClearInputFeedback();
+private:
+    void RebuildChoiceCards();
+    void UpdatePresentation();
+    void SetFocusedOptionIndex(int32 Index);
+    void ToggleSelectedOption(int32 OptionIndex);
+    void ClearInputFeedback();
+    void HandleChoiceCardChosen(int32 OptionIndex);
+    FText GetDefaultInstruction() const;
 
-	FQuestionData CurrentQuestion;
-	int32 SelectedOptionIndex = INDEX_NONE;
-	bool bMultiChoiceEnabled = false;
-	TSet<int32> SelectedOptionIndices;
-	TArray<TObjectPtr<UButton>> OptionButtons;
-	TArray<TObjectPtr<UVHVQuestionOptionButtonProxy>> OptionProxies;
+    FQuestionData CurrentQuestion;
+    int32 FocusedOptionIndex = INDEX_NONE;
+    int32 SelectedOptionIndex = INDEX_NONE;
+    bool bMultiChoiceEnabled = false;
+    bool bShowingSelectionFeedback = false;
+    float EntranceElapsed = 0.0f;
+    TSet<int32> SelectedOptionIndices;
+    TArray<TSharedPtr<SVHVChoiceCard>> ChoiceCards;
 
-	UPROPERTY(BlueprintReadWrite, meta = (BindWidget))
-	TObjectPtr<UTextBlock> QuestionText;
+    TSharedPtr<SConstraintCanvas> RootCanvas;
+    TSharedPtr<SVerticalBox> OptionsSlateContainer;
+    TSharedPtr<STextBlock> ActivityTypeText;
+    TSharedPtr<STextBlock> QuestionTextSlate;
+    TSharedPtr<STextBlock> InstructionTextSlate;
+    TSharedPtr<STextBlock> InteractionLegendText;
+    TSharedPtr<SWidget> QuestionPanel;
+    TSharedPtr<SWidget> AnswerPanel;
+    FSlateBrush QuestionPanelBrush;
+    FSlateBrush QuestionShadowBrush;
+    FSlateBrush KeycapBrush;
+    FSlateBrush ActivityEmblemBrush;
+    FSlateBrush DividerBrush;
 
-	UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional))
-	TObjectPtr<UVerticalBox> OptionsContainer;
+    // Kept so the existing WBP bindings remain load-compatible. The native
+    // Slate layout is the runtime presentation for this widget.
+    UPROPERTY(BlueprintReadWrite, meta = (BindWidget, AllowPrivateAccess = "true"))
+    TObjectPtr<UTextBlock> QuestionText;
 
-	UPROPERTY()
-	TObjectPtr<UVHVUIManagerComponent> OwningUIManager;
+    UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+    TObjectPtr<UVerticalBox> OptionsContainer;
+
+    UPROPERTY()
+    TObjectPtr<UVHVUIManagerComponent> OwningUIManager;
 };

@@ -1,6 +1,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Styling/SlateBrush.h"
+#include "Styling/SlateTypes.h"
 #include "UI/VHVUserWidgetBase.h"
 #include "VHV/Textbook/Types/VHVTextbookTypes.h"
 #include "VHVMatchingWidget.generated.h"
@@ -8,6 +10,10 @@
 class UTextBlock;
 class UButton;
 class UVerticalBox;
+class SConstraintCanvas;
+class STextBlock;
+class SVerticalBox;
+class UTexture2D;
 class UVHVMatchingCardWidget;
 class UVHVUIManagerComponent;
 
@@ -21,6 +27,9 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "VHV|Textbook")
     void SetMatchingPairs(const TArray<FMatchingPair>& InPairs);
+
+    /** Authored activity prompt shown on the paper board. */
+    void SetPromptText(const FString& InPromptText);
 
     UFUNCTION(BlueprintCallable, Category = "VHV|Textbook")
     void SetOwningUIManager(UVHVUIManagerComponent* InUIManager);
@@ -44,6 +53,10 @@ public:
     TSubclassOf<UVHVMatchingCardWidget> CardWidgetClass;
 
 protected:
+    virtual TSharedRef<SWidget> RebuildWidget() override;
+    virtual void ReleaseSlateResources(bool bReleaseChildren) override;
+    virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
+
     void RefreshDisplay();
     void ShuffleRightItems();
     void MoveFocus(int32 Direction);
@@ -53,10 +66,12 @@ protected:
     void SubmitCurrentMatches();
     void UpdateCardVisuals();
     void UpdateSubmitHint();
-    FVector2D GetCardConnectionPoint(const UVHVMatchingCardWidget* CardWidget, bool bLeftSide, const FGeometry& AllottedGeometry) const;
+    FVector2D GetConnectorCenterInPaintSpace(const UVHVMatchingCardWidget* CardWidget, const FVector2D& WindowToDesktop) const;
 
     UFUNCTION()
     void HandleSubmitButtonClicked();
+
+    FReply HandleConfirmClicked();
 
     TArray<FMatchingPair> MatchingPairs;
     TArray<int32> RightDisplayOrder;
@@ -67,14 +82,31 @@ protected:
     int32 FocusedRightDisplayIndex = INDEX_NONE;
     int32 DraggedLeftIndex = INDEX_NONE;
     int32 HoveredRightDisplayIndex = INDEX_NONE;
+    int32 PendingLeftIndex = INDEX_NONE;
     FVector2D DragScreenPosition = FVector2D::ZeroVector;
     bool bLeftColumnFocused = true;
     bool bConnectionDragActive = false;
+    FString AuthoredPromptText;
+    float EntranceElapsed = 0.0f;
+    float ConnectionRevealElapsed = 1.0f;
 
-    UPROPERTY(BlueprintReadWrite, meta = (BindWidget))
+    TSharedPtr<SConstraintCanvas> ActivityContentSlate;
+    TSharedPtr<SVerticalBox> LeftItemsSlateContainer;
+    TSharedPtr<SVerticalBox> RightItemsSlateContainer;
+    TSharedPtr<STextBlock> PromptTextSlate;
+    TSharedPtr<STextBlock> SubmitHintSlate;
+    FSlateBrush BackgroundBrush;
+    FSlateBrush HeaderDividerBrush;
+    FSlateBrush KeycapBrush;
+    FButtonStyle ConfirmButtonStyle;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UTexture2D> MatchingBackgroundTexture;
+
+    UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional))
     TObjectPtr<UVerticalBox> LeftItemsContainer;
 
-    UPROPERTY(BlueprintReadWrite, meta = (BindWidget))
+    UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional))
     TObjectPtr<UVerticalBox> RightItemsContainer;
 
     UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional))

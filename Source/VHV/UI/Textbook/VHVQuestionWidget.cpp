@@ -1,9 +1,243 @@
 #include "UI/Textbook/VHVQuestionWidget.h"
+
+#include "UI/Textbook/SVHVChoiceCard.h"
+#include "UI/Textbook/VHVActivityUIStyle.h"
 #include "UI/VHVUIManagerComponent.h"
+#include "Components/TextBlock.h"
+#include "Components/VerticalBox.h"
+#include "InputCoreTypes.h"
+#include "Widgets/Layout/SBorder.h"
+#include "Widgets/Layout/SBox.h"
+#include "Widgets/Layout/SConstraintCanvas.h"
+#include "Widgets/SBoxPanel.h"
+#include "Widgets/SOverlay.h"
+#include "Widgets/Text/STextBlock.h"
 
 UVHVQuestionWidget::UVHVQuestionWidget()
 {
     SetIsFocusable(true);
+}
+
+TSharedRef<SWidget> UVHVQuestionWidget::RebuildWidget()
+{
+    QuestionPanelBrush = VHVActivityUIStyle::RoundedBrush(
+        VHVActivityUIStyle::GlassMain(), VHVActivityUIStyle::QuestionPanelRadius,
+        VHVActivityUIStyle::PanelBorder(), VHVActivityUIStyle::BorderNormalWidth);
+    QuestionShadowBrush = VHVActivityUIStyle::RoundedBrush(
+        VHVActivityUIStyle::ShadowPanel(), VHVActivityUIStyle::QuestionPanelRadius + 3.0f);
+    KeycapBrush = VHVActivityUIStyle::RoundedBrush(
+        VHVActivityUIStyle::FromSRGB(29, 34, 38, 145), 6.0f,
+        VHVActivityUIStyle::BorderNeutral(), VHVActivityUIStyle::BorderNormalWidth);
+    ActivityEmblemBrush = VHVActivityUIStyle::RoundedBrush(
+        VHVActivityUIStyle::FromSRGB(28, 26, 20, 128), 10.0f,
+        VHVActivityUIStyle::HeaderGold(), VHVActivityUIStyle::BorderNormalWidth);
+    DividerBrush = VHVActivityUIStyle::RoundedBrush(VHVActivityUIStyle::DividerGold(), 1.0f);
+
+    TSharedRef<SWidget> Result =
+        SAssignNew(RootCanvas, SConstraintCanvas)
+        + SConstraintCanvas::Slot()
+        .Anchors(FAnchors(0.1275f, 0.655f, 0.5625f, 0.865f))
+        .Offset(FMargin(0.0f))
+        [
+            SAssignNew(QuestionPanel, SOverlay)
+            + SOverlay::Slot()
+            .Padding(FMargin(5.0f, 6.0f, -5.0f, -6.0f))
+            [
+                SNew(SBorder)
+                .BorderImage(&QuestionShadowBrush)
+            ]
+            + SOverlay::Slot()
+            [
+                SNew(SBorder)
+                .BorderImage(&QuestionPanelBrush)
+                .Padding(VHVActivityUIStyle::PanelPadding)
+                [
+                    SNew(SVerticalBox)
+                    + SVerticalBox::Slot()
+                    .AutoHeight()
+                    [
+                        SNew(SHorizontalBox)
+                        + SHorizontalBox::Slot()
+                        .AutoWidth()
+                        .VAlign(VAlign_Center)
+                        .Padding(FMargin(0.0f, 0.0f, 12.0f, 0.0f))
+                        [
+                            SNew(SBox)
+                            .WidthOverride(VHVActivityUIStyle::HeaderIconDiameter)
+                            .HeightOverride(VHVActivityUIStyle::HeaderIconDiameter)
+                            [
+                                SNew(SBorder)
+                                .BorderImage(&ActivityEmblemBrush)
+                                .HAlign(HAlign_Center)
+                                .VAlign(VAlign_Center)
+                                [
+                                    SNew(STextBlock)
+                                    .Font(VHVActivityUIStyle::MediumFont(12))
+                                    .ColorAndOpacity(VHVActivityUIStyle::HeaderGold())
+                                    .Text(FText::FromString(TEXT("?")))
+                                ]
+                            ]
+                        ]
+                        + SHorizontalBox::Slot()
+                        .AutoWidth()
+                        .VAlign(VAlign_Center)
+                        [
+                            SAssignNew(ActivityTypeText, STextBlock)
+                            .Font(VHVActivityUIStyle::MediumFont(VHVActivityUIStyle::HeaderFontSize))
+                            .ColorAndOpacity(VHVActivityUIStyle::HeaderGold())
+                        ]
+                    ]
+                    + SVerticalBox::Slot()
+                    .AutoHeight()
+                    .HAlign(HAlign_Left)
+                    .Padding(FMargin(32.0f, 9.0f, 0.0f, 22.0f))
+                    [
+                        SNew(SBox)
+                        .WidthOverride(VHVActivityUIStyle::HeaderDividerWidth)
+                        .HeightOverride(VHVActivityUIStyle::HeaderDividerHeight)
+                        [
+                            SNew(SBorder)
+                            .BorderImage(&DividerBrush)
+                        ]
+                    ]
+                    + SVerticalBox::Slot()
+                    .AutoHeight()
+                    [
+                        SAssignNew(QuestionTextSlate, STextBlock)
+                        .Font(VHVActivityUIStyle::RegularFont(VHVActivityUIStyle::QuestionFontSize))
+                        .ColorAndOpacity(VHVActivityUIStyle::TextPrimary())
+                        .AutoWrapText(true)
+                        .LineHeightPercentage(1.12f)
+                    ]
+                    + SVerticalBox::Slot()
+                    .AutoHeight()
+                    .Padding(FMargin(0.0f, 24.0f, 0.0f, 0.0f))
+                    [
+                        SAssignNew(InstructionTextSlate, STextBlock)
+                        .Font(VHVActivityUIStyle::RegularFont(VHVActivityUIStyle::InstructionFontSize))
+                        .ColorAndOpacity(VHVActivityUIStyle::TextSecondary())
+                        .AutoWrapText(true)
+                    ]
+                ]
+            ]
+        ]
+        + SConstraintCanvas::Slot()
+        .Anchors(FAnchors(0.6625f, 0.51f, 0.975f, 0.94f))
+        .Offset(FMargin(0.0f))
+        [
+            SAssignNew(AnswerPanel, SVerticalBox)
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            [
+                SAssignNew(OptionsSlateContainer, SVerticalBox)
+            ]
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            .HAlign(HAlign_Right)
+            .Padding(FMargin(0.0f, VHVActivityUIStyle::LegendGap, 8.0f, 0.0f))
+            [
+                SNew(SHorizontalBox)
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .VAlign(VAlign_Center)
+                [
+                    SNew(SBorder)
+                    .BorderImage(&KeycapBrush)
+                    .Padding(FMargin(8.0f, 3.0f))
+                    [
+                        SNew(STextBlock)
+                        .Font(VHVActivityUIStyle::MediumFont(13))
+                        .ColorAndOpacity(VHVActivityUIStyle::PrimaryText())
+                        .Text(FText::FromString(TEXT("E")))
+                    ]
+                ]
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .VAlign(VAlign_Center)
+                .Padding(FMargin(7.0f, 0.0f, 20.0f, 0.0f))
+                [
+                    SAssignNew(InteractionLegendText, STextBlock)
+                    .Font(VHVActivityUIStyle::RegularFont(14))
+                    .ColorAndOpacity(VHVActivityUIStyle::SecondaryText())
+                ]
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .VAlign(VAlign_Center)
+                [
+                    SNew(SBorder)
+                    .BorderImage(&KeycapBrush)
+                    .Padding(FMargin(8.0f, 3.0f))
+                    [
+                        SNew(STextBlock)
+                        .Font(VHVActivityUIStyle::MediumFont(13))
+                        .ColorAndOpacity(VHVActivityUIStyle::PrimaryText())
+                        .Text(FText::FromString(TEXT("ENTER")))
+                    ]
+                ]
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .VAlign(VAlign_Center)
+                .Padding(FMargin(7.0f, 0.0f, 0.0f, 0.0f))
+                [
+                    SNew(STextBlock)
+                    .Font(VHVActivityUIStyle::RegularFont(14))
+                    .ColorAndOpacity(VHVActivityUIStyle::SecondaryText())
+                    .Text(FText::FromString(TEXT("Confirm")))
+                ]
+            ]
+        ];
+
+    RebuildChoiceCards();
+    UpdatePresentation();
+    return Result;
+}
+
+void UVHVQuestionWidget::ReleaseSlateResources(const bool bReleaseChildren)
+{
+    Super::ReleaseSlateResources(bReleaseChildren);
+    ChoiceCards.Empty();
+    RootCanvas.Reset();
+    OptionsSlateContainer.Reset();
+    ActivityTypeText.Reset();
+    QuestionTextSlate.Reset();
+    InstructionTextSlate.Reset();
+    InteractionLegendText.Reset();
+    QuestionPanel.Reset();
+    AnswerPanel.Reset();
+}
+
+void UVHVQuestionWidget::NativeConstruct()
+{
+    Super::NativeConstruct();
+    EntranceElapsed = 0.0f;
+    if (QuestionPanel)
+    {
+        QuestionPanel->SetRenderOpacity(0.0f);
+    }
+    if (AnswerPanel)
+    {
+        AnswerPanel->SetRenderOpacity(0.0f);
+    }
+}
+
+void UVHVQuestionWidget::NativeTick(const FGeometry& MyGeometry, const float InDeltaTime)
+{
+    Super::NativeTick(MyGeometry, InDeltaTime);
+    EntranceElapsed += InDeltaTime;
+    const float Alpha = FMath::Clamp(
+        EntranceElapsed / VHVActivityUIStyle::AnimationStandard, 0.0f, 1.0f);
+    const float Smoothed = FMath::InterpEaseOut(0.0f, 1.0f, Alpha, 3.0f);
+
+    if (QuestionPanel)
+    {
+        QuestionPanel->SetRenderOpacity(Smoothed);
+        QuestionPanel->SetRenderTransform(FSlateRenderTransform(
+            FVector2D(0.0f, FMath::Lerp(12.0f, 0.0f, Smoothed))));
+    }
+    if (AnswerPanel)
+    {
+        AnswerPanel->SetRenderOpacity(Smoothed);
+    }
 }
 
 void UVHVQuestionWidget::SetOwningUIManager(UVHVUIManagerComponent* InUIManager)
@@ -11,66 +245,30 @@ void UVHVQuestionWidget::SetOwningUIManager(UVHVUIManagerComponent* InUIManager)
     OwningUIManager = InUIManager;
 }
 
-void UVHVQuestionOptionButtonProxy::OnOptionClicked()
-{
-    if (OwnerWidget)
-    {
-        OwnerWidget->HandleOptionSelected(OptionIndex);
-    }
-}
-
 void UVHVQuestionWidget::SetQuestionData(const FQuestionData& InQuestion)
 {
     CurrentQuestion = InQuestion;
-    SelectedOptionIndex = CurrentQuestion.Options.Num() > 0 ? 0 : INDEX_NONE;
+    FocusedOptionIndex = CurrentQuestion.Options.Num() > 0 ? 0 : INDEX_NONE;
+    SelectedOptionIndex = INDEX_NONE;
     SelectedOptionIndices.Empty();
-
-    if (QuestionText)
-    {
-        QuestionText->SetText(FText::FromString(CurrentQuestion.QuestionText));
-    }
-
-    ClearOptionButtons();
-
-    if (!OptionsContainer || CurrentQuestion.Options.Num() == 0)
-    {
-        return;
-    }
-
-    for (int32 Index = 0; Index < CurrentQuestion.Options.Num(); ++Index)
-    {
-        const FQuestionOption& Option = CurrentQuestion.Options[Index];
-
-        UButton* OptionButton = NewObject<UButton>(this);
-        UTextBlock* OptionText = NewObject<UTextBlock>(this);
-        OptionText->SetText(FText::FromString(Option.OptionText));
-        OptionText->SetAutoWrapText(true);
-        OptionButton->SetIsEnabled(true);
-        OptionButton->AddChild(OptionText);
-        OptionButtons.Add(OptionButton);
-        OptionsContainer->AddChild(OptionButton);
-
-        UVHVQuestionOptionButtonProxy* OptionProxy = NewObject<UVHVQuestionOptionButtonProxy>(this);
-        OptionProxy->OptionIndex = Index;
-        OptionProxy->OwnerWidget = this;
-        OptionProxies.Add(OptionProxy);
-        OptionButton->OnClicked.AddDynamic(OptionProxy, &UVHVQuestionOptionButtonProxy::OnOptionClicked);
-    }
-
-    SetIsFocusable(true);
-    UpdateSelectionVisuals();
+    bShowingSelectionFeedback = false;
+    EntranceElapsed = 0.0f;
+    RebuildChoiceCards();
+    UpdatePresentation();
 }
 
-void UVHVQuestionWidget::SetMultiChoiceEnabled(bool bInMultiChoiceEnabled)
+void UVHVQuestionWidget::SetMultiChoiceEnabled(const bool bInMultiChoiceEnabled)
 {
     bMultiChoiceEnabled = bInMultiChoiceEnabled;
+    SelectedOptionIndex = INDEX_NONE;
     SelectedOptionIndices.Empty();
-    UpdateSelectionVisuals();
+    bShowingSelectionFeedback = false;
+    UpdatePresentation();
 }
 
 FReply UVHVQuestionWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
 {
-    if (!CurrentQuestion.Options.Num())
+    if (CurrentQuestion.Options.Num() == 0)
     {
         return Super::NativeOnKeyDown(InGeometry, InKeyEvent);
     }
@@ -78,35 +276,25 @@ FReply UVHVQuestionWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FK
     const FKey Key = InKeyEvent.GetKey();
     if (Key == EKeys::Up || Key == EKeys::W || Key == EKeys::Gamepad_DPad_Up || Key == EKeys::Gamepad_LeftStick_Up)
     {
-        if (SelectedOptionIndex == INDEX_NONE)
-        {
-            SetSelectedOptionIndex(CurrentQuestion.Options.Num() - 1);
-        }
-        else
-        {
-            const int32 NextIndex = SelectedOptionIndex - 1;
-            SetSelectedOptionIndex(NextIndex < 0 ? CurrentQuestion.Options.Num() - 1 : NextIndex);
-        }
+        const int32 NextIndex = FocusedOptionIndex == INDEX_NONE
+            ? CurrentQuestion.Options.Num() - 1
+            : (FocusedOptionIndex - 1 + CurrentQuestion.Options.Num()) % CurrentQuestion.Options.Num();
+        SetFocusedOptionIndex(NextIndex);
         return FReply::Handled();
     }
 
     if (Key == EKeys::Down || Key == EKeys::S || Key == EKeys::Gamepad_DPad_Down || Key == EKeys::Gamepad_LeftStick_Down)
     {
-        if (SelectedOptionIndex == INDEX_NONE)
-        {
-            SetSelectedOptionIndex(0);
-        }
-        else
-        {
-            const int32 NextIndex = SelectedOptionIndex + 1;
-            SetSelectedOptionIndex(NextIndex >= CurrentQuestion.Options.Num() ? 0 : NextIndex);
-        }
+        const int32 NextIndex = FocusedOptionIndex == INDEX_NONE
+            ? 0
+            : (FocusedOptionIndex + 1) % CurrentQuestion.Options.Num();
+        SetFocusedOptionIndex(NextIndex);
         return FReply::Handled();
     }
 
     if (bMultiChoiceEnabled && (Key == EKeys::SpaceBar || Key == EKeys::Gamepad_FaceButton_Left))
     {
-        ToggleSelectedOption(SelectedOptionIndex);
+        ToggleSelectedOption(FocusedOptionIndex);
         return FReply::Handled();
     }
 
@@ -127,28 +315,36 @@ int32 UVHVQuestionWidget::GetSelectedOptionIndex() const
     return SelectedOptionIndex;
 }
 
-void UVHVQuestionWidget::SetSelectedOptionIndex(int32 Index)
+void UVHVQuestionWidget::SetSelectedOptionIndex(const int32 Index)
 {
     if (!CurrentQuestion.Options.IsValidIndex(Index))
     {
         SelectedOptionIndex = INDEX_NONE;
-        UpdateSelectionVisuals();
+        UpdatePresentation();
         return;
     }
 
+    FocusedOptionIndex = Index;
     SelectedOptionIndex = Index;
     ClearInputFeedback();
-    UpdateSelectionVisuals();
+    UpdatePresentation();
+}
+
+void UVHVQuestionWidget::SetFocusedOptionIndex(const int32 Index)
+{
+    if (!CurrentQuestion.Options.IsValidIndex(Index))
+    {
+        return;
+    }
+    FocusedOptionIndex = Index;
+    UpdatePresentation();
 }
 
 bool UVHVQuestionWidget::HasSelection() const
 {
-    if (bMultiChoiceEnabled)
-    {
-        return SelectedOptionIndices.Num() > 0;
-    }
-
-    return CurrentQuestion.Options.IsValidIndex(SelectedOptionIndex);
+    return bMultiChoiceEnabled
+        ? SelectedOptionIndices.Num() > 0
+        : CurrentQuestion.Options.IsValidIndex(SelectedOptionIndex);
 }
 
 TArray<int32> UVHVQuestionWidget::GetSelectedOptionIndices() const
@@ -160,43 +356,48 @@ TArray<int32> UVHVQuestionWidget::GetSelectedOptionIndices() const
 
 bool UVHVQuestionWidget::ActivateFocusedOption()
 {
-    if (!CurrentQuestion.Options.IsValidIndex(SelectedOptionIndex))
+    if (!CurrentQuestion.Options.IsValidIndex(FocusedOptionIndex))
     {
         return false;
     }
 
-    HandleOptionSelected(SelectedOptionIndex);
+    HandleOptionSelected(FocusedOptionIndex);
     return true;
 }
 
-void UVHVQuestionWidget::HandleOptionSelected(int32 OptionIndex)
+void UVHVQuestionWidget::HandleOptionSelected(const int32 OptionIndex)
 {
     if (!CurrentQuestion.Options.IsValidIndex(OptionIndex))
     {
         return;
     }
 
+    FocusedOptionIndex = OptionIndex;
     if (bMultiChoiceEnabled)
     {
         ToggleSelectedOption(OptionIndex);
     }
     else
     {
-        // Mouse and keyboard use the same two-step select/confirm path.
         SetSelectedOptionIndex(OptionIndex);
     }
 
     SetKeyboardFocus();
 }
 
-void UVHVQuestionWidget::ToggleSelectedOption(int32 OptionIndex)
+void UVHVQuestionWidget::HandleChoiceCardChosen(const int32 OptionIndex)
+{
+    HandleOptionSelected(OptionIndex);
+}
+
+void UVHVQuestionWidget::ToggleSelectedOption(const int32 OptionIndex)
 {
     if (!CurrentQuestion.Options.IsValidIndex(OptionIndex))
     {
         return;
     }
 
-    SelectedOptionIndex = OptionIndex;
+    FocusedOptionIndex = OptionIndex;
     ClearInputFeedback();
     if (SelectedOptionIndices.Contains(OptionIndex))
     {
@@ -207,81 +408,103 @@ void UVHVQuestionWidget::ToggleSelectedOption(int32 OptionIndex)
         SelectedOptionIndices.Add(OptionIndex);
     }
 
-    UE_LOG(LogTemp, Log, TEXT("[VHVTextbook] MultiChoice selected OptionIndex=%d Selected=%s"), OptionIndex, SelectedOptionIndices.Contains(OptionIndex) ? TEXT("true") : TEXT("false"));
-    UpdateSelectionVisuals();
+    UE_LOG(LogTemp, Log, TEXT("[VHVTextbook] MultiChoice selected OptionIndex=%d Selected=%s"),
+        OptionIndex, SelectedOptionIndices.Contains(OptionIndex) ? TEXT("true") : TEXT("false"));
+    UpdatePresentation();
 }
 
 void UVHVQuestionWidget::ShowSelectionRequiredFeedback()
 {
-    if (QuestionText)
+    bShowingSelectionFeedback = true;
+    if (InstructionTextSlate)
     {
-        QuestionText->SetText(FText::FromString(FString::Printf(
-            TEXT("%s\nSelect at least one option before submitting."),
-            *CurrentQuestion.QuestionText)));
+        InstructionTextSlate->SetText(FText::FromString(bMultiChoiceEnabled
+            ? TEXT("Select at least one option before confirming.")
+            : TEXT("Select an option before confirming.")));
+        InstructionTextSlate->SetColorAndOpacity(VHVActivityUIStyle::WarningText());
     }
 }
 
 void UVHVQuestionWidget::ClearInputFeedback()
 {
-    if (QuestionText)
+    bShowingSelectionFeedback = false;
+    if (InstructionTextSlate)
     {
-        QuestionText->SetText(FText::FromString(CurrentQuestion.QuestionText));
+        InstructionTextSlate->SetText(GetDefaultInstruction());
+        InstructionTextSlate->SetColorAndOpacity(VHVActivityUIStyle::SecondaryText());
     }
 }
 
-void UVHVQuestionWidget::UpdateSelectionVisuals()
+FText UVHVQuestionWidget::GetDefaultInstruction() const
 {
-    if (!OptionsContainer)
+    return FText::FromString(bMultiChoiceEnabled
+        ? TEXT("Choose every answer that applies, then confirm.")
+        : TEXT("Choose one answer, then confirm."));
+}
+
+void UVHVQuestionWidget::RebuildChoiceCards()
+{
+    ChoiceCards.Empty();
+    if (!OptionsSlateContainer)
     {
         return;
     }
 
-    const FLinearColor SelectedBackground = FLinearColor(0.18f, 0.45f, 0.75f, 1.0f);
-    const FLinearColor UnselectedBackground = FLinearColor(0.12f, 0.12f, 0.12f, 1.0f);
-    const FLinearColor SelectedText = FLinearColor::White;
-    const FLinearColor UnselectedText = FLinearColor(0.82f, 0.82f, 0.82f, 1.0f);
-
-    for (int32 Index = 0; Index < OptionButtons.Num(); ++Index)
+    OptionsSlateContainer->ClearChildren();
+    for (int32 Index = 0; Index < CurrentQuestion.Options.Num(); ++Index)
     {
-        UButton* OptionButton = OptionButtons[Index];
-        if (!OptionButton)
-        {
-            continue;
-        }
-
-        const bool bIsFocused = Index == SelectedOptionIndex;
-        const bool bIsSelected = bMultiChoiceEnabled ? SelectedOptionIndices.Contains(Index) : bIsFocused;
-        OptionButton->SetBackgroundColor(bIsSelected ? SelectedBackground : UnselectedBackground);
-
-        UTextBlock* OptionText = Cast<UTextBlock>(OptionButton->GetChildAt(0));
-        if (OptionText)
-        {
-            FString DisplayText = CurrentQuestion.Options.IsValidIndex(Index) ? CurrentQuestion.Options[Index].OptionText : FString();
-            if (bMultiChoiceEnabled)
-            {
-                DisplayText = FString::Printf(TEXT("%s %s%s"), bIsSelected ? TEXT("[x]") : TEXT("[ ]"), bIsFocused ? TEXT("< ") : TEXT(""), *DisplayText);
-                if (bIsFocused)
-                {
-                    DisplayText += TEXT(" >");
-                }
-            }
-            else if (bIsSelected)
-            {
-                DisplayText = FString::Printf(TEXT("< %s >"), *DisplayText);
-            }
-            OptionText->SetText(FText::FromString(DisplayText));
-            OptionText->SetColorAndOpacity(bIsSelected || bIsFocused ? SelectedText : UnselectedText);
-        }
+        TSharedPtr<SVHVChoiceCard> ChoiceCard;
+        OptionsSlateContainer->AddSlot()
+        .AutoHeight()
+        .Padding(FMargin(0.0f, 0.0f, 0.0f,
+            Index + 1 < CurrentQuestion.Options.Num() ? VHVActivityUIStyle::ChoiceGap : 0.0f))
+        [
+            SAssignNew(ChoiceCard, SVHVChoiceCard)
+            .OptionIndex(Index)
+            .AnswerText(FText::FromString(CurrentQuestion.Options[Index].OptionText))
+            .EntranceDelay(Index * VHVActivityUIStyle::AnimationStagger)
+            .OnChosen(FOnVHVChoiceCardChosen::CreateUObject(this, &UVHVQuestionWidget::HandleChoiceCardChosen))
+        ];
+        ChoiceCards.Add(ChoiceCard);
     }
 }
 
-void UVHVQuestionWidget::ClearOptionButtons()
+void UVHVQuestionWidget::UpdatePresentation()
 {
-    OptionButtons.Empty();
-    OptionProxies.Empty();
-    if (OptionsContainer)
+    if (ActivityTypeText)
     {
-        OptionsContainer->ClearChildren();
+        ActivityTypeText->SetText(FText::FromString(bMultiChoiceEnabled
+            ? TEXT("MULTIPLE CHOICE")
+            : TEXT("SINGLE CHOICE")));
+    }
+    if (QuestionTextSlate)
+    {
+        QuestionTextSlate->SetText(FText::FromString(CurrentQuestion.QuestionText));
+    }
+    if (InstructionTextSlate && !bShowingSelectionFeedback)
+    {
+        InstructionTextSlate->SetText(GetDefaultInstruction());
+        InstructionTextSlate->SetColorAndOpacity(VHVActivityUIStyle::SecondaryText());
+    }
+    if (InteractionLegendText)
+    {
+        InteractionLegendText->SetText(FText::FromString(bMultiChoiceEnabled
+            ? TEXT("Toggle")
+            : TEXT("Select")));
+    }
+
+    for (int32 Index = 0; Index < ChoiceCards.Num(); ++Index)
+    {
+        if (ChoiceCards[Index])
+        {
+            const bool bIsSelected = bMultiChoiceEnabled
+                ? SelectedOptionIndices.Contains(Index)
+                : SelectedOptionIndex == Index;
+            ChoiceCards[Index]->SetPresentationState(
+                Index == FocusedOptionIndex,
+                bIsSelected,
+                true,
+                bMultiChoiceEnabled);
+        }
     }
 }
-

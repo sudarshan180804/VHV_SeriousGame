@@ -1,14 +1,18 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Styling/SlateBrush.h"
+#include "Styling/SlateTypes.h"
 #include "UI/VHVUserWidgetBase.h"
 #include "Components/CanvasPanel.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
-#include "Components/Border.h"
 #include "VHV/Textbook/Types/VHVTextbookTypes.h"
 #include "VHVOrderingWidget.generated.h"
 
+class SHorizontalBox;
+class STextBlock;
+class UTexture2D;
 class UVHVOrderingCardWidget;
 class UVHVUIManagerComponent;
 
@@ -57,6 +61,9 @@ public:
     TSubclassOf<UVHVOrderingCardWidget> CardWidgetClass;
 
 protected:
+    virtual TSharedRef<SWidget> RebuildWidget() override;
+    virtual void ReleaseSlateResources(bool bReleaseChildren) override;
+
     void RefreshDisplay();
     void ApplyRandomizedSourceOrder();
     void ShuffleItems(TArray<FOrderingItem>& Items);
@@ -64,6 +71,7 @@ protected:
     int32 CalculateMouseInsertionSlot(const FVector2D& CursorLocalToContainer) const;
     void UpdateMouseDropTarget();
     void UpdateSubmitHint();
+    FReply HandleConfirmClicked();
 
     TArray<FOrderingItem> SourceItems;
     TArray<FOrderingItem> CurrentOrderingItems;
@@ -80,16 +88,28 @@ protected:
     FString FocusedItemID;
     FString MouseDragItemID;
 
-    UPROPERTY(BlueprintReadWrite, meta = (BindWidget))
+    TSharedPtr<SHorizontalBox> CardsSlateContainer;
+    TSharedPtr<STextBlock> SubmitHintSlate;
+    FSlateBrush BackgroundBrush;
+    FSlateBrush BackgroundShadeBrush;
+    FSlateBrush HeaderDividerBrush;
+    FSlateBrush KeycapBrush;
+    FButtonStyle ConfirmButtonStyle;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UTexture2D> OrderingBackgroundTexture;
+
+    // Legacy WBP bindings are retained for load compatibility. The approved
+    // Ordering presentation is built by the native Slate tree.
+    UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional))
     TObjectPtr<UCanvasPanel> OrderingRoot;
 
-    UPROPERTY(BlueprintReadWrite, meta = (BindWidget))
+    UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional))
     TObjectPtr<UVerticalBox> CardsContainer;
 
-    UPROPERTY(BlueprintReadWrite, meta = (BindWidget))
+    UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional))
     TObjectPtr<UTextBlock> SubmitHint;
 
     UPROPERTY()
     TObjectPtr<UVHVUIManagerComponent> OwningUIManager;
-
 };
