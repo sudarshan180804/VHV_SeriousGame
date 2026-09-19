@@ -107,7 +107,8 @@ void UVHVStoryStateSubsystem::ResetStoryState()
 
 bool UVHVStoryStateSubsystem::EvaluateCondition(const FVHVStoryCondition& Condition) const
 {
-    if (Condition.StateID.IsNone())
+    const FName StateID = Condition.GetEffectiveStateID();
+    if (StateID.IsNone())
     {
         UE_LOG(LogVHV, Warning, TEXT("[VHVStoryState] Cannot evaluate condition '%s' with an empty State ID."),
             *UEnum::GetValueAsString(Condition.ConditionType));
@@ -117,15 +118,15 @@ bool UVHVStoryStateSubsystem::EvaluateCondition(const FVHVStoryCondition& Condit
     switch (Condition.ConditionType)
     {
     case EVHVStoryConditionType::FlagSet:
-        return HasFlag(Condition.StateID);
+        return HasFlag(StateID);
     case EVHVStoryConditionType::FlagNotSet:
-        return !HasFlag(Condition.StateID);
+        return !HasFlag(StateID);
     case EVHVStoryConditionType::CounterEqual:
-        return GetCounter(Condition.StateID) == Condition.CompareValue;
+        return GetCounter(StateID) == Condition.CompareValue;
     case EVHVStoryConditionType::CounterGreaterOrEqual:
-        return GetCounter(Condition.StateID) >= Condition.CompareValue;
+        return GetCounter(StateID) >= Condition.CompareValue;
     case EVHVStoryConditionType::CounterLessOrEqual:
-        return GetCounter(Condition.StateID) <= Condition.CompareValue;
+        return GetCounter(StateID) <= Condition.CompareValue;
     default:
         UE_LOG(LogVHV, Warning, TEXT("[VHVStoryState] Cannot evaluate condition with unsupported type value %d."),
             static_cast<uint8>(Condition.ConditionType));
@@ -171,7 +172,8 @@ bool UVHVStoryStateSubsystem::EvaluateConditionSet(const FVHVStoryConditionSet& 
 
 bool UVHVStoryStateSubsystem::ApplyEffect(const FVHVStoryEffect& Effect)
 {
-    if (Effect.StateID.IsNone())
+    const FName StateID = Effect.GetEffectiveStateID();
+    if (StateID.IsNone())
     {
         UE_LOG(LogVHV, Warning, TEXT("[VHVStoryState] Cannot apply effect '%s' with an empty State ID."),
             *UEnum::GetValueAsString(Effect.EffectType));
@@ -181,16 +183,16 @@ bool UVHVStoryStateSubsystem::ApplyEffect(const FVHVStoryEffect& Effect)
     switch (Effect.EffectType)
     {
     case EVHVStoryEffectType::SetFlag:
-        SetFlag(Effect.StateID);
+        SetFlag(StateID);
         return true;
     case EVHVStoryEffectType::ClearFlag:
-        ClearFlag(Effect.StateID);
+        ClearFlag(StateID);
         return true;
     case EVHVStoryEffectType::SetCounter:
-        SetCounter(Effect.StateID, Effect.Value);
+        SetCounter(StateID, Effect.Value);
         return true;
     case EVHVStoryEffectType::AddCounter:
-        AddCounter(Effect.StateID, Effect.Value);
+        AddCounter(StateID, Effect.Value);
         return true;
     default:
         UE_LOG(LogVHV, Warning, TEXT("[VHVStoryState] Cannot apply effect with unsupported type value %d."),

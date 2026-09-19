@@ -343,11 +343,12 @@ void UVHVUIManagerComponent::HandleQuestObjectiveActivationRequested(FName Quest
     {
         if (TextbookSubsystem)
         {
+            const FString ActivityID = Objective.GetEffectiveActivityID().ToString();
             TextbookSubsystem->SetProgressionMode(EVHVTextbookProgressionMode::QuestManaged);
-            bQuestManagedLearningActivityActive = TextbookSubsystem->StartActivityByID(Objective.ActivityID.ToString());
+            bQuestManagedLearningActivityActive = TextbookSubsystem->StartActivityByID(ActivityID);
             if (!bQuestManagedLearningActivityActive)
             {
-                UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Could not start activity '%s' for objective '%s'."), *Objective.ActivityID.ToString(), *ObjectiveID.ToString());
+                UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Could not start activity '%s' for objective '%s'."), *ActivityID, *ObjectiveID.ToString());
             }
         }
         return;
@@ -407,7 +408,7 @@ void UVHVUIManagerComponent::HandleTextbookActivityCompleted()
     }
 
     const FTextbookActivityData CompletedActivity = TextbookSubsystem->GetCurrentActivity();
-    if (CurrentNode->LinkedActivity.ActivityID != CompletedActivity.ActivityID)
+    if (CurrentNode->LinkedActivity.GetEffectiveActivityID() != CompletedActivity.GetEffectiveActivityID())
     {
         return;
     }
@@ -842,7 +843,7 @@ void UVHVUIManagerComponent::RefreshCurrentAskQuestionUI()
         return;
     }
 
-    if (CurrentActivity.ActivityID.IsEmpty() || CurrentActivity.Question.QuestionText.IsEmpty())
+    if (CurrentActivity.GetEffectiveActivityID().IsEmpty() || CurrentActivity.Question.QuestionText.IsEmpty())
     {
         HideQuestionUI();
         return;
@@ -933,7 +934,7 @@ void UVHVUIManagerComponent::RefreshCurrentFeedbackUI()
     }
 
     const FTextbookActivityData CurrentActivity = TextbookSubsystem->GetCurrentActivity();
-    if (CurrentActivity.ActivityID.IsEmpty())
+    if (CurrentActivity.GetEffectiveActivityID().IsEmpty())
     {
         HideFeedbackUI();
         return;
@@ -1169,9 +1170,9 @@ void UVHVUIManagerComponent::CommitCurrentConversationState()
     ActiveConversationState.bCompleted = ActiveConversationState.CurrentNodeID.IsEmpty();
 
     const FDialogueNode* CurrentNode = FindNodeByID(ActiveConversation.ConversationID, ActiveConversationState.CurrentNodeID);
-    if (CurrentNode && CurrentNode->bIsCheckpoint && !CurrentNode->CheckpointID.IsEmpty())
+    if (CurrentNode && CurrentNode->bIsCheckpoint && !CurrentNode->GetEffectiveCheckpointID().IsEmpty())
     {
-        ActiveConversationState.LatestCheckpointID = CurrentNode->CheckpointID;
+        ActiveConversationState.LatestCheckpointID = CurrentNode->GetEffectiveCheckpointID();
     }
 
     ConversationStates.Add(ActiveConversation.ConversationID, ActiveConversationState);
@@ -1237,7 +1238,7 @@ bool UVHVUIManagerComponent::StartConversationInternal(const FDialogueConversati
         {
             for (const FDialogueNode& Node : InConversation.Nodes)
             {
-                if (Node.bIsCheckpoint && Node.CheckpointID == ActiveConversationState.LatestCheckpointID)
+                if (Node.bIsCheckpoint && Node.GetEffectiveCheckpointID() == ActiveConversationState.LatestCheckpointID)
                 {
                     StartingNodeID = Node.NodeID;
                     break;
@@ -1323,7 +1324,8 @@ void UVHVUIManagerComponent::AdvanceConversation()
 
 bool UVHVUIManagerComponent::StartLinkedLearningActivity(const FTextbookActivityReference& Reference)
 {
-    if (Reference.ActivityID.IsEmpty())
+    const FString ActivityID = Reference.GetEffectiveActivityID();
+    if (ActivityID.IsEmpty())
     {
         return false;
     }
@@ -1341,7 +1343,7 @@ bool UVHVUIManagerComponent::StartLinkedLearningActivity(const FTextbookActivity
     }
 
     TextbookSubsystem = TextbookSubsystemInstance;
-    const bool bStarted = TextbookSubsystem->StartActivityByID(Reference.ActivityID);
+    const bool bStarted = TextbookSubsystem->StartActivityByID(ActivityID);
     if (bStarted)
     {
         RefreshCurrentAskQuestionUI();

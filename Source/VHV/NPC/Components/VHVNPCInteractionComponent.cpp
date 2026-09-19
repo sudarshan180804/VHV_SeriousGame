@@ -38,13 +38,14 @@ FText UVHVNPCInteractionComponent::GetInteractionPrompt() const
 		? Owner->FindComponentByClass<UVHVQuestParticipantComponent>()
 		: nullptr;
 
-	if (QuestParticipant && !QuestParticipant->ParticipantID.IsNone() && World && World->GetGameInstance())
+	const FName ParticipantID = QuestParticipant ? QuestParticipant->GetEffectiveParticipantID() : NAME_None;
+	if (!ParticipantID.IsNone() && World && World->GetGameInstance())
 	{
 		const UVHVQuestSubsystem* QuestSubsystem = World->GetGameInstance()->GetSubsystem<UVHVQuestSubsystem>();
 		FVHVQuestObjectiveDefinition Objective;
 		if (QuestSubsystem
 			&& QuestSubsystem->GetCurrentObjective(Objective)
-			&& Objective.TargetID == QuestParticipant->ParticipantID
+			&& Objective.GetEffectiveTargetID() == ParticipantID
 			&& !Objective.ObjectiveText.IsEmpty())
 		{
 			return Objective.ObjectiveText;

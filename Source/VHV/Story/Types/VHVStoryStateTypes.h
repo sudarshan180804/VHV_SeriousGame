@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Core/VHVAuthoringReferences.h"
 #include "VHVStoryStateTypes.generated.h"
 
 UENUM(BlueprintType)
@@ -28,11 +29,22 @@ struct VHV_API FVHVStoryCondition
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Story State")
     EVHVStoryConditionType ConditionType = EVHVStoryConditionType::FlagSet;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Story State")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Story State", meta = (Categories = "VHV.Story"))
+    FGameplayTag StateTag;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Story State", meta = (AdvancedDisplay, DisplayName = "State ID (Legacy)"))
     FName StateID;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Story State", meta = (EditCondition = "ConditionType == EVHVStoryConditionType::CounterEqual || ConditionType == EVHVStoryConditionType::CounterGreaterOrEqual || ConditionType == EVHVStoryConditionType::CounterLessOrEqual", EditConditionHides))
     int32 CompareValue = 0;
+
+    FName GetEffectiveStateID() const
+    {
+        const TCHAR* ExpectedCategory = ConditionType == EVHVStoryConditionType::FlagSet || ConditionType == EVHVStoryConditionType::FlagNotSet
+            ? TEXT("VHV.Story.Flag")
+            : TEXT("VHV.Story.Counter");
+        return VHVAuthoringReferences::ResolveID(StateTag, StateID, ExpectedCategory);
+    }
 };
 
 USTRUCT(BlueprintType)
@@ -64,9 +76,20 @@ struct VHV_API FVHVStoryEffect
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Story State")
     EVHVStoryEffectType EffectType = EVHVStoryEffectType::SetFlag;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Story State")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Story State", meta = (Categories = "VHV.Story"))
+    FGameplayTag StateTag;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Story State", meta = (AdvancedDisplay, DisplayName = "State ID (Legacy)"))
     FName StateID;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Story State", meta = (EditCondition = "EffectType == EVHVStoryEffectType::SetCounter || EffectType == EVHVStoryEffectType::AddCounter", EditConditionHides))
     int32 Value = 0;
+
+    FName GetEffectiveStateID() const
+    {
+        const TCHAR* ExpectedCategory = EffectType == EVHVStoryEffectType::SetFlag || EffectType == EVHVStoryEffectType::ClearFlag
+            ? TEXT("VHV.Story.Flag")
+            : TEXT("VHV.Story.Counter");
+        return VHVAuthoringReferences::ResolveID(StateTag, StateID, ExpectedCategory);
+    }
 };

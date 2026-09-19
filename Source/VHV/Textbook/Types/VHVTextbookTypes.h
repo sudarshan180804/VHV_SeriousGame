@@ -41,7 +41,10 @@ struct FTextbookActivityReference
 {
     GENERATED_BODY()
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Textbook Reference")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Textbook Reference", meta = (Categories = "VHV.Activity"))
+    FGameplayTag ActivityTag;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Textbook Reference", meta = (AdvancedDisplay, DisplayName = "Activity ID (Legacy)"))
     FString ActivityID;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Textbook Reference")
@@ -49,6 +52,8 @@ struct FTextbookActivityReference
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Textbook Reference")
     bool bRequiredForProgress = false;
+
+    FString GetEffectiveActivityID() const { return VHVAuthoringReferences::ResolveStringID(ActivityTag, ActivityID, TEXT("VHV.Activity")); }
 };
 
 // ============================================================
@@ -211,7 +216,10 @@ struct FTextbookActivityData
 {
     GENERATED_BODY()
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Activity")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Activity", meta = (Categories = "VHV.Activity"))
+    FGameplayTag ActivityTag;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Activity", meta = (AdvancedDisplay, DisplayName = "Activity ID (Legacy)"))
     FString ActivityID;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Activity")
@@ -300,6 +308,8 @@ struct FTextbookActivityData
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Story State")
     TArray<FVHVStoryEffect> FailureEffects;
+
+    FString GetEffectiveActivityID() const { return VHVAuthoringReferences::ResolveStringID(ActivityTag, ActivityID, TEXT("VHV.Activity")); }
 };
 
 // ============================================================

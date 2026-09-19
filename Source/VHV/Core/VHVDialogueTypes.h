@@ -50,7 +50,10 @@ struct VHV_API FDialogueNode
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
     EVHVDialogueNodeType NodeType = EVHVDialogueNodeType::Text;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue", meta = (Categories = "VHV.Participant"))
+    FGameplayTag SpeakerTag;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue", meta = (AdvancedDisplay, DisplayName = "Speaker ID (Legacy)"))
     FString SpeakerID;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
@@ -68,7 +71,10 @@ struct VHV_API FDialogueNode
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
     bool bIsCheckpoint = false;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue", meta = (Categories = "VHV.Checkpoint", EditCondition = "bIsCheckpoint", EditConditionHides))
+    FGameplayTag CheckpointTag;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue", meta = (AdvancedDisplay, DisplayName = "Checkpoint ID (Legacy)", EditCondition = "bIsCheckpoint", EditConditionHides))
     FString CheckpointID;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Learning")
@@ -79,6 +85,9 @@ struct VHV_API FDialogueNode
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Story State")
     TArray<FVHVStoryEffect> CompletionEffects;
+
+    FString GetEffectiveSpeakerID() const { return VHVAuthoringReferences::ResolveStringID(SpeakerTag, SpeakerID, TEXT("VHV.Participant")); }
+    FString GetEffectiveCheckpointID() const { return VHVAuthoringReferences::ResolveStringID(CheckpointTag, CheckpointID, TEXT("VHV.Checkpoint")); }
 };
 
 USTRUCT(BlueprintType)
@@ -119,7 +128,10 @@ struct VHV_API FDialogueLine
 {
     GENERATED_BODY()
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue", meta = (Categories = "VHV.Participant"))
+    FGameplayTag SpeakerTag;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue", meta = (AdvancedDisplay, DisplayName = "Speaker ID (Legacy)"))
     FString SpeakerID;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
@@ -127,6 +139,8 @@ struct VHV_API FDialogueLine
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
     FText Text;
+
+    FString GetEffectiveSpeakerID() const { return VHVAuthoringReferences::ResolveStringID(SpeakerTag, SpeakerID, TEXT("VHV.Participant")); }
 };
 
 USTRUCT(BlueprintType)

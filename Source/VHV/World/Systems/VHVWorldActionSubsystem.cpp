@@ -90,25 +90,26 @@ bool UVHVWorldActionSubsystem::CompleteWorldAction(const FGuid RequestID, const 
 
 bool UVHVWorldActionSubsystem::RegisterReceiver(UVHVWorldActionReceiverComponent* Receiver)
 {
-    if (!IsValid(Receiver) || Receiver->ReceiverID.IsNone())
+    const FName ReceiverID = IsValid(Receiver) ? Receiver->GetEffectiveReceiverID() : NAME_None;
+    if (!IsValid(Receiver) || ReceiverID.IsNone())
     {
         UE_LOG(LogVHV, Warning, TEXT("[VHVWorldAction] Receiver component on '%s' requires a non-empty Receiver ID."),
             *GetNameSafe(Receiver ? Receiver->GetOwner() : nullptr));
         return false;
     }
 
-    if (TWeakObjectPtr<UVHVWorldActionReceiverComponent>* Existing = Receivers.Find(Receiver->ReceiverID))
+    if (TWeakObjectPtr<UVHVWorldActionReceiverComponent>* Existing = Receivers.Find(ReceiverID))
     {
         if (Existing->IsValid() && Existing->Get() != Receiver)
         {
             UE_LOG(LogVHV, Warning, TEXT("[VHVWorldAction] Duplicate Receiver ID '%s' in world '%s': preserving '%s' and rejecting '%s'."),
-                *Receiver->ReceiverID.ToString(), *GetNameSafe(GetWorld()),
+                *ReceiverID.ToString(), *GetNameSafe(GetWorld()),
                 *GetNameSafe(Existing->Get()->GetOwner()), *GetNameSafe(Receiver->GetOwner()));
             return false;
         }
     }
 
-    Receivers.Add(Receiver->ReceiverID, Receiver);
+    Receivers.Add(ReceiverID, Receiver);
     return true;
 }
 
@@ -119,13 +120,14 @@ void UVHVWorldActionSubsystem::UnregisterReceiver(UVHVWorldActionReceiverCompone
         return;
     }
 
-    const TWeakObjectPtr<UVHVWorldActionReceiverComponent>* Registered = Receivers.Find(Receiver->ReceiverID);
+    const FName ReceiverID = Receiver->GetEffectiveReceiverID();
+    const TWeakObjectPtr<UVHVWorldActionReceiverComponent>* Registered = Receivers.Find(ReceiverID);
     if (!Registered || Registered->Get() != Receiver)
     {
         return;
     }
 
-    Receivers.Remove(Receiver->ReceiverID);
+    Receivers.Remove(ReceiverID);
     FailRequestsForReceiver(Receiver);
 }
 

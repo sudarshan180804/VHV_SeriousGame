@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Core/VHVAuthoringReferences.h"
 #include "GameFramework/Actor.h"
 #include "VHVQuestLocationVolume.generated.h"
 
@@ -20,6 +21,10 @@ public:
 
 protected:
     virtual void BeginPlay() override;
+
+#if WITH_EDITOR
+    virtual EDataValidationResult IsDataValid(class FDataValidationContext& Context) const override;
+#endif
 
     UFUNCTION()
     void HandleBoxBeginOverlap(
@@ -41,8 +46,14 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VHV|Location")
     TObjectPtr<UBoxComponent> BoxComponent;
 
-    UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "VHV|Location")
+    UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "VHV|Location", meta = (Categories = "VHV.Location"))
+    FGameplayTag LocationTag;
+
+    UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "VHV|Location", meta = (AdvancedDisplay, DisplayName = "Location ID (Legacy)"))
     FName LocationID;
+
+    UFUNCTION(BlueprintPure, Category = "VHV|Location")
+    FName GetEffectiveLocationID() const { return VHVAuthoringReferences::ResolveID(LocationTag, LocationID, TEXT("VHV.Location")); }
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VHV|Location")
     bool bEnabled = true;

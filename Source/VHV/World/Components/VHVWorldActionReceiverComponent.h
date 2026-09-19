@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Core/VHVAuthoringReferences.h"
 #include "Components/ActorComponent.h"
 #include "World/Types/VHVWorldActionTypes.h"
 #include "VHVWorldActionReceiverComponent.generated.h"
@@ -15,8 +16,14 @@ class VHV_API UVHVWorldActionReceiverComponent : public UActorComponent
 public:
     UVHVWorldActionReceiverComponent();
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|World Action")
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|World Action", meta = (Categories = "VHV.WorldReceiver"))
+    FGameplayTag ReceiverTag;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|World Action", meta = (AdvancedDisplay, DisplayName = "Receiver ID (Legacy)"))
     FName ReceiverID;
+
+    UFUNCTION(BlueprintPure, Category = "VHV|World Action")
+    FName GetEffectiveReceiverID() const { return VHVAuthoringReferences::ResolveID(ReceiverTag, ReceiverID, TEXT("VHV.WorldReceiver")); }
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VHV|World Action")
     bool bWorldActionsEnabled = true;
@@ -38,6 +45,10 @@ public:
 protected:
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+#if WITH_EDITOR
+    virtual EDataValidationResult IsDataValid(class FDataValidationContext& Context) const override;
+#endif
 
     virtual EVHVWorldActionExecutionResult HandleWorldAction_Implementation(FGuid RequestID, FName ActionID);
 

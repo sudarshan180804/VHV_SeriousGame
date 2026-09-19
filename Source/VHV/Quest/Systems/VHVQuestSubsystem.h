@@ -71,6 +71,11 @@ public:
     bool ValidateSaveState(const FVHVQuestSaveState& SaveState) const;
     bool ImportSaveState(const FVHVQuestSaveState& SaveState);
 
+#if !UE_BUILD_SHIPPING
+    bool DebugCompleteCurrentObjective();
+    bool DebugRestartCurrentQuest();
+#endif
+
     UFUNCTION(BlueprintCallable, Category = "VHV|Quest")
     bool RequestCurrentObjectiveActivation();
 
@@ -163,6 +168,9 @@ private:
     void ClearActiveNPCActionTracking();
     void ExecuteActiveWorldAction();
     void ClearActiveWorldActionTracking();
+#if !UE_BUILD_SHIPPING
+    void DebugCancelActiveObjectiveExecution();
+#endif
     bool BuildJournalEntry(const FVHVQuestDefinition& Definition, const FVHVQuestRuntimeState& State, FVHVQuestJournalEntry& OutEntry) const;
     FName GetRequiredConversationID(const FVHVQuestObjectiveDefinition& Objective) const;
     const FVHVQuestDefinition* FindQuestDefinition(FName QuestID) const;
@@ -202,6 +210,7 @@ private:
     bool bCurrentObjectiveActivated = false;
     bool bCurrentObjectiveWaitingOnConditions = false;
     bool bCompletingCurrentObjective = false;
+    uint32 ObjectiveActivationSerial = 0;
 
     using FBehaviorTargetRegistry = TMap<FName, TWeakObjectPtr<AVHVNPCBehaviorTarget>>;
     using FNPCCommandRegistry = TMap<FName, TWeakObjectPtr<UVHVNPCQuestCommandComponent>>;

@@ -271,6 +271,70 @@ bool UVHVQuestSubsystem::IsTransientObjectiveExecutionActive() const
     return ActiveNPCObjectiveCommandComponent != nullptr || ActiveWorldActionRequestID.IsValid();
 }
 
+#if !UE_BUILD_SHIPPING
+bool UVHVQuestSubsystem::DebugCompleteCurrentObjective()
+{
+    if (!GetActiveObjective())
+    {
+        UE_LOG(LogVHV, Warning, TEXT("[VHVDeveloper] Cannot complete objective: there is no active objective."));
+        return false;
+    }
+
+    DebugCancelActiveObjectiveExecution();
+    return CompleteCurrentObjective();
+}
+
+bool UVHVQuestSubsystem::DebugRestartCurrentQuest()
+{
+    const FName QuestID = RuntimeState.ActiveQuestID;
+    const FVHVQuestDefinition* Definition = FindQuestDefinition(QuestID);
+    FVHVQuestRuntimeState* State = FindQuestState(QuestID);
+    if (!Definition || !State || Definition->Objectives.IsEmpty())
+    {
+        UE_LOG(LogVHV, Warning, TEXT("[VHVDeveloper] Cannot restart quest: there is no active authored quest."));
+        return false;
+    }
+
+    DebugCancelActiveObjectiveExecution();
+    State->Status = EVHVQuestStatus::Active;
+    State->CurrentObjectiveIndex = 0;
+    State->CompletedObjectiveIDs.Reset();
+    RuntimeState.CompletedQuestIDs.Remove(QuestID);
+    RuntimeState.ActiveQuestID = QuestID;
+    RuntimeState.bArcActive = true;
+    RuntimeState.bArcCompleted = false;
+    bCurrentObjectiveActivated = false;
+    bCurrentObjectiveWaitingOnConditions = false;
+    bCompletingCurrentObjective = false;
+
+    if (RuntimeState.TrackedQuestID.IsNone())
+    {
+        RuntimeState.TrackedQuestID = QuestID;
+        OnTrackedQuestChanged.Broadcast(QuestID);
+    }
+    OnQuestUpdated.Broadcast(QuestID);
+    ActivateCurrentObjective();
+    return true;
+}
+
+void UVHVQuestSubsystem::DebugCancelActiveObjectiveExecution()
+{
+    if (ActiveNPCObjectiveCommandComponent)
+    {
+        ActiveNPCObjectiveCommandComponent->OnQuestCommandCompleted.RemoveDynamic(this, &UVHVQuestSubsystem::HandleNPCObjectiveCommandCompleted);
+        ActiveNPCObjectiveCommandComponent->CancelQuestCommand();
+    }
+    ClearActiveNPCActionTracking();
+
+    if (ActiveWorldActionSubsystem && ActiveWorldActionRequestID.IsValid())
+    {
+        ActiveWorldActionSubsystem->OnWorldActionCompleted.RemoveDynamic(this, &UVHVQuestSubsystem::HandleWorldActionCompleted);
+        ActiveWorldActionSubsystem->CompleteWorldAction(ActiveWorldActionRequestID, false);
+    }
+    ClearActiveWorldActionTracking();
+}
+#endif
+
 void UVHVQuestSubsystem::ExportSaveState(FVHVQuestSaveState& OutSaveState) const
 {
     OutSaveState = FVHVQuestSaveState();
@@ -514,7 +578,7 @@ bool UVHVQuestSubsystem::NotifyParticipantInteracted(FName ParticipantID)
         return false;
     }
 
-    if (Objective->ObjectiveType == EVHVQuestObjectiveType::Interact && Objective->TargetID == ParticipantID)
+    if (Objective->ObjectiveType == EVHVQuestObjectiveType::Interact && Objective->GetEffectiveTargetID() == ParticipantID)
     {
         return CompleteCurrentObjective();
     }
@@ -522,7 +586,8 @@ bool UVHVQuestSubsystem::NotifyParticipantInteracted(FName ParticipantID)
     const bool bLaunchable = Objective->ObjectiveType == EVHVQuestObjectiveType::Talk
         || Objective->ObjectiveType == EVHVQuestObjectiveType::Conversation
         || Objective->ObjectiveType == EVHVQuestObjectiveType::LearningActivity;
-    if (bLaunchable && (Objective->TargetID.IsNone() || Objective->TargetID == ParticipantID))
+    const FName TargetParticipantID = Objective->GetEffectiveTargetID();
+    if (bLaunchable && (TargetParticipantID.IsNone() || TargetParticipantID == ParticipantID))
     {
         return RequestCurrentObjectiveActivation();
     }
@@ -542,7 +607,7 @@ void UVHVQuestSubsystem::NotifyConversationCompleted(FName ConversationID)
 void UVHVQuestSubsystem::NotifyActivityCompleted(FName ActivityID)
 {
     const FVHVQuestObjectiveDefinition* Objective = GetActiveObjective();
-    if (Objective && Objective->ObjectiveType == EVHVQuestObjectiveType::LearningActivity && Objective->ActivityID == ActivityID)
+    if (Objective && Objective->ObjectiveType == EVHVQuestObjectiveType::LearningActivity && Objective->GetEffectiveActivityID() == ActivityID)
     {
         CompleteCurrentObjective();
     }
@@ -551,7 +616,7 @@ void UVHVQuestSubsystem::NotifyActivityCompleted(FName ActivityID)
 void UVHVQuestSubsystem::NotifyLocationReached(FName LocationID)
 {
     const FVHVQuestObjectiveDefinition* Objective = GetActiveObjective();
-    if (Objective && Objective->ObjectiveType == EVHVQuestObjectiveType::ReachLocation && Objective->TargetID == LocationID)
+    if (Objective && Objective->ObjectiveType == EVHVQuestObjectiveType::ReachLocation && Objective->GetEffectiveTargetID() == LocationID)
     {
         CompleteCurrentObjective();
     }
@@ -560,7 +625,7 @@ void UVHVQuestSubsystem::NotifyLocationReached(FName LocationID)
 void UVHVQuestSubsystem::NotifyCustomEvent(FName EventID)
 {
     const FVHVQuestObjectiveDefinition* Objective = GetActiveObjective();
-    if (Objective && Objective->ObjectiveType == EVHVQuestObjectiveType::CustomEvent && Objective->TargetID == EventID)
+    if (Objective && Objective->ObjectiveType == EVHVQuestObjectiveType::CustomEvent && Objective->GetEffectiveTargetID() == EventID)
     {
         CompleteCurrentObjective();
     }
@@ -609,22 +674,23 @@ bool UVHVQuestSubsystem::CancelNPCQuestCommand(const FName ParticipantID)
 
 bool UVHVQuestSubsystem::RegisterNPCBehaviorTarget(AVHVNPCBehaviorTarget* Target)
 {
-    if (!IsValid(Target) || Target->TargetID.IsNone() || !Target->GetWorld())
+    const FName TargetID = IsValid(Target) ? Target->GetEffectiveTargetID() : NAME_None;
+    if (!IsValid(Target) || TargetID.IsNone() || !Target->GetWorld())
     {
         return false;
     }
 
     FBehaviorTargetRegistry& Registry = BehaviorTargetsByWorld.FindOrAdd(Target->GetWorld());
-    if (const TWeakObjectPtr<AVHVNPCBehaviorTarget>* Existing = Registry.Find(Target->TargetID))
+    if (const TWeakObjectPtr<AVHVNPCBehaviorTarget>* Existing = Registry.Find(TargetID))
     {
         if (Existing->IsValid() && Existing->Get() != Target)
         {
             UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Duplicate NPC behavior Target ID '%s' in world '%s' on '%s' and '%s'."),
-                *Target->TargetID.ToString(), *GetNameSafe(Target->GetWorld()), *GetNameSafe(Existing->Get()), *GetNameSafe(Target));
+                *TargetID.ToString(), *GetNameSafe(Target->GetWorld()), *GetNameSafe(Existing->Get()), *GetNameSafe(Target));
             return false;
         }
     }
-    Registry.Add(Target->TargetID, Target);
+    Registry.Add(TargetID, Target);
     return true;
 }
 
@@ -636,10 +702,11 @@ void UVHVQuestSubsystem::UnregisterNPCBehaviorTarget(AVHVNPCBehaviorTarget* Targ
     }
     if (FBehaviorTargetRegistry* Registry = BehaviorTargetsByWorld.Find(Target->GetWorld()))
     {
-        if (const TWeakObjectPtr<AVHVNPCBehaviorTarget>* Existing = Registry->Find(Target->TargetID);
+        const FName TargetID = Target->GetEffectiveTargetID();
+        if (const TWeakObjectPtr<AVHVNPCBehaviorTarget>* Existing = Registry->Find(TargetID);
             Existing && Existing->Get() == Target)
         {
-            Registry->Remove(Target->TargetID);
+            Registry->Remove(TargetID);
         }
         if (Registry->IsEmpty())
         {
@@ -668,24 +735,25 @@ bool UVHVQuestSubsystem::RegisterNPCCommandComponent(UVHVNPCQuestCommandComponen
     const UVHVQuestParticipantComponent* Participant = CommandComponent->GetOwner()
         ? CommandComponent->GetOwner()->FindComponentByClass<UVHVQuestParticipantComponent>()
         : nullptr;
-    if (!Participant || Participant->ParticipantID.IsNone())
+    const FName ParticipantID = Participant ? Participant->GetEffectiveParticipantID() : NAME_None;
+    if (!Participant || ParticipantID.IsNone())
     {
         UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] NPC command component on '%s' requires a non-empty Participant ID."), *GetNameSafe(CommandComponent->GetOwner()));
         return false;
     }
 
     FNPCCommandRegistry& Registry = NPCCommandsByWorld.FindOrAdd(CommandComponent->GetWorld());
-    if (const TWeakObjectPtr<UVHVNPCQuestCommandComponent>* Existing = Registry.Find(Participant->ParticipantID))
+    if (const TWeakObjectPtr<UVHVNPCQuestCommandComponent>* Existing = Registry.Find(ParticipantID))
     {
         if (Existing->IsValid() && Existing->Get() != CommandComponent)
         {
             UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Duplicate NPC Participant ID '%s' in world '%s' on '%s' and '%s'."),
-                *Participant->ParticipantID.ToString(), *GetNameSafe(CommandComponent->GetWorld()),
+                *ParticipantID.ToString(), *GetNameSafe(CommandComponent->GetWorld()),
                 *GetNameSafe(Existing->Get()->GetOwner()), *GetNameSafe(CommandComponent->GetOwner()));
             return false;
         }
     }
-    Registry.Add(Participant->ParticipantID, CommandComponent);
+    Registry.Add(ParticipantID, CommandComponent);
     return true;
 }
 
@@ -704,10 +772,11 @@ void UVHVQuestSubsystem::UnregisterNPCCommandComponent(UVHVNPCQuestCommandCompon
     }
     if (FNPCCommandRegistry* Registry = NPCCommandsByWorld.Find(CommandComponent->GetWorld()))
     {
-        if (const TWeakObjectPtr<UVHVNPCQuestCommandComponent>* Existing = Registry->Find(Participant->ParticipantID);
+        const FName ParticipantID = Participant->GetEffectiveParticipantID();
+        if (const TWeakObjectPtr<UVHVNPCQuestCommandComponent>* Existing = Registry->Find(ParticipantID);
             Existing && Existing->Get() == CommandComponent)
         {
-            Registry->Remove(Participant->ParticipantID);
+            Registry->Remove(ParticipantID);
         }
         if (Registry->IsEmpty())
         {
@@ -731,7 +800,7 @@ void UVHVQuestSubsystem::HandleTextbookActivityCompleted()
 {
     if (TextbookSubsystem)
     {
-        NotifyActivityCompleted(FName(*TextbookSubsystem->GetCurrentActivity().ActivityID));
+        NotifyActivityCompleted(FName(*TextbookSubsystem->GetCurrentActivity().GetEffectiveActivityID()));
     }
 }
 
@@ -805,7 +874,50 @@ bool UVHVQuestSubsystem::ValidateQuestArc(const UVHVQuestArcData* QuestArc) cons
             }
             ObjectiveIDs.Add(Objective.ObjectiveID);
 
-            if (Objective.ObjectiveType == EVHVQuestObjectiveType::LearningActivity && Objective.ActivityID.IsNone())
+            const FName EffectiveTargetID = Objective.GetEffectiveTargetID();
+            const FName EffectiveActivityID = Objective.GetEffectiveActivityID();
+            const FName EffectiveNPCParticipantID = Objective.GetEffectiveNPCParticipantID();
+            const FName EffectiveNPCTargetID = Objective.GetEffectiveNPCTargetID();
+            const FName EffectiveNPCActionID = Objective.GetEffectiveNPCActionID();
+            const FName EffectiveWorldReceiverID = Objective.GetEffectiveWorldActionReceiverID();
+            const FName EffectiveWorldActionID = Objective.GetEffectiveWorldActionID();
+
+            auto ValidateReference = [&bValid, &Quest, &Objective](const FGameplayTag& Tag, const FName LegacyID, const TCHAR* Category, const TCHAR* FieldName)
+            {
+                if (!VHVAuthoringReferences::IsValidReferenceTag(Tag, Category))
+                {
+                    UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Quest '%s' objective '%s' field %s uses tag '%s', which must be a concrete tag beneath %s."),
+                        *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString(), FieldName, *Tag.ToString(), Category);
+                    bValid = false;
+                }
+                if (VHVAuthoringReferences::HasConflict(Tag, LegacyID, Category))
+                {
+                    UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Quest '%s' objective '%s' field %s tag '%s' resolves to '%s' while legacy ID is '%s'; the tag wins."),
+                        *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString(), FieldName, *Tag.ToString(), *VHVAuthoringReferences::ResolveTagLeaf(Tag).ToString(), *LegacyID.ToString());
+                }
+            };
+
+            if (Objective.ObjectiveType == EVHVQuestObjectiveType::LearningActivity)
+            {
+                ValidateReference(Objective.ActivityTag, Objective.ActivityID, TEXT("VHV.Activity"), TEXT("Activity"));
+            }
+            if (Objective.ObjectiveType == EVHVQuestObjectiveType::ReachLocation)
+            {
+                ValidateReference(Objective.LocationTag, Objective.TargetID, TEXT("VHV.Location"), TEXT("Location"));
+            }
+            else if (Objective.ObjectiveType == EVHVQuestObjectiveType::CustomEvent)
+            {
+                ValidateReference(Objective.CustomEventTag, Objective.TargetID, TEXT("VHV.CustomEvent"), TEXT("CustomEvent"));
+            }
+            else if (Objective.ObjectiveType == EVHVQuestObjectiveType::Talk
+                || Objective.ObjectiveType == EVHVQuestObjectiveType::Conversation
+                || Objective.ObjectiveType == EVHVQuestObjectiveType::LearningActivity
+                || Objective.ObjectiveType == EVHVQuestObjectiveType::Interact)
+            {
+                ValidateReference(Objective.ParticipantTag, Objective.TargetID, TEXT("VHV.Participant"), TEXT("Participant"));
+            }
+
+            if (Objective.ObjectiveType == EVHVQuestObjectiveType::LearningActivity && EffectiveActivityID.IsNone())
             {
                 UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Learning objective '%s' has no Activity ID."), *Objective.ObjectiveID.ToString());
                 bValid = false;
@@ -832,19 +944,20 @@ bool UVHVQuestSubsystem::ValidateQuestArc(const UVHVQuestArcData* QuestArc) cons
                     bValid = false;
                 }
             }
-            if (Objective.ObjectiveType == EVHVQuestObjectiveType::Talk && Objective.TargetID.IsNone())
+            if (Objective.ObjectiveType == EVHVQuestObjectiveType::Talk && EffectiveTargetID.IsNone())
             {
                 UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Talk objective '%s' has no participant Target ID."), *Objective.ObjectiveID.ToString());
                 bValid = false;
             }
-            if ((Objective.ObjectiveType == EVHVQuestObjectiveType::Interact || Objective.ObjectiveType == EVHVQuestObjectiveType::ReachLocation || Objective.ObjectiveType == EVHVQuestObjectiveType::CustomEvent) && Objective.TargetID.IsNone())
+            if ((Objective.ObjectiveType == EVHVQuestObjectiveType::Interact || Objective.ObjectiveType == EVHVQuestObjectiveType::ReachLocation || Objective.ObjectiveType == EVHVQuestObjectiveType::CustomEvent) && EffectiveTargetID.IsNone())
             {
                 UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Objective '%s' requires a Target ID."), *Objective.ObjectiveID.ToString());
                 bValid = false;
             }
             if (Objective.ObjectiveType == EVHVQuestObjectiveType::NPCAction)
             {
-                if (Objective.NPCParticipantID.IsNone())
+                ValidateReference(Objective.NPCParticipantTag, Objective.NPCParticipantID, TEXT("VHV.Participant"), TEXT("NPCParticipant"));
+                if (EffectiveNPCParticipantID.IsNone())
                 {
                     UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Quest '%s' NPCAction objective '%s' requires an NPC Participant ID."),
                         *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString());
@@ -856,7 +969,7 @@ bool UVHVQuestSubsystem::ValidateQuestArc(const UVHVQuestArcData* QuestArc) cons
                         *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString());
                     bValid = false;
                 }
-                else if (Objective.NPCCommandType == EVHVNPCQuestCommandType::MoveToTarget && Objective.NPCTargetID.IsNone())
+                else if (Objective.NPCCommandType == EVHVNPCQuestCommandType::MoveToTarget && EffectiveNPCTargetID.IsNone())
                 {
                     UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Quest '%s' NPCAction objective '%s' with MoveToTarget requires an NPC Target ID."),
                         *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString());
@@ -868,22 +981,32 @@ bool UVHVQuestSubsystem::ValidateQuestArc(const UVHVQuestArcData* QuestArc) cons
                         *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString(), Objective.NPCWaitDuration);
                     bValid = false;
                 }
-                else if (Objective.NPCCommandType == EVHVNPCQuestCommandType::PlayAction && Objective.NPCActionID.IsNone())
+                else if (Objective.NPCCommandType == EVHVNPCQuestCommandType::PlayAction && EffectiveNPCActionID.IsNone())
                 {
                     UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Quest '%s' NPCAction objective '%s' with PlayAction requires an NPC Action ID."),
                         *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString());
                     bValid = false;
                 }
+                if (Objective.NPCCommandType == EVHVNPCQuestCommandType::MoveToTarget)
+                {
+                    ValidateReference(Objective.NPCBehaviorTargetTag, Objective.NPCTargetID, TEXT("VHV.BehaviorTarget"), TEXT("NPCBehaviorTarget"));
+                }
+                else if (Objective.NPCCommandType == EVHVNPCQuestCommandType::PlayAction)
+                {
+                    ValidateReference(Objective.NPCActionTag, Objective.NPCActionID, TEXT("VHV.NPCAction"), TEXT("NPCAction"));
+                }
             }
             if (Objective.ObjectiveType == EVHVQuestObjectiveType::WorldAction)
             {
-                if (Objective.WorldActionReceiverID.IsNone())
+                ValidateReference(Objective.WorldActionReceiverTag, Objective.WorldActionReceiverID, TEXT("VHV.WorldReceiver"), TEXT("WorldReceiver"));
+                ValidateReference(Objective.WorldActionTag, Objective.WorldActionID, TEXT("VHV.WorldAction"), TEXT("WorldAction"));
+                if (EffectiveWorldReceiverID.IsNone())
                 {
                     UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Quest '%s' WorldAction objective '%s' requires a World Action Receiver ID."),
                         *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString());
                     bValid = false;
                 }
-                if (Objective.WorldActionID.IsNone())
+                if (EffectiveWorldActionID.IsNone())
                 {
                     UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Quest '%s' WorldAction objective '%s' requires a World Action ID."),
                         *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString());
@@ -892,20 +1015,48 @@ bool UVHVQuestSubsystem::ValidateQuestArc(const UVHVQuestArcData* QuestArc) cons
             }
             for (const FVHVStoryCondition& Condition : Objective.ActivationConditions.Conditions)
             {
-                if (Condition.StateID.IsNone())
+                const FName StateID = Condition.GetEffectiveStateID();
+                if (StateID.IsNone())
                 {
                     UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Quest '%s' objective '%s' has an Activation Condition with an empty Story State ID."),
                         *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString());
                     bValid = false;
                 }
+                const bool bFlagCondition = Condition.ConditionType == EVHVStoryConditionType::FlagSet || Condition.ConditionType == EVHVStoryConditionType::FlagNotSet;
+                const TCHAR* ExpectedCategory = bFlagCondition ? TEXT("VHV.Story.Flag") : TEXT("VHV.Story.Counter");
+                if (!VHVAuthoringReferences::IsValidReferenceTag(Condition.StateTag, ExpectedCategory))
+                {
+                    UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Quest '%s' objective '%s' Activation Condition tag '%s' must be a concrete tag beneath %s."),
+                        *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString(), *Condition.StateTag.ToString(), ExpectedCategory);
+                    bValid = false;
+                }
+                if (VHVAuthoringReferences::HasConflict(Condition.StateTag, Condition.StateID, ExpectedCategory))
+                {
+                    UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Quest '%s' objective '%s' Activation Condition tag '%s' resolves to '%s' while legacy StateID is '%s'; the tag wins."),
+                        *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString(), *Condition.StateTag.ToString(), *VHVAuthoringReferences::ResolveTagLeaf(Condition.StateTag).ToString(), *Condition.StateID.ToString());
+                }
             }
             for (const FVHVStoryEffect& Effect : Objective.CompletionEffects)
             {
-                if (Effect.StateID.IsNone())
+                const FName StateID = Effect.GetEffectiveStateID();
+                if (StateID.IsNone())
                 {
                     UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Quest '%s' objective '%s' has a Completion Effect with an empty Story State ID."),
                         *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString());
                     bValid = false;
+                }
+                const bool bFlagEffect = Effect.EffectType == EVHVStoryEffectType::SetFlag || Effect.EffectType == EVHVStoryEffectType::ClearFlag;
+                const TCHAR* ExpectedCategory = bFlagEffect ? TEXT("VHV.Story.Flag") : TEXT("VHV.Story.Counter");
+                if (!VHVAuthoringReferences::IsValidReferenceTag(Effect.StateTag, ExpectedCategory))
+                {
+                    UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Quest '%s' objective '%s' Completion Effect tag '%s' must be a concrete tag beneath %s."),
+                        *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString(), *Effect.StateTag.ToString(), ExpectedCategory);
+                    bValid = false;
+                }
+                if (VHVAuthoringReferences::HasConflict(Effect.StateTag, Effect.StateID, ExpectedCategory))
+                {
+                    UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Quest '%s' objective '%s' Completion Effect tag '%s' resolves to '%s' while legacy StateID is '%s'; the tag wins."),
+                        *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString(), *Effect.StateTag.ToString(), *VHVAuthoringReferences::ResolveTagLeaf(Effect.StateTag).ToString(), *Effect.StateID.ToString());
                 }
             }
         }
@@ -961,6 +1112,7 @@ void UVHVQuestSubsystem::CompleteCurrentQuest()
 
 void UVHVQuestSubsystem::ActivateCurrentObjective()
 {
+    ++ObjectiveActivationSerial;
     ClearActiveNPCActionTracking();
     ClearActiveWorldActionTracking();
     bCurrentObjectiveActivated = false;
@@ -1025,12 +1177,16 @@ void UVHVQuestSubsystem::TryActivateCurrentObjective()
     {
         const FName ExpectedQuestID = RuntimeState.ActiveQuestID;
         const FName ExpectedObjectiveID = Objective->ObjectiveID;
+        const uint32 ExpectedActivationSerial = ObjectiveActivationSerial;
         if (UWorld* World = GetWorld())
         {
-            World->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this, [this, ExpectedQuestID, ExpectedObjectiveID]()
+            World->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this, [this, ExpectedQuestID, ExpectedObjectiveID, ExpectedActivationSerial]()
             {
                 const FVHVQuestObjectiveDefinition* CurrentObjective = GetActiveObjective();
-                if (RuntimeState.ActiveQuestID == ExpectedQuestID && CurrentObjective && CurrentObjective->ObjectiveID == ExpectedObjectiveID)
+                if (ObjectiveActivationSerial == ExpectedActivationSerial
+                    && RuntimeState.ActiveQuestID == ExpectedQuestID
+                    && CurrentObjective
+                    && CurrentObjective->ObjectiveID == ExpectedObjectiveID)
                 {
                     RequestCurrentObjectiveActivation();
                 }
@@ -1074,22 +1230,25 @@ void UVHVQuestSubsystem::ExecuteActiveNPCAction()
         return;
     }
 
-    UVHVNPCQuestCommandComponent* CommandComponent = FindNPCCommandComponent(GetWorld(), Objective->NPCParticipantID);
+    const FName ParticipantID = Objective->GetEffectiveNPCParticipantID();
+    const FName TargetID = Objective->GetEffectiveNPCTargetID();
+    const FName ActionID = Objective->GetEffectiveNPCActionID();
+    UVHVNPCQuestCommandComponent* CommandComponent = FindNPCCommandComponent(GetWorld(), ParticipantID);
     if (!CommandComponent)
     {
         UE_LOG(LogVHV, Error, TEXT("[VHVQuest] Quest '%s' NPCAction objective '%s' could not find NPC participant '%s'; objective remains active."),
-            *RuntimeState.ActiveQuestID.ToString(), *Objective->ObjectiveID.ToString(), *Objective->NPCParticipantID.ToString());
+            *RuntimeState.ActiveQuestID.ToString(), *Objective->ObjectiveID.ToString(), *ParticipantID.ToString());
         return;
     }
 
     // The command API replaces any prior quest command. Cancel it before binding
     // so its synchronous failure notification cannot be mistaken for this objective.
-    CancelNPCQuestCommand(Objective->NPCParticipantID);
+    CancelNPCQuestCommand(ParticipantID);
 
     ActiveNPCObjectiveCommandComponent = CommandComponent;
     ActiveNPCObjectiveQuestID = RuntimeState.ActiveQuestID;
     ActiveNPCObjectiveID = Objective->ObjectiveID;
-    ActiveNPCObjectiveParticipantID = Objective->NPCParticipantID;
+    ActiveNPCObjectiveParticipantID = ParticipantID;
     ActiveNPCObjectiveCommandType = Objective->NPCCommandType;
     CommandComponent->OnQuestCommandCompleted.AddUniqueDynamic(this, &UVHVQuestSubsystem::HandleNPCObjectiveCommandCompleted);
 
@@ -1097,19 +1256,19 @@ void UVHVQuestSubsystem::ExecuteActiveNPCAction()
     switch (Objective->NPCCommandType)
     {
     case EVHVNPCQuestCommandType::MoveToTarget:
-        bStarted = RequestNPCMove(Objective->NPCParticipantID, Objective->NPCTargetID);
+        bStarted = RequestNPCMove(ParticipantID, TargetID);
         break;
     case EVHVNPCQuestCommandType::Wait:
-        bStarted = RequestNPCWait(Objective->NPCParticipantID, Objective->NPCWaitDuration);
+        bStarted = RequestNPCWait(ParticipantID, Objective->NPCWaitDuration);
         break;
     case EVHVNPCQuestCommandType::ReturnToPost:
-        bStarted = RequestNPCReturnToPost(Objective->NPCParticipantID);
+        bStarted = RequestNPCReturnToPost(ParticipantID);
         break;
     case EVHVNPCQuestCommandType::ReleaseToPatrol:
-        bStarted = ReleaseNPCFromQuest(Objective->NPCParticipantID);
+        bStarted = ReleaseNPCFromQuest(ParticipantID);
         break;
     case EVHVNPCQuestCommandType::PlayAction:
-        bStarted = RequestNPCPlayAction(Objective->NPCParticipantID, Objective->NPCActionID);
+        bStarted = RequestNPCPlayAction(ParticipantID, ActionID);
         break;
     default:
         break;
@@ -1117,7 +1276,7 @@ void UVHVQuestSubsystem::ExecuteActiveNPCAction()
     if (!bStarted && ActiveNPCObjectiveQuestID == RuntimeState.ActiveQuestID && ActiveNPCObjectiveID == Objective->ObjectiveID)
     {
         UE_LOG(LogVHV, Error, TEXT("[VHVQuest] Quest '%s' NPCAction objective '%s' failed to start command '%s' for participant '%s'; objective remains active."),
-            *RuntimeState.ActiveQuestID.ToString(), *Objective->ObjectiveID.ToString(), *UEnum::GetValueAsString(Objective->NPCCommandType), *Objective->NPCParticipantID.ToString());
+            *RuntimeState.ActiveQuestID.ToString(), *Objective->ObjectiveID.ToString(), *UEnum::GetValueAsString(Objective->NPCCommandType), *ParticipantID.ToString());
         ClearActiveNPCActionTracking();
     }
 }
@@ -1129,7 +1288,7 @@ void UVHVQuestSubsystem::HandleNPCObjectiveCommandCompleted(const EVHVNPCQuestCo
         || Objective->ObjectiveType != EVHVQuestObjectiveType::NPCAction
         || RuntimeState.ActiveQuestID != ActiveNPCObjectiveQuestID
         || Objective->ObjectiveID != ActiveNPCObjectiveID
-        || Objective->NPCParticipantID != ActiveNPCObjectiveParticipantID
+        || Objective->GetEffectiveNPCParticipantID() != ActiveNPCObjectiveParticipantID
         || Objective->NPCCommandType != ActiveNPCObjectiveCommandType
         || Command != ActiveNPCObjectiveCommandType)
     {
@@ -1182,15 +1341,17 @@ void UVHVQuestSubsystem::ExecuteActiveWorldAction()
     ActiveWorldActionRequestID.Invalidate();
     ActiveWorldActionQuestID = RuntimeState.ActiveQuestID;
     ActiveWorldActionObjectiveID = Objective->ObjectiveID;
-    ActiveWorldActionReceiverID = Objective->WorldActionReceiverID;
-    ActiveWorldActionID = Objective->WorldActionID;
+    const FName ReceiverID = Objective->GetEffectiveWorldActionReceiverID();
+    const FName ActionID = Objective->GetEffectiveWorldActionID();
+    ActiveWorldActionReceiverID = ReceiverID;
+    ActiveWorldActionID = ActionID;
     WorldActionSubsystem->OnWorldActionCompleted.AddUniqueDynamic(this, &UVHVQuestSubsystem::HandleWorldActionCompleted);
 
     const FName ExpectedQuestID = ActiveWorldActionQuestID;
     const FName ExpectedObjectiveID = ActiveWorldActionObjectiveID;
     const EVHVWorldActionExecutionResult Result = WorldActionSubsystem->RequestWorldAction(
-        Objective->WorldActionReceiverID,
-        Objective->WorldActionID,
+        ReceiverID,
+        ActionID,
         ActiveWorldActionRequestID);
 
     if (Result == EVHVWorldActionExecutionResult::Rejected
@@ -1198,7 +1359,7 @@ void UVHVQuestSubsystem::ExecuteActiveWorldAction()
         && ActiveWorldActionObjectiveID == ExpectedObjectiveID)
     {
         UE_LOG(LogVHV, Error, TEXT("[VHVQuest] Quest '%s' WorldAction objective '%s' request '%s' was rejected by receiver '%s'; objective remains active."),
-            *ExpectedQuestID.ToString(), *ExpectedObjectiveID.ToString(), *Objective->WorldActionID.ToString(), *Objective->WorldActionReceiverID.ToString());
+            *ExpectedQuestID.ToString(), *ExpectedObjectiveID.ToString(), *ActionID.ToString(), *ReceiverID.ToString());
         ClearActiveWorldActionTracking();
     }
 }
@@ -1217,8 +1378,8 @@ void UVHVQuestSubsystem::HandleWorldActionCompleted(
         || RequestID != ActiveWorldActionRequestID
         || ReceiverID != ActiveWorldActionReceiverID
         || ActionID != ActiveWorldActionID
-        || Objective->WorldActionReceiverID != ActiveWorldActionReceiverID
-        || Objective->WorldActionID != ActiveWorldActionID)
+        || Objective->GetEffectiveWorldActionReceiverID() != ActiveWorldActionReceiverID
+        || Objective->GetEffectiveWorldActionID() != ActiveWorldActionID)
     {
         return;
     }

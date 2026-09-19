@@ -384,7 +384,7 @@ bool UVHVTextbookSubsystem::SubmitObservation()
         return false;
     }
 
-    UE_LOG(LogTemp, Log, TEXT("[VHVTextbook] Observation submitted ActivityID=%s"), *CurrentActivity.ActivityID);
+    UE_LOG(LogTemp, Log, TEXT("[VHVTextbook] Observation submitted ActivityID=%s"), *CurrentActivity.GetEffectiveActivityID());
     SubmitAnswer(true);
     return true;
 }
@@ -434,10 +434,11 @@ void UVHVTextbookSubsystem::CompleteCurrentActivity()
     RuntimeState.bActivityCompleted = true;
     RuntimeState.bActivityActive = false;
 
-    if (!CurrentActivity.ActivityID.IsEmpty())
+    const FString CurrentActivityID = CurrentActivity.GetEffectiveActivityID();
+    if (!CurrentActivityID.IsEmpty())
     {
-        RuntimeState.CompletedActivityIDs.Add(CurrentActivity.ActivityID);
-        UE_LOG(LogTemp, Warning, TEXT("[VHVTextbook] Completed ActivityID=%s"), *CurrentActivity.ActivityID);
+        RuntimeState.CompletedActivityIDs.Add(CurrentActivityID);
+        UE_LOG(LogTemp, Warning, TEXT("[VHVTextbook] Completed ActivityID=%s"), *CurrentActivityID);
     }
 
     OnActivityCompleted.Broadcast();
@@ -488,7 +489,7 @@ void UVHVTextbookSubsystem::AdvanceToNextActivity()
         RuntimeState.HintLevel = 0;
 
         const FTextbookActivityData NextActivity = GetCurrentActivity();
-        UE_LOG(LogTemp, Warning, TEXT("[VHVTextbook] Advancing to ActivityID=%s"), *NextActivity.ActivityID);
+        UE_LOG(LogTemp, Warning, TEXT("[VHVTextbook] Advancing to ActivityID=%s"), *NextActivity.GetEffectiveActivityID());
 
         RuntimeState.CurrentPhase = ELearningPhase::Ask;
         OnLearningPhaseChanged.Broadcast(RuntimeState.CurrentPhase);
@@ -528,9 +529,9 @@ void UVHVTextbookSubsystem::AdvanceToNextActivity()
         UE_LOG(LogTemp, Warning, TEXT("[VHVTextbook] Starting next TopicID=%s"), *NextTopic.TopicID);
 
         const FTextbookActivityData NextActivity = GetCurrentActivity();
-        if (!NextActivity.ActivityID.IsEmpty())
+        if (!NextActivity.GetEffectiveActivityID().IsEmpty())
         {
-            UE_LOG(LogTemp, Warning, TEXT("[VHVTextbook] Advancing to ActivityID=%s"), *NextActivity.ActivityID);
+            UE_LOG(LogTemp, Warning, TEXT("[VHVTextbook] Advancing to ActivityID=%s"), *NextActivity.GetEffectiveActivityID());
         }
 
         RuntimeState.CurrentPhase = ELearningPhase::Ask;
@@ -634,7 +635,7 @@ bool UVHVTextbookSubsystem::TryGetActivityByID(const FString& ActivityID, FTextb
     {
         for (const FTextbookActivityData& Activity : Topic.Activities)
         {
-            if (Activity.ActivityID == ActivityID)
+            if (Activity.GetEffectiveActivityID() == ActivityID)
             {
                 OutActivity = Activity;
                 return true;
@@ -659,7 +660,7 @@ bool UVHVTextbookSubsystem::StartActivityByID(const FString& ActivityID)
         const FTopicData& Topic = DayData.Topics[TopicIndex];
         for (int32 ActivityIndex = 0; ActivityIndex < Topic.Activities.Num(); ++ActivityIndex)
         {
-            if (Topic.Activities[ActivityIndex].ActivityID == ActivityID)
+            if (Topic.Activities[ActivityIndex].GetEffectiveActivityID() == ActivityID)
             {
                 RuntimeState.CurrentTopicIndex = TopicIndex;
                 RuntimeState.CurrentActivityIndex = ActivityIndex;
@@ -730,7 +731,7 @@ void UVHVTextbookSubsystem::RetryCurrentActivityAfterHint()
     RuntimeState.bAnswerCorrect = false;
     RuntimeState.CurrentPhase = ELearningPhase::Ask;
 
-    UE_LOG(LogTemp, Warning, TEXT("[VHVTextbook] Hint dismissed -> retry ActivityID=%s"), *CurrentActivity.ActivityID);
+    UE_LOG(LogTemp, Warning, TEXT("[VHVTextbook] Hint dismissed -> retry ActivityID=%s"), *CurrentActivity.GetEffectiveActivityID());
     OnLearningPhaseChanged.Broadcast(RuntimeState.CurrentPhase);
 }
 
@@ -770,7 +771,7 @@ void UVHVTextbookSubsystem::ExportSaveState(FVHVTextbookSaveState& OutSaveState)
         OutSaveState.CurrentTopicID = Topic.TopicID;
         if (Topic.Activities.IsValidIndex(RuntimeState.CurrentActivityIndex))
         {
-            OutSaveState.CurrentActivityID = Topic.Activities[RuntimeState.CurrentActivityIndex].ActivityID;
+            OutSaveState.CurrentActivityID = Topic.Activities[RuntimeState.CurrentActivityIndex].GetEffectiveActivityID();
         }
     }
 }
@@ -801,7 +802,7 @@ bool UVHVTextbookSubsystem::ValidateSaveState(const FVHVTextbookSaveState& SaveS
     if (!SaveState.CurrentActivityID.IsEmpty()
         && (!CurrentTopic || !CurrentTopic->Activities.ContainsByPredicate([&SaveState](const FTextbookActivityData& Activity)
         {
-            return Activity.ActivityID == SaveState.CurrentActivityID;
+            return Activity.GetEffectiveActivityID() == SaveState.CurrentActivityID;
         })))
     {
         UE_LOG(LogTemp, Error, TEXT("[VHVTextbook] Saved Activity ID '%s' does not exist in saved Topic '%s'."), *SaveState.CurrentActivityID, *SaveState.CurrentTopicID);
@@ -821,7 +822,7 @@ bool UVHVTextbookSubsystem::ValidateSaveState(const FVHVTextbookSaveState& SaveS
         bool bFound = false;
         for (const FTopicData& Topic : LevelData->DayData.Topics)
         {
-            bFound |= Topic.Activities.ContainsByPredicate([&ActivityID](const FTextbookActivityData& Activity) { return Activity.ActivityID == ActivityID; });
+            bFound |= Topic.Activities.ContainsByPredicate([&ActivityID](const FTextbookActivityData& Activity) { return Activity.GetEffectiveActivityID() == ActivityID; });
         }
         if (ActivityID.IsEmpty() || !bFound)
         {
@@ -872,7 +873,7 @@ bool UVHVTextbookSubsystem::ImportSaveState(const FVHVTextbookSaveState& SaveSta
     if (LevelData->DayData.Topics.IsValidIndex(RuntimeState.CurrentTopicIndex))
     {
         RuntimeState.CurrentActivityIndex = LevelData->DayData.Topics[RuntimeState.CurrentTopicIndex].Activities.IndexOfByPredicate(
-            [&SaveState](const FTextbookActivityData& Activity) { return Activity.ActivityID == SaveState.CurrentActivityID; });
+            [&SaveState](const FTextbookActivityData& Activity) { return Activity.GetEffectiveActivityID() == SaveState.CurrentActivityID; });
         if (RuntimeState.CurrentActivityIndex == INDEX_NONE)
         {
             RuntimeState.CurrentActivityIndex = 0;

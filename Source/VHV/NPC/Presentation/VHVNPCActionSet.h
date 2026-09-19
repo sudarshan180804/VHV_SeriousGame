@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Core/VHVAuthoringReferences.h"
 #include "Engine/DataAsset.h"
 #include "VHVNPCActionSet.generated.h"
 
@@ -11,7 +12,10 @@ struct VHV_API FVHVNPCPresentationAction
 {
     GENERATED_BODY()
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Presentation")
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Presentation", meta = (Categories = "VHV.NPCAction"))
+    FGameplayTag ActionTag;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Presentation", meta = (AdvancedDisplay, DisplayName = "Action ID (Legacy)"))
     FName ActionID;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Presentation")
@@ -19,6 +23,8 @@ struct VHV_API FVHVNPCPresentationAction
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Presentation", meta = (ClampMin = "0.01"))
     float PlayRate = 1.0f;
+
+    FName GetEffectiveActionID() const { return VHVAuthoringReferences::ResolveID(ActionTag, ActionID, TEXT("VHV.NPCAction")); }
 };
 
 UCLASS(BlueprintType)
