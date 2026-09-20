@@ -158,6 +158,9 @@ public:
 
     bool IsDialogueChoiceAvailable(const FDialogueChoiceOption& Choice) const;
 
+    /** True only for the choice node currently owned by a textbook DialogueChoice activity. */
+    bool IsDialogueChoiceLearningActivity(const FString& ConversationID, const FString& ChoiceNodeID) const;
+
     UFUNCTION()
     void ConfirmChoiceInput();
 

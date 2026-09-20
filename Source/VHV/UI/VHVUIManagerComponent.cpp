@@ -1522,6 +1522,22 @@ bool UVHVUIManagerComponent::IsDialogueChoiceAvailable(const FDialogueChoiceOpti
     return StoryStateSubsystem && StoryStateSubsystem->EvaluateConditionSet(Choice.AvailabilityConditions);
 }
 
+bool UVHVUIManagerComponent::IsDialogueChoiceLearningActivity(
+    const FString& ConversationID,
+    const FString& ChoiceNodeID) const
+{
+    if (!TextbookSubsystem || !TextbookSubsystem->IsActivityActive()
+        || TextbookSubsystem->GetCurrentPhase() != ELearningPhase::Ask)
+    {
+        return false;
+    }
+
+    const FTextbookActivityData CurrentActivity = TextbookSubsystem->GetCurrentActivity();
+    return CurrentActivity.ActivityType == ETextbookActivityType::DialogueChoice
+        && CurrentActivity.DialogueChoice.ConversationID == ConversationID
+        && CurrentActivity.DialogueChoice.ChoiceNodeID == ChoiceNodeID;
+}
+
 bool UVHVUIManagerComponent::StartDialogueChoiceActivity(const FDialogueChoiceActivityReference& Reference)
 {
     if (Reference.ConversationID.IsEmpty() || Reference.ChoiceNodeID.IsEmpty())

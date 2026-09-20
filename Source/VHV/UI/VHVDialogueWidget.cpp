@@ -1,6 +1,8 @@
 #include "UI/VHVDialogueWidget.h"
 #include "UI/VHVDialogueChoiceButton.h"
 #include "UI/VHVUIManagerComponent.h"
+#include "UI/Textbook/SVHVChoiceCard.h"
+#include "UI/Textbook/VHVActivityUIStyle.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
@@ -8,10 +10,242 @@
 #include "Components/VerticalBox.h"
 #include "Components/TextBlock.h"
 #include "InputCoreTypes.h"
+#include "Widgets/Layout/SBorder.h"
+#include "Widgets/Layout/SBox.h"
+#include "Widgets/Layout/SConstraintCanvas.h"
+#include "Widgets/SBoxPanel.h"
+#include "Widgets/SOverlay.h"
+#include "Widgets/Text/STextBlock.h"
 
 UVHVDialogueWidget::UVHVDialogueWidget()
 {
     SetIsFocusable(true);
+}
+
+TSharedRef<SWidget> UVHVDialogueWidget::RebuildWidget()
+{
+    TSharedRef<SWidget> ExistingDialoguePresentation = Super::RebuildWidget();
+
+    ActivityQuestionPanelBrush = VHVActivityUIStyle::RoundedBrush(
+        VHVActivityUIStyle::GlassMain(), VHVActivityUIStyle::QuestionPanelRadius,
+        VHVActivityUIStyle::PanelBorder(), VHVActivityUIStyle::BorderNormalWidth);
+    ActivityQuestionShadowBrush = VHVActivityUIStyle::RoundedBrush(
+        VHVActivityUIStyle::ShadowPanel(), VHVActivityUIStyle::QuestionPanelRadius + 3.0f);
+    ActivityKeycapBrush = VHVActivityUIStyle::RoundedBrush(
+        VHVActivityUIStyle::FromSRGB(29, 34, 38, 145), 6.0f,
+        VHVActivityUIStyle::BorderNeutral(), VHVActivityUIStyle::BorderNormalWidth);
+    ActivityEmblemBrush = VHVActivityUIStyle::RoundedBrush(
+        VHVActivityUIStyle::FromSRGB(28, 26, 20, 128), 10.0f,
+        VHVActivityUIStyle::HeaderGold(), VHVActivityUIStyle::BorderNormalWidth);
+    ActivityDividerBrush = VHVActivityUIStyle::RoundedBrush(VHVActivityUIStyle::DividerGold(), 1.0f);
+
+    TSharedRef<SOverlay> Root = SNew(SOverlay)
+        + SOverlay::Slot()
+        [
+            SAssignNew(NormalDialoguePresentation, SBox)
+            [
+                ExistingDialoguePresentation
+            ]
+        ]
+        + SOverlay::Slot()
+        [
+            SAssignNew(ActivityRootCanvas, SConstraintCanvas)
+            + SConstraintCanvas::Slot()
+            .Anchors(FAnchors(0.1275f, 0.655f, 0.5625f, 0.865f))
+            .Offset(FMargin(0.0f))
+            [
+                SAssignNew(ActivityQuestionPanel, SOverlay)
+                + SOverlay::Slot()
+                .Padding(FMargin(5.0f, 6.0f, -5.0f, -6.0f))
+                [
+                    SNew(SBorder)
+                    .BorderImage(&ActivityQuestionShadowBrush)
+                ]
+                + SOverlay::Slot()
+                [
+                    SNew(SBorder)
+                    .BorderImage(&ActivityQuestionPanelBrush)
+                    .Padding(VHVActivityUIStyle::PanelPadding)
+                    [
+                        SNew(SVerticalBox)
+                        + SVerticalBox::Slot()
+                        .AutoHeight()
+                        [
+                            SNew(SHorizontalBox)
+                            + SHorizontalBox::Slot()
+                            .AutoWidth()
+                            .VAlign(VAlign_Center)
+                            .Padding(FMargin(0.0f, 0.0f, 12.0f, 0.0f))
+                            [
+                                SNew(SBox)
+                                .WidthOverride(VHVActivityUIStyle::HeaderIconDiameter)
+                                .HeightOverride(VHVActivityUIStyle::HeaderIconDiameter)
+                                [
+                                    SNew(SBorder)
+                                    .BorderImage(&ActivityEmblemBrush)
+                                    .HAlign(HAlign_Center)
+                                    .VAlign(VAlign_Center)
+                                    [
+                                        SNew(STextBlock)
+                                        .Font(VHVActivityUIStyle::MediumFont(12))
+                                        .ColorAndOpacity(VHVActivityUIStyle::HeaderGold())
+                                        .Text(FText::FromString(TEXT("\u2026")))
+                                    ]
+                                ]
+                            ]
+                            + SHorizontalBox::Slot()
+                            .FillWidth(1.0f)
+                            .VAlign(VAlign_Center)
+                            [
+                                SAssignNew(ActivitySpeakerText, STextBlock)
+                                .Font(VHVActivityUIStyle::MediumFont(VHVActivityUIStyle::HeaderFontSize))
+                                .ColorAndOpacity(VHVActivityUIStyle::HeaderGold())
+                                .AutoWrapText(true)
+                            ]
+                        ]
+                        + SVerticalBox::Slot()
+                        .AutoHeight()
+                        .HAlign(HAlign_Left)
+                        .Padding(FMargin(32.0f, 7.0f, 0.0f, 14.0f))
+                        [
+                            SNew(SBox)
+                            .WidthOverride(VHVActivityUIStyle::HeaderDividerWidth)
+                            .HeightOverride(VHVActivityUIStyle::HeaderDividerHeight)
+                            [
+                                SNew(SBorder)
+                                .BorderImage(&ActivityDividerBrush)
+                            ]
+                        ]
+                        + SVerticalBox::Slot()
+                        .FillHeight(1.0f)
+                        .VAlign(VAlign_Top)
+                        [
+                            SAssignNew(ActivityPromptText, STextBlock)
+                            .Font(VHVActivityUIStyle::RegularFont(VHVActivityUIStyle::QuestionFontSize))
+                            .ColorAndOpacity(VHVActivityUIStyle::TextPrimary())
+                            .AutoWrapText(true)
+                            .LineHeightPercentage(1.0f)
+                        ]
+                    ]
+                ]
+            ]
+            + SConstraintCanvas::Slot()
+            .Anchors(FAnchors(0.6625f, 0.51f, 0.975f, 0.94f))
+            .Offset(FMargin(0.0f))
+            [
+                SAssignNew(ActivityAnswerPanel, SVerticalBox)
+                + SVerticalBox::Slot()
+                .FillHeight(1.0f)
+                .VAlign(VAlign_Center)
+                [
+                    SAssignNew(ActivityChoiceContainer, SVerticalBox)
+                ]
+                + SVerticalBox::Slot()
+                .AutoHeight()
+                .HAlign(HAlign_Right)
+                .Padding(FMargin(0.0f, VHVActivityUIStyle::LegendGap, 8.0f, 0.0f))
+                [
+                    SNew(SHorizontalBox)
+                    + SHorizontalBox::Slot()
+                    .AutoWidth()
+                    .VAlign(VAlign_Center)
+                    [
+                        SNew(SBorder)
+                        .BorderImage(&ActivityKeycapBrush)
+                        .Padding(FMargin(8.0f, 3.0f))
+                        [
+                            SNew(STextBlock)
+                            .Font(VHVActivityUIStyle::MediumFont(13))
+                            .ColorAndOpacity(VHVActivityUIStyle::PrimaryText())
+                            .Text(FText::FromString(TEXT("W/S")))
+                        ]
+                    ]
+                    + SHorizontalBox::Slot()
+                    .AutoWidth()
+                    .VAlign(VAlign_Center)
+                    .Padding(FMargin(7.0f, 0.0f, 20.0f, 0.0f))
+                    [
+                        SNew(STextBlock)
+                        .Font(VHVActivityUIStyle::RegularFont(14))
+                        .ColorAndOpacity(VHVActivityUIStyle::SecondaryText())
+                        .Text(FText::FromString(TEXT("Navigate")))
+                    ]
+                    + SHorizontalBox::Slot()
+                    .AutoWidth()
+                    .VAlign(VAlign_Center)
+                    [
+                        SNew(SBorder)
+                        .BorderImage(&ActivityKeycapBrush)
+                        .Padding(FMargin(8.0f, 3.0f))
+                        [
+                            SNew(STextBlock)
+                            .Font(VHVActivityUIStyle::MediumFont(13))
+                            .ColorAndOpacity(VHVActivityUIStyle::PrimaryText())
+                            .Text(FText::FromString(TEXT("ENTER")))
+                        ]
+                    ]
+                    + SHorizontalBox::Slot()
+                    .AutoWidth()
+                    .VAlign(VAlign_Center)
+                    .Padding(FMargin(7.0f, 0.0f, 0.0f, 0.0f))
+                    [
+                        SNew(STextBlock)
+                        .Font(VHVActivityUIStyle::RegularFont(14))
+                        .ColorAndOpacity(VHVActivityUIStyle::SecondaryText())
+                        .Text(FText::FromString(TEXT("Choose")))
+                    ]
+                ]
+            ]
+        ];
+
+    SetActivityChoicePresentation(bActivityChoicePresentation);
+    RebuildActivityChoiceCards();
+    UpdateActivityChoicePresentation();
+    return Root;
+}
+
+void UVHVDialogueWidget::ReleaseSlateResources(const bool bReleaseChildren)
+{
+    Super::ReleaseSlateResources(bReleaseChildren);
+    ActivityChoiceCards.Empty();
+    NormalDialoguePresentation.Reset();
+    ActivityRootCanvas.Reset();
+    ActivitySpeakerText.Reset();
+    ActivityPromptText.Reset();
+    ActivityChoiceContainer.Reset();
+    ActivityQuestionPanel.Reset();
+    ActivityAnswerPanel.Reset();
+}
+
+void UVHVDialogueWidget::NativeConstruct()
+{
+    Super::NativeConstruct();
+    ActivityEntranceElapsed = 0.0f;
+}
+
+void UVHVDialogueWidget::NativeTick(const FGeometry& MyGeometry, const float InDeltaTime)
+{
+    Super::NativeTick(MyGeometry, InDeltaTime);
+    if (!bActivityChoicePresentation)
+    {
+        return;
+    }
+
+    ActivityEntranceElapsed += InDeltaTime;
+    const float Alpha = FMath::Clamp(
+        ActivityEntranceElapsed / VHVActivityUIStyle::AnimationStandard, 0.0f, 1.0f);
+    const float Smoothed = FMath::InterpEaseOut(0.0f, 1.0f, Alpha, 3.0f);
+
+    if (ActivityQuestionPanel)
+    {
+        ActivityQuestionPanel->SetRenderOpacity(Smoothed);
+        ActivityQuestionPanel->SetRenderTransform(FSlateRenderTransform(
+            FVector2D(0.0f, FMath::Lerp(12.0f, 0.0f, Smoothed))));
+    }
+    if (ActivityAnswerPanel)
+    {
+        ActivityAnswerPanel->SetRenderOpacity(Smoothed);
+    }
 }
 
 FReply UVHVDialogueWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
@@ -70,6 +304,7 @@ FReply UVHVDialogueWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, 
 
 void UVHVDialogueWidget::ShowDialogue(const FDialogueData& InDialogue)
 {
+    SetActivityChoicePresentation(false);
     CurrentConversation = FDialogueConversation();
     CurrentNodeID = FString();
     CurrentDialogue = InDialogue;
@@ -117,6 +352,7 @@ void UVHVDialogueWidget::ShowConversation(const FDialogueConversation& InConvers
 
 void UVHVDialogueWidget::HideDialogue()
 {
+    SetActivityChoicePresentation(false);
     CurrentConversation = FDialogueConversation();
     CurrentNodeID = FString();
     CurrentDialogue = FDialogueData();
@@ -254,6 +490,11 @@ void UVHVDialogueWidget::UpdateFromNode()
         return;
     }
 
+    SetActivityChoicePresentation(
+        CurrentNode->NodeType == EVHVDialogueNodeType::Choice
+        && OwningUIManager
+        && OwningUIManager->IsDialogueChoiceLearningActivity(CurrentConversation.ConversationID, CurrentNodeID));
+
     if (SpeakerNameText)
     {
         if (CurrentNode->SpeakerName.IsEmpty())
@@ -294,24 +535,33 @@ void UVHVDialogueWidget::UpdateFromNode()
             }
         }
 
-        EnsureChoiceContainer();
-
-        if (ChoiceContainer)
+        if (bActivityChoicePresentation)
         {
-            for (const int32 ChoiceIndex : AvailableChoiceIndices)
-            {
-                const FDialogueChoiceOption& Choice = CurrentNode->Choices[ChoiceIndex];
-                UVHVDialogueChoiceButton* ChoiceButton = NewObject<UVHVDialogueChoiceButton>(this);
-                ChoiceButton->InitializeChoice(this, ChoiceIndex);
+            RebuildActivityChoiceCards();
+        }
+        else
+        {
+            EnsureChoiceContainer();
 
-                UTextBlock* ChoiceText = NewObject<UTextBlock>(ChoiceButton);
-                ChoiceText->SetText(Choice.OptionText);
-                ChoiceText->SetColorAndOpacity(ChoiceIndex == SelectedChoiceIndex ? FLinearColor::White : FLinearColor(0.8f, 0.8f, 0.8f, 1.0f));
-                ChoiceButton->SetContent(ChoiceText);
-                ChoiceContainer->AddChild(ChoiceButton);
+            if (ChoiceContainer)
+            {
+                for (const int32 ChoiceIndex : AvailableChoiceIndices)
+                {
+                    const FDialogueChoiceOption& Choice = CurrentNode->Choices[ChoiceIndex];
+                    UVHVDialogueChoiceButton* ChoiceButton = NewObject<UVHVDialogueChoiceButton>(this);
+                    ChoiceButton->InitializeChoice(this, ChoiceIndex);
+
+                    UTextBlock* ChoiceText = NewObject<UTextBlock>(ChoiceButton);
+                    ChoiceText->SetText(Choice.OptionText);
+                    ChoiceText->SetColorAndOpacity(ChoiceIndex == SelectedChoiceIndex ? FLinearColor::White : FLinearColor(0.8f, 0.8f, 0.8f, 1.0f));
+                    ChoiceButton->SetContent(ChoiceText);
+                    ChoiceContainer->AddChild(ChoiceButton);
+                }
             }
         }
     }
+
+    UpdateActivityChoicePresentation();
 }
 
 void UVHVDialogueWidget::EnsureChoiceContainer()
@@ -336,22 +586,27 @@ void UVHVDialogueWidget::EnsureChoiceContainer()
 void UVHVDialogueWidget::UpdateChoiceSelectionUI()
 {
     const FDialogueNode* CurrentNode = FindNodeByID(CurrentNodeID);
-    if (!CurrentNode || CurrentNode->NodeType != EVHVDialogueNodeType::Choice || !ChoiceContainer)
+    if (!CurrentNode || CurrentNode->NodeType != EVHVDialogueNodeType::Choice)
     {
         return;
     }
 
-    for (int32 RenderedIndex = 0; RenderedIndex < ChoiceContainer->GetChildrenCount(); ++RenderedIndex)
+    if (ChoiceContainer)
     {
-        if (UVHVDialogueChoiceButton* ChoiceButton = Cast<UVHVDialogueChoiceButton>(ChoiceContainer->GetChildAt(RenderedIndex)))
+        for (int32 RenderedIndex = 0; RenderedIndex < ChoiceContainer->GetChildrenCount(); ++RenderedIndex)
         {
-            if (UTextBlock* ChoiceText = Cast<UTextBlock>(ChoiceButton->GetContent()))
+            if (UVHVDialogueChoiceButton* ChoiceButton = Cast<UVHVDialogueChoiceButton>(ChoiceContainer->GetChildAt(RenderedIndex)))
             {
-                const int32 ChoiceIndex = AvailableChoiceIndices.IsValidIndex(RenderedIndex) ? AvailableChoiceIndices[RenderedIndex] : INDEX_NONE;
-                ChoiceText->SetColorAndOpacity(ChoiceIndex == SelectedChoiceIndex ? FLinearColor::White : FLinearColor(0.8f, 0.8f, 0.8f, 1.0f));
+                if (UTextBlock* ChoiceText = Cast<UTextBlock>(ChoiceButton->GetContent()))
+                {
+                    const int32 ChoiceIndex = AvailableChoiceIndices.IsValidIndex(RenderedIndex) ? AvailableChoiceIndices[RenderedIndex] : INDEX_NONE;
+                    ChoiceText->SetColorAndOpacity(ChoiceIndex == SelectedChoiceIndex ? FLinearColor::White : FLinearColor(0.8f, 0.8f, 0.8f, 1.0f));
+                }
             }
         }
     }
+
+    UpdateActivityChoicePresentation();
 }
 
 void UVHVDialogueWidget::ClearChoices()
@@ -360,6 +615,133 @@ void UVHVDialogueWidget::ClearChoices()
     {
         ChoiceContainer->ClearChildren();
     }
+    if (ActivityChoiceContainer)
+    {
+        ActivityChoiceContainer->ClearChildren();
+    }
+    ActivityChoiceCards.Empty();
+}
+
+void UVHVDialogueWidget::SetActivityChoicePresentation(const bool bEnabled)
+{
+    const bool bStartingActivityPresentation = bEnabled && !bActivityChoicePresentation;
+    bActivityChoicePresentation = bEnabled;
+
+    if (NormalDialoguePresentation)
+    {
+        NormalDialoguePresentation->SetVisibility(
+            bActivityChoicePresentation ? EVisibility::Collapsed : EVisibility::Visible);
+    }
+    if (ActivityRootCanvas)
+    {
+        ActivityRootCanvas->SetVisibility(
+            bActivityChoicePresentation ? EVisibility::Visible : EVisibility::Collapsed);
+    }
+
+    if (bStartingActivityPresentation)
+    {
+        ActivityEntranceElapsed = 0.0f;
+        if (ActivityQuestionPanel)
+        {
+            ActivityQuestionPanel->SetRenderOpacity(0.0f);
+            ActivityQuestionPanel->SetRenderTransform(FSlateRenderTransform(FVector2D(0.0f, 12.0f)));
+        }
+        if (ActivityAnswerPanel)
+        {
+            ActivityAnswerPanel->SetRenderOpacity(0.0f);
+        }
+    }
+}
+
+void UVHVDialogueWidget::RebuildActivityChoiceCards()
+{
+    ActivityChoiceCards.Empty();
+    if (!ActivityChoiceContainer)
+    {
+        return;
+    }
+
+    ActivityChoiceContainer->ClearChildren();
+    if (!bActivityChoicePresentation)
+    {
+        return;
+    }
+
+    const FDialogueNode* CurrentNode = FindNodeByID(CurrentNodeID);
+    if (!CurrentNode || CurrentNode->NodeType != EVHVDialogueNodeType::Choice)
+    {
+        return;
+    }
+
+    for (int32 RenderedIndex = 0; RenderedIndex < AvailableChoiceIndices.Num(); ++RenderedIndex)
+    {
+        const int32 ChoiceIndex = AvailableChoiceIndices[RenderedIndex];
+        if (!CurrentNode->Choices.IsValidIndex(ChoiceIndex))
+        {
+            continue;
+        }
+
+        TSharedPtr<SVHVChoiceCard> ChoiceCard;
+        ActivityChoiceContainer->AddSlot()
+        .AutoHeight()
+        .Padding(FMargin(0.0f, 0.0f, 0.0f,
+            RenderedIndex + 1 < AvailableChoiceIndices.Num() ? VHVActivityUIStyle::ChoiceGap : 0.0f))
+        [
+            SAssignNew(ChoiceCard, SVHVChoiceCard)
+            .OptionIndex(ChoiceIndex)
+            .AnswerText(CurrentNode->Choices[ChoiceIndex].OptionText)
+            .EntranceDelay(RenderedIndex * VHVActivityUIStyle::AnimationStagger)
+            .AllowVariableHeight(true)
+            .OnChosen(FOnVHVChoiceCardChosen::CreateUObject(
+                this, &UVHVDialogueWidget::HandleActivityChoiceCardChosen))
+        ];
+        ActivityChoiceCards.Add(ChoiceCard);
+    }
+}
+
+void UVHVDialogueWidget::UpdateActivityChoicePresentation()
+{
+    if (!bActivityChoicePresentation)
+    {
+        return;
+    }
+
+    const FDialogueNode* CurrentNode = FindNodeByID(CurrentNodeID);
+    if (!CurrentNode)
+    {
+        return;
+    }
+
+    if (ActivitySpeakerText)
+    {
+        ActivitySpeakerText->SetText(CurrentNode->SpeakerName.IsEmpty()
+            ? FText::FromString(TEXT("Instructor"))
+            : CurrentNode->SpeakerName);
+    }
+    if (ActivityPromptText)
+    {
+        ActivityPromptText->SetText(CurrentNode->Text.IsEmpty()
+            ? FText::FromString(TEXT("Choose a response."))
+            : CurrentNode->Text);
+    }
+
+    for (int32 RenderedIndex = 0; RenderedIndex < ActivityChoiceCards.Num(); ++RenderedIndex)
+    {
+        if (ActivityChoiceCards[RenderedIndex])
+        {
+            const int32 ChoiceIndex = AvailableChoiceIndices.IsValidIndex(RenderedIndex)
+                ? AvailableChoiceIndices[RenderedIndex]
+                : INDEX_NONE;
+            const bool bCurrentChoice = ChoiceIndex == SelectedChoiceIndex;
+            ActivityChoiceCards[RenderedIndex]->SetPresentationState(
+                bCurrentChoice, bCurrentChoice, true, false);
+        }
+    }
+}
+
+void UVHVDialogueWidget::HandleActivityChoiceCardChosen(const int32 ChoiceIndex)
+{
+    SelectChoiceAndConfirm(ChoiceIndex);
 }
 
 const FDialogueNode* UVHVDialogueWidget::FindNodeByID(const FString& NodeID) const

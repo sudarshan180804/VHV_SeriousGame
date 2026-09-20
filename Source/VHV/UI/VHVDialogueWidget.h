@@ -8,6 +8,11 @@
 #include "VHVDialogueWidget.generated.h"
 
 class UVHVUIManagerComponent;
+class SBox;
+class SConstraintCanvas;
+class STextBlock;
+class SVerticalBox;
+class SVHVChoiceCard;
 
 UCLASS()
 class VHV_API UVHVDialogueWidget : public UVHVUserWidgetBase
@@ -53,11 +58,20 @@ public:
     int32 GetSelectedChoiceIndex() const { return SelectedChoiceIndex; }
 
 protected:
+    virtual TSharedRef<SWidget> RebuildWidget() override;
+    virtual void ReleaseSlateResources(bool bReleaseChildren) override;
+    virtual void NativeConstruct() override;
+    virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
+
     void UpdateDialogueLine();
     void UpdateFromNode();
     void UpdateChoiceSelectionUI();
     void EnsureChoiceContainer();
     void ClearChoices();
+    void SetActivityChoicePresentation(bool bEnabled);
+    void RebuildActivityChoiceCards();
+    void UpdateActivityChoicePresentation();
+    void HandleActivityChoiceCardChosen(int32 ChoiceIndex);
     const FDialogueNode* FindNodeByID(const FString& NodeID) const;
     void SetCurrentNode(const FString& NodeID);
 
@@ -67,6 +81,22 @@ protected:
     int32 CurrentLineIndex = 0;
     int32 SelectedChoiceIndex = INDEX_NONE;
     TArray<int32> AvailableChoiceIndices;
+    TArray<TSharedPtr<SVHVChoiceCard>> ActivityChoiceCards;
+    bool bActivityChoicePresentation = false;
+    float ActivityEntranceElapsed = 0.0f;
+
+    TSharedPtr<SBox> NormalDialoguePresentation;
+    TSharedPtr<SConstraintCanvas> ActivityRootCanvas;
+    TSharedPtr<STextBlock> ActivitySpeakerText;
+    TSharedPtr<STextBlock> ActivityPromptText;
+    TSharedPtr<SVerticalBox> ActivityChoiceContainer;
+    TSharedPtr<SWidget> ActivityQuestionPanel;
+    TSharedPtr<SWidget> ActivityAnswerPanel;
+    FSlateBrush ActivityQuestionPanelBrush;
+    FSlateBrush ActivityQuestionShadowBrush;
+    FSlateBrush ActivityKeycapBrush;
+    FSlateBrush ActivityEmblemBrush;
+    FSlateBrush ActivityDividerBrush;
 
     UPROPERTY(BlueprintReadWrite, meta = (BindWidget))
     TObjectPtr<UTextBlock> SpeakerNameText;

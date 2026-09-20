@@ -24,12 +24,8 @@ void SVHVChoiceCard::Construct(const FArguments& InArgs)
         VHVActivityUIStyle::IndicatorNormal(), VHVActivityUIStyle::IndicatorRadius,
         VHVActivityUIStyle::BorderNeutral(), VHVActivityUIStyle::BorderNormalWidth);
 
-    ChildSlot
-    [
-        SNew(SBox)
-        .HeightOverride(VHVActivityUIStyle::ChoiceCardHeight)
-        [
-            SNew(SOverlay)
+    TSharedRef<SOverlay> CardContent =
+        SNew(SOverlay)
             + SOverlay::Slot()
             .Padding(FMargin(3.0f, 3.0f, -3.0f, -4.0f))
             [
@@ -90,9 +86,30 @@ void SVHVChoiceCard::Construct(const FArguments& InArgs)
                         .Text(InArgs._AnswerText)
                     ]
                 ]
+            ];
+
+    if (InArgs._AllowVariableHeight)
+    {
+        ChildSlot
+        [
+            SNew(SBox)
+            .MinDesiredHeight(VHVActivityUIStyle::ChoiceCardHeight)
+            [
+                CardContent
             ]
-        ]
-    ];
+        ];
+    }
+    else
+    {
+        ChildSlot
+        [
+            SNew(SBox)
+            .HeightOverride(VHVActivityUIStyle::ChoiceCardHeight)
+            [
+                CardContent
+            ]
+        ];
+    }
 
     SetRenderOpacity(0.0f);
     SetRenderTransform(FSlateRenderTransform(FVector2D(16.0f, 0.0f)));

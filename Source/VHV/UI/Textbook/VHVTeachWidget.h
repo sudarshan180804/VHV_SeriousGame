@@ -1,54 +1,92 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Styling/SlateBrush.h"
+#include "Styling/SlateTypes.h"
 #include "UI/VHVUserWidgetBase.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "VHV/Textbook/Types/VHVTextbookTypes.h"
 #include "VHVTeachWidget.generated.h"
 
+class SConstraintCanvas;
+class STextBlock;
+class SVerticalBox;
+class UTexture2D;
 class UVHVUIManagerComponent;
 
+/** Full-screen teaching page presented on the authored village lesson board. */
 UCLASS()
 class VHV_API UVHVTeachWidget : public UVHVUserWidgetBase
 {
-	GENERATED_BODY()
+    GENERATED_BODY()
 
 public:
-	UFUNCTION(BlueprintCallable, Category = "VHV|Textbook")
-	void SetTeachingContent(const FTeachingContent& InTeaching);
+    UVHVTeachWidget();
 
-	UFUNCTION(BlueprintCallable, Category = "VHV|Textbook")
-	void SetTeachingData(const FTeachingContent& InTeaching);
+    UFUNCTION(BlueprintCallable, Category = "VHV|Textbook")
+    void SetTeachingContent(const FTeachingContent& InTeaching);
 
-	UFUNCTION()
-	void SetOwningUIManager(UVHVUIManagerComponent* InUIManager);
+    UFUNCTION(BlueprintCallable, Category = "VHV|Textbook")
+    void SetTeachingData(const FTeachingContent& InTeaching);
+
+    UFUNCTION()
+    void SetOwningUIManager(UVHVUIManagerComponent* InUIManager);
 
 protected:
+    virtual TSharedRef<SWidget> RebuildWidget() override;
+    virtual void ReleaseSlateResources(bool bReleaseChildren) override;
     virtual void NativeConstruct() override;
+    virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
-	UPROPERTY(BlueprintReadWrite, meta = (BindWidget))
-	TObjectPtr<UTextBlock> TitleText;
+    // Retained for compatibility with the existing WBP_Teach widget tree. The
+    // runtime presentation is built by RebuildWidget so configured instances
+    // receive the new layout without replacing the assigned widget Blueprint.
+    UPROPERTY(BlueprintReadWrite, meta = (BindWidget))
+    TObjectPtr<UTextBlock> TitleText;
 
-	UPROPERTY(BlueprintReadWrite, meta = (BindWidget))
-	TObjectPtr<UTextBlock> ContentText;
+    UPROPERTY(BlueprintReadWrite, meta = (BindWidget))
+    TObjectPtr<UTextBlock> ContentText;
 
-	UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional))
-	TObjectPtr<UVerticalBox> KeyTakeawaysContainer;
+    UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional))
+    TObjectPtr<UVerticalBox> KeyTakeawaysContainer;
 
-	UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional))
-	TObjectPtr<UVerticalBox> MediaContainer;
+    UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional))
+    TObjectPtr<UVerticalBox> MediaContainer;
 
     UPROPERTY()
     TObjectPtr<UVHVUIManagerComponent> OwningUIManager;
 
 private:
     void PopulateTeachingContent();
+    void RefreshSlateContent();
+    FReply HandleContinueClicked();
 
-    // Keep the runtime payload until the UMG widget tree is constructed and its
-    // BindWidget members are available.
     FTeachingContent TeachingContent;
     bool bHasTeachingContent = false;
+    float EntranceElapsed = 0.0f;
+
+    TSharedPtr<SConstraintCanvas> ActivityContentSlate;
+    TSharedPtr<STextBlock> TitleTextSlate;
+    TSharedPtr<STextBlock> ContentTextSlate;
+    TSharedPtr<SVerticalBox> ReadingAreaSlate;
+    TSharedPtr<SVerticalBox> TakeawaysSectionSlate;
+    TArray<TSharedPtr<SWidget>> TakeawayCardsSlate;
+
+    FSlateBrush BackgroundBrush;
+    FSlateBrush HeaderDividerBrush;
+    FSlateBrush TakeawayGreenBrush;
+    FSlateBrush TakeawayGoldBrush;
+    FSlateBrush TakeawayTealBrush;
+    FSlateBrush TakeawayShadowBrush;
+    FSlateBrush MediaSurfaceBrush;
+    FSlateBrush KeycapBrush;
+    FButtonStyle ContinueButtonStyle;
+    TArray<FSlateBrush> MediaBrushes;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UTexture2D> LessonBackgroundTexture;
+
+    UPROPERTY(Transient)
+    TArray<TObjectPtr<UTexture2D>> LoadedMediaTextures;
 };

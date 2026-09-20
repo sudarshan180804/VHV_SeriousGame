@@ -16,10 +16,13 @@ public:
         : _OptionIndex(INDEX_NONE)
         , _AnswerText()
         , _EntranceDelay(0.0f)
+        , _AllowVariableHeight(false)
     {}
         SLATE_ARGUMENT(int32, OptionIndex)
         SLATE_ARGUMENT(FText, AnswerText)
         SLATE_ARGUMENT(float, EntranceDelay)
+        /** Keep the canonical 82 px height as a minimum so long authored text can wrap safely. */
+        SLATE_ARGUMENT(bool, AllowVariableHeight)
         SLATE_EVENT(FOnVHVChoiceCardChosen, OnChosen)
     SLATE_END_ARGS()
 
