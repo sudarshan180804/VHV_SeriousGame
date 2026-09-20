@@ -8,6 +8,8 @@
 #include "Textbook/Systems/VHVTextbookSubsystem.h"
 #include "UI/VHVUIManagerComponent.h"
 #include "VHV.h"
+#include "TimerManager.h"
+#include "UObject/UObjectGlobals.h"
 
 namespace
 {
@@ -21,10 +23,14 @@ void UVHVSaveSubsystem::Initialize(FSubsystemCollectionBase& Collection)
     StoryStateSubsystem = Collection.InitializeDependency<UVHVStoryStateSubsystem>();
     TextbookSubsystem = Collection.InitializeDependency<UVHVTextbookSubsystem>();
     QuestSubsystem = Collection.InitializeDependency<UVHVQuestSubsystem>();
+    FCoreUObjectDelegates::PostLoadMapWithWorld.AddUObject(this, &UVHVSaveSubsystem::HandlePostLoadMap);
 }
 
 void UVHVSaveSubsystem::Deinitialize()
 {
+    FCoreUObjectDelegates::PostLoadMapWithWorld.RemoveAll(this);
+    bLoadTravelPending = false;
+    PendingLoadMapName.Reset();
     QuestSubsystem = nullptr;
     StoryStateSubsystem = nullptr;
     TextbookSubsystem = nullptr;
@@ -140,6 +146,26 @@ bool UVHVSaveSubsystem::DoesSaveExist() const
     return UGameplayStatics::DoesSaveGameExist(SlotName, SaveUserIndex);
 }
 
+bool UVHVSaveSubsystem::CanLoadProgress() const
+{
+    return LoadValidatedSaveGame() != nullptr;
+}
+
+bool UVHVSaveSubsystem::LoadProgressFromMainMenu()
+{
+    const UVHVSaveGame* SaveGame = LoadValidatedSaveGame();
+    if (!SaveGame)
+    {
+        OnLoadCompleted.Broadcast(false);
+        return false;
+    }
+
+    PendingLoadMapName = SaveGame->SavedMapName;
+    bLoadTravelPending = true;
+    UGameplayStatics::OpenLevel(this, FName(*PendingLoadMapName));
+    return true;
+}
+
 bool UVHVSaveSubsystem::DeleteSave()
 {
     if (!DoesSaveExist())
@@ -187,4 +213,48 @@ bool UVHVSaveSubsystem::IsStableState(const TCHAR* OperationName) const
 FString UVHVSaveSubsystem::GetCurrentMapName() const
 {
     return GetWorld() ? UGameplayStatics::GetCurrentLevelName(GetWorld(), true) : FString();
+}
+
+UVHVSaveGame* UVHVSaveSubsystem::LoadValidatedSaveGame() const
+{
+    if (!DoesSaveExist())
+    {
+        return nullptr;
+    }
+
+    UVHVSaveGame* SaveGame = Cast<UVHVSaveGame>(
+        UGameplayStatics::LoadGameFromSlot(SlotName, SaveUserIndex));
+    if (!SaveGame || SaveGame->SaveVersion != CurrentSaveVersion || SaveGame->SavedMapName.IsEmpty()
+        || !StoryStateSubsystem || !TextbookSubsystem || !QuestSubsystem)
+    {
+        return nullptr;
+    }
+
+    return StoryStateSubsystem->ValidateSaveState(SaveGame->StoryState)
+        && TextbookSubsystem->ValidateSaveState(SaveGame->TextbookState)
+        && QuestSubsystem->ValidateSaveState(SaveGame->QuestState)
+        ? SaveGame
+        : nullptr;
+}
+
+void UVHVSaveSubsystem::HandlePostLoadMap(UWorld* LoadedWorld)
+{
+    if (!bLoadTravelPending || !LoadedWorld)
+    {
+        return;
+    }
+
+    const FString LoadedMapName = UGameplayStatics::GetCurrentLevelName(LoadedWorld, true);
+    if (LoadedMapName != PendingLoadMapName)
+    {
+        return;
+    }
+
+    bLoadTravelPending = false;
+    PendingLoadMapName.Reset();
+    LoadedWorld->GetTimerManager().SetTimerForNextTick(
+        FTimerDelegate::CreateWeakLambda(this, [this]()
+        {
+            LoadProgress();
+        }));
 }

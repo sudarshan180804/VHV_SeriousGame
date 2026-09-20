@@ -14,6 +14,7 @@
 #include "Textbook/Data/VHVLevelData.h"
 #include "Quest/Data/VHVQuestArcData.h"
 #include "Quest/Systems/VHVQuestSubsystem.h"
+#include "Save/VHVSaveSubsystem.h"
 
 AVHVPlayerController::AVHVPlayerController()
 {
@@ -24,8 +25,16 @@ void AVHVPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
 
-	bool bQuestFlowStarted = false;
 	UWorld* World = GetWorld();
+	const UVHVSaveSubsystem* SaveSubsystem = World && World->GetGameInstance()
+		? World->GetGameInstance()->GetSubsystem<UVHVSaveSubsystem>()
+		: nullptr;
+	if (SaveSubsystem && SaveSubsystem->IsLoadTravelPending())
+	{
+		return;
+	}
+
+	bool bQuestFlowStarted = false;
 	if (bUseQuestFlow && !StartingQuestArc.IsNull() && World && World->GetGameInstance())
 	{
 		if (UVHVQuestArcData* QuestArc = StartingQuestArc.LoadSynchronous())

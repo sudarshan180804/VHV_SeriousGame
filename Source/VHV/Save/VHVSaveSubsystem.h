@@ -8,6 +8,7 @@ class UVHVQuestSubsystem;
 class UVHVStoryStateSubsystem;
 class UVHVTextbookSubsystem;
 class UVHVUIManagerComponent;
+class UVHVSaveGame;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnVHVSaveOperationCompleted, bool, bSuccess);
 
@@ -29,6 +30,17 @@ public:
     UFUNCTION(BlueprintPure, Category = "VHV|Save")
     bool DoesSaveExist() const;
 
+    /** Returns true only when the slot can be validated and has a gameplay map to restore. */
+    UFUNCTION(BlueprintPure, Category = "VHV|Save")
+    bool CanLoadProgress() const;
+
+    /** Travels to the saved map and restores through LoadProgress after gameplay initialization. */
+    UFUNCTION(BlueprintCallable, Category = "VHV|Save")
+    bool LoadProgressFromMainMenu();
+
+    /** Allows the gameplay controller to avoid starting fresh systems during a Continue travel. */
+    bool IsLoadTravelPending() const { return bLoadTravelPending; }
+
     UFUNCTION(BlueprintCallable, Category = "VHV|Save")
     bool DeleteSave();
 
@@ -45,6 +57,8 @@ private:
     UVHVUIManagerComponent* GetUIManager() const;
     bool IsStableState(const TCHAR* OperationName) const;
     FString GetCurrentMapName() const;
+    UVHVSaveGame* LoadValidatedSaveGame() const;
+    void HandlePostLoadMap(UWorld* LoadedWorld);
 
     UPROPERTY()
     TObjectPtr<UVHVQuestSubsystem> QuestSubsystem;
@@ -54,4 +68,7 @@ private:
 
     UPROPERTY()
     TObjectPtr<UVHVTextbookSubsystem> TextbookSubsystem;
+
+    bool bLoadTravelPending = false;
+    FString PendingLoadMapName;
 };

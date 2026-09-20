@@ -7,6 +7,7 @@ public class VHV : ModuleRules
 	public VHV(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+		bUseUnity = false;
 
 		PublicDependencyModuleNames.AddRange(new string[] {
 			"Core",
@@ -23,6 +24,10 @@ public class VHV : ModuleRules
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { "SlateCore" });
+		if (Target.bBuildEditor)
+		{
+			PrivateDependencyModuleNames.Add("UnrealEd");
+		}
 
 		PublicIncludePaths.AddRange(new string[] {
 			"VHV",
