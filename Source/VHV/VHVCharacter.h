@@ -11,6 +11,7 @@ class USpringArmComponent;
 class UCameraComponent;
 class UInputAction;
 class UVHVPlayerInteractionComponent;
+class UVHVAmbientSpeechComponent;
 
 struct FInputActionValue;
 
@@ -36,6 +37,10 @@ class VHV_API AVHVCharacter : public ACharacter
 	/** Player interaction component */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VHV|Components", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UVHVPlayerInteractionComponent> InteractionComponent;
+
+	/** Reuses the ambient world-bubble presenter for explicitly authored player thoughts. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VHV|Components", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UVHVAmbientSpeechComponent> ThoughtSpeechComponent;
 
 protected:
 
@@ -115,5 +120,10 @@ public:
 	FORCEINLINE UVHVPlayerInteractionComponent* GetInteractionComponent() const
 	{
 		return InteractionComponent;
+	}
+
+	FORCEINLINE UVHVAmbientSpeechComponent* GetThoughtSpeechComponent() const
+	{
+		return ThoughtSpeechComponent;
 	}
 };

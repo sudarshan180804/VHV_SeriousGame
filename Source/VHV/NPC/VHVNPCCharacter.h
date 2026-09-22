@@ -5,6 +5,7 @@
 #include "VHVNPCCharacter.generated.h"
 
 class UVHVInteractionComponent;
+class UVHVAmbientSpeechComponent;
 class UVHVNPCBehaviorComponent;
 class UVHVNPCDialogueComponent;
 class UVHVNPCInteractionComponent;
@@ -55,6 +56,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "VHV|NPC|Components")
 	UVHVNPCPresentationComponent* GetPresentationComponent() const;
 
+	UFUNCTION(BlueprintPure, Category = "VHV|NPC|Components")
+	UVHVAmbientSpeechComponent* GetAmbientSpeechComponent() const;
+
 private:
 	virtual void BeginPlay() override;
 
@@ -87,4 +91,7 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VHV|NPC|Components", meta = (AllowPrivateAccess = "true", NoEditInline))
 	TObjectPtr<UVHVNPCPresentationComponent> PresentationComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VHV|NPC|Components", meta = (AllowPrivateAccess = "true", NoEditInline))
+	TObjectPtr<UVHVAmbientSpeechComponent> AmbientSpeechComponent;
 };

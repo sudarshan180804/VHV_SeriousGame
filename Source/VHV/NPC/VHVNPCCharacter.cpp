@@ -3,6 +3,7 @@
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "NPC/Components/VHVNPCBehaviorComponent.h"
+#include "NPC/Components/VHVAmbientSpeechComponent.h"
 #include "NPC/Components/VHVNPCDialogueComponent.h"
 #include "NPC/Components/VHVNPCInteractionComponent.h"
 #include "NPC/Components/VHVNPCPatrolComponent.h"
@@ -41,6 +42,8 @@ AVHVNPCCharacter::AVHVNPCCharacter()
 	PatrolComponent = CreateDefaultSubobject<UVHVNPCPatrolComponent>(TEXT("PatrolComponent"));
 	PresentationComponent = CreateDefaultSubobject<UVHVNPCPresentationComponent>(TEXT("PresentationComponent"));
 	QuestCommandComponent = CreateDefaultSubobject<UVHVNPCQuestCommandComponent>(TEXT("QuestCommandComponent"));
+	AmbientSpeechComponent = CreateDefaultSubobject<UVHVAmbientSpeechComponent>(TEXT("AmbientSpeechComponent"));
+	AmbientSpeechComponent->SetupAttachment(GetRootComponent());
 
 	InteractionCollision = CreateDefaultSubobject<USphereComponent>(TEXT("InteractionCollision"));
 	InteractionCollision->SetupAttachment(GetRootComponent());
@@ -112,4 +115,9 @@ UVHVNPCQuestCommandComponent* AVHVNPCCharacter::GetQuestCommandComponent() const
 UVHVNPCPresentationComponent* AVHVNPCCharacter::GetPresentationComponent() const
 {
 	return PresentationComponent;
+}
+
+UVHVAmbientSpeechComponent* AVHVNPCCharacter::GetAmbientSpeechComponent() const
+{
+	return AmbientSpeechComponent;
 }

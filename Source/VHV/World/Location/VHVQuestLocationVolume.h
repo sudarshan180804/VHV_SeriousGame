@@ -59,9 +59,23 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VHV|Location")
     bool bEnabled = true;
 
+    /** Optionally dispatch a generic WorldAction when the player enters this existing location trigger. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|Location|World Action")
+    bool bTriggerWorldAction = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|Location|World Action", meta = (DisplayName = "World Receiver", Categories = "VHV.WorldReceiver", EditCondition = "bTriggerWorldAction", EditConditionHides))
+    FGameplayTag WorldActionReceiverTag;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|Location|World Action", meta = (DisplayName = "World Action", Categories = "VHV.WorldAction", EditCondition = "bTriggerWorldAction", EditConditionHides))
+    FGameplayTag WorldActionTag;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|Location|World Action", meta = (EditCondition = "bTriggerWorldAction", EditConditionHides))
+    bool bTriggerWorldActionOnce = true;
+
 private:
     UPROPERTY(Transient)
     TObjectPtr<UVHVQuestSubsystem> QuestSubsystem;
 
     TSet<TWeakObjectPtr<AVHVCharacter>> PlayersInside;
+    bool bWorldActionTriggered = false;
 };

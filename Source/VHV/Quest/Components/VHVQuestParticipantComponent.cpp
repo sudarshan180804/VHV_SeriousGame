@@ -15,6 +15,11 @@ UVHVQuestParticipantComponent::UVHVQuestParticipantComponent()
 
 bool UVHVQuestParticipantComponent::NotifyInteracted()
 {
+    if (!IsQuestParticipationEnabled())
+    {
+        return false;
+    }
+
     const FName EffectiveParticipantID = GetEffectiveParticipantID();
     if (EffectiveParticipantID.IsNone() || !GetWorld() || !GetWorld()->GetGameInstance())
     {
@@ -33,6 +38,11 @@ bool UVHVQuestParticipantComponent::NotifyInteracted()
 EDataValidationResult UVHVQuestParticipantComponent::IsDataValid(FDataValidationContext& Context) const
 {
     EDataValidationResult Result = Super::IsDataValid(Context);
+    if (!IsQuestParticipationEnabled())
+    {
+        return Result;
+    }
+
     if (GetEffectiveParticipantID().IsNone())
     {
         Context.AddError(FText::FromString(FString::Printf(TEXT("Quest participant on '%s' has no effective Participant ID."), *GetNameSafe(GetOwner()))));

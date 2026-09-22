@@ -15,6 +15,7 @@
 
 #include "VHV.h"
 #include "VHV/Player/Components/VHVPlayerInteractionComponent.h"
+#include "VHV/NPC/Components/VHVAmbientSpeechComponent.h"
 #include "VHV/UI/VHVUIManagerComponent.h"
 
 AVHVCharacter::AVHVCharacter()
@@ -65,7 +66,10 @@ AVHVCharacter::AVHVCharacter()
 	InteractionComponent =
 		CreateDefaultSubobject<UVHVPlayerInteractionComponent>(
 			TEXT("InteractionComponent")
-		);
+			);
+
+	ThoughtSpeechComponent = CreateDefaultSubobject<UVHVAmbientSpeechComponent>(
+		TEXT("ThoughtSpeechComponent"));
 
 	// The skeletal mesh and animation blueprint references
 	// remain configured in the ThirdPersonCharacter Blueprint.

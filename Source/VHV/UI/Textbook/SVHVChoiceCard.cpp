@@ -23,6 +23,7 @@ void SVHVChoiceCard::Construct(const FArguments& InArgs)
     IndicatorBrush = VHVActivityUIStyle::RoundedBrush(
         VHVActivityUIStyle::IndicatorNormal(), VHVActivityUIStyle::IndicatorRadius,
         VHVActivityUIStyle::BorderNeutral(), VHVActivityUIStyle::BorderNormalWidth);
+    const float AnswerVerticalPadding = InArgs._AllowVariableHeight ? 16.0f : 0.0f;
 
     TSharedRef<SOverlay> CardContent =
         SNew(SOverlay)
@@ -77,6 +78,7 @@ void SVHVChoiceCard::Construct(const FArguments& InArgs)
                     + SHorizontalBox::Slot()
                     .FillWidth(1.0f)
                     .VAlign(VAlign_Center)
+                    .Padding(FMargin(0.0f, AnswerVerticalPadding))
                     [
                         SAssignNew(AnswerText, STextBlock)
                         .Font(VHVActivityUIStyle::RegularFont(VHVActivityUIStyle::AnswerFontSize))

@@ -5,6 +5,7 @@
 #include "Quest/Systems/VHVQuestSubsystem.h"
 #include "VHV.h"
 #include "VHVCharacter.h"
+#include "World/Systems/VHVWorldActionSubsystem.h"
 
 #if WITH_EDITOR
 #include "Misc/DataValidation.h"
@@ -73,6 +74,30 @@ void AVHVQuestLocationVolume::HandleBoxBeginOverlap(
     {
         QuestSubsystem->NotifyLocationReached(EffectiveLocationID);
     }
+
+    if (bTriggerWorldAction && (!bTriggerWorldActionOnce || !bWorldActionTriggered))
+    {
+        const FName ReceiverID = VHVAuthoringReferences::ResolveID(
+            WorldActionReceiverTag, NAME_None, TEXT("VHV.WorldReceiver"));
+        const FName ActionID = VHVAuthoringReferences::ResolveID(
+            WorldActionTag, NAME_None, TEXT("VHV.WorldAction"));
+        FGuid RequestID;
+        UVHVWorldActionSubsystem* WorldActions = GetWorld()
+            ? GetWorld()->GetSubsystem<UVHVWorldActionSubsystem>() : nullptr;
+        const EVHVWorldActionExecutionResult Result = WorldActions
+            ? WorldActions->RequestWorldAction(ReceiverID, ActionID, RequestID)
+            : EVHVWorldActionExecutionResult::Rejected;
+        if (Result != EVHVWorldActionExecutionResult::Rejected)
+        {
+            bWorldActionTriggered = true;
+        }
+        else
+        {
+            UE_LOG(LogVHV, Warning,
+                TEXT("[VHVLocation] Trigger '%s' could not dispatch WorldAction '%s' to '%s'."),
+                *GetName(), *ActionID.ToString(), *ReceiverID.ToString());
+        }
+    }
 }
 
 void AVHVQuestLocationVolume::HandleBoxEndOverlap(
@@ -107,6 +132,19 @@ EDataValidationResult AVHVQuestLocationVolume::IsDataValid(FDataValidationContex
     if (VHVAuthoringReferences::HasConflict(LocationTag, LocationID, TEXT("VHV.Location")))
     {
         Context.AddWarning(FText::FromString(FString::Printf(TEXT("Quest location volume '%s' has tag '%s', which resolves to '%s', while legacy LocationID is '%s'; the tag wins."), *GetNameSafe(this), *LocationTag.ToString(), *VHVAuthoringReferences::ResolveTagLeaf(LocationTag).ToString(), *LocationID.ToString())));
+    }
+    if (bTriggerWorldAction)
+    {
+        if (!VHVAuthoringReferences::IsValidReferenceTag(WorldActionReceiverTag, TEXT("VHV.WorldReceiver")))
+        {
+            Context.AddError(FText::FromString(TEXT("Location-triggered World Action requires a concrete VHV.WorldReceiver tag.")));
+            Result = EDataValidationResult::Invalid;
+        }
+        if (!VHVAuthoringReferences::IsValidReferenceTag(WorldActionTag, TEXT("VHV.WorldAction")))
+        {
+            Context.AddError(FText::FromString(TEXT("Location-triggered World Action requires a concrete VHV.WorldAction tag.")));
+            Result = EDataValidationResult::Invalid;
+        }
     }
     return Result;
 }

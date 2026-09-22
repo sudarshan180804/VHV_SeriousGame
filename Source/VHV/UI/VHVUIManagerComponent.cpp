@@ -301,7 +301,9 @@ void UVHVUIManagerComponent::HandleLearningPhaseChanged(ELearningPhase NewPhase)
     if (NewPhase == ELearningPhase::Hint)
     {
         EnsureFeedbackWidget();
-        HideQuestionUI();
+        // Keep the assessed question visible behind the first-attempt hint.
+        // Input remains owned by the hint until it is acknowledged; Ask then
+        // rebuilds the options for a clean second attempt.
         HideObservationUI();
         HideOrderingUI();
         HideMatchingUI();
@@ -646,7 +648,18 @@ void UVHVUIManagerComponent::ApplyUIState(EVHVUIState NewState)
 
     if (QuestionWidget)
     {
-        const bool bShouldShowQuestion = NewState == EVHVUIState::LearningAsk && (!TextbookSubsystem || !TextbookSubsystem->IsActivityActive() || (TextbookSubsystem->GetCurrentActivity().ActivityType != ETextbookActivityType::Ordering && TextbookSubsystem->GetCurrentActivity().ActivityType != ETextbookActivityType::Matching && TextbookSubsystem->GetCurrentActivity().ActivityType != ETextbookActivityType::Observation));
+        const bool bHasChoiceActivity = TextbookSubsystem && TextbookSubsystem->IsActivityActive()
+            && (TextbookSubsystem->GetCurrentActivity().ActivityType == ETextbookActivityType::SingleChoice
+                || TextbookSubsystem->GetCurrentActivity().ActivityType == ETextbookActivityType::MultiChoice);
+        const bool bRetryHint = NewState == EVHVUIState::LearningHint
+            && bHasChoiceActivity
+            && TextbookSubsystem->GetCurrentActivity().AttemptPolicy.bEnabled;
+        const bool bShouldShowQuestion = bRetryHint
+            || (NewState == EVHVUIState::LearningAsk
+                && (!TextbookSubsystem || !TextbookSubsystem->IsActivityActive()
+                    || (TextbookSubsystem->GetCurrentActivity().ActivityType != ETextbookActivityType::Ordering
+                        && TextbookSubsystem->GetCurrentActivity().ActivityType != ETextbookActivityType::Matching
+                        && TextbookSubsystem->GetCurrentActivity().ActivityType != ETextbookActivityType::Observation)));
         QuestionWidget->SetVisibility(bShouldShowQuestion ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
     }
 
@@ -924,7 +937,12 @@ void UVHVUIManagerComponent::RefreshCurrentHintUI()
     const FTextbookActivityData CurrentActivity = TextbookSubsystem->GetCurrentActivity();
     const FTextbookRuntimeState RuntimeState = TextbookSubsystem->GetRuntimeState();
     FString HintText;
-    if (CurrentActivity.Hints.Num() > 0)
+    if (CurrentActivity.AttemptPolicy.bEnabled
+        && !CurrentActivity.AttemptPolicy.FirstIncorrectHint.IsEmpty())
+    {
+        HintText = CurrentActivity.AttemptPolicy.FirstIncorrectHint;
+    }
+    else if (CurrentActivity.Hints.Num() > 0)
     {
         const int32 HintIndex = FMath::Clamp(RuntimeState.HintLevel - 1, 0, CurrentActivity.Hints.Num() - 1);
         HintText = CurrentActivity.Hints[HintIndex];
@@ -969,9 +987,22 @@ void UVHVUIManagerComponent::RefreshCurrentFeedbackUI()
     }
 
     const FTextbookRuntimeState RuntimeState = TextbookSubsystem->GetRuntimeState();
-    const FString FeedbackText = RuntimeState.bAnswerCorrect
-        ? CurrentActivity.CorrectFeedback
-        : (RuntimeState.bAnswerPartial ? CurrentActivity.PartialFeedback : CurrentActivity.IncorrectFeedback);
+    FString FeedbackText;
+    if (RuntimeState.bAnswerCorrect)
+    {
+        FeedbackText = CurrentActivity.CorrectFeedback;
+    }
+    else if (CurrentActivity.AttemptPolicy.bEnabled
+        && !CurrentActivity.AttemptPolicy.FinalIncorrectExplanation.IsEmpty())
+    {
+        FeedbackText = CurrentActivity.AttemptPolicy.FinalIncorrectExplanation;
+    }
+    else
+    {
+        FeedbackText = RuntimeState.bAnswerPartial
+            ? CurrentActivity.PartialFeedback
+            : CurrentActivity.IncorrectFeedback;
+    }
 
     FeedbackWidget->SetFeedbackPresentation(
         FText::FromString(FeedbackText),
@@ -1091,7 +1122,10 @@ void UVHVUIManagerComponent::AdvanceFeedback()
     }
 
     const FTextbookActivityData CurrentActivity = TextbookSubsystem->GetCurrentActivity();
-    if (CurrentActivity.bRequireCorrectAnswerToAdvance && !RuntimeState.bAnswerCorrect && RuntimeState.AttemptCount < 3)
+    if (!CurrentActivity.AttemptPolicy.bEnabled
+        && CurrentActivity.bRequireCorrectAnswerToAdvance
+        && !RuntimeState.bAnswerCorrect
+        && RuntimeState.AttemptCount < 3)
     {
         TextbookSubsystem->EnterAskPhase();
         HideFeedbackUI();

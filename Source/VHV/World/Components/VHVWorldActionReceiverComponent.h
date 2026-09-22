@@ -26,6 +26,10 @@ public:
     UFUNCTION(BlueprintPure, Category = "VHV|World Action")
     FName GetEffectiveReceiverID() const { return VHVAuthoringReferences::ResolveID(ReceiverTag, ReceiverID, TEXT("VHV.WorldReceiver")); }
 
+    /** An authored stable ID keeps existing routed receivers opted in even if the explicit switch was not serialized. */
+    UFUNCTION(BlueprintPure, Category = "VHV|World Action")
+    bool IsWorldActionRoutingEnabled() const { return bWorldActionsEnabled || ReceiverTag.IsValid() || !ReceiverID.IsNone(); }
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VHV|World Action")
     bool bWorldActionsEnabled = true;
 

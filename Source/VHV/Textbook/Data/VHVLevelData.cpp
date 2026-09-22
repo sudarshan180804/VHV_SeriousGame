@@ -34,6 +34,25 @@ EDataValidationResult UVHVLevelData::IsDataValid(FDataValidationContext& Context
 				Context.AddWarning(FText::FromString(FString::Printf(TEXT("Activity '%s' has tag '%s', which resolves to '%s', while legacy ActivityID is '%s'; the tag wins."), *EffectiveActivityID, *Activity.ActivityTag.ToString(), *VHVAuthoringReferences::ResolveTagLeaf(Activity.ActivityTag).ToString(), *Activity.ActivityID)));
 			}
 
+			if (Activity.AttemptPolicy.bEnabled)
+			{
+				const bool bChoiceActivity = Activity.ActivityType == ETextbookActivityType::SingleChoice
+					|| Activity.ActivityType == ETextbookActivityType::MultiChoice;
+				if (!bChoiceActivity)
+				{
+					Context.AddError(FText::FromString(FString::Printf(
+						TEXT("Activity '%s' enables AttemptPolicy but is not SingleChoice or MultiChoice."),
+						*EffectiveActivityID)));
+					Result = EDataValidationResult::Invalid;
+				}
+				if (Activity.AttemptPolicy.MaxAttempts < 1)
+				{
+					Context.AddError(FText::FromString(FString::Printf(
+						TEXT("Activity '%s' has AttemptPolicy.MaxAttempts below 1."), *EffectiveActivityID)));
+					Result = EDataValidationResult::Invalid;
+				}
+			}
+
 			auto ValidateEffects = [&Context, &Result, &Activity](const TArray<FVHVStoryEffect>& Effects, const TCHAR* EffectArrayName)
 			{
 				for (int32 EffectIndex = 0; EffectIndex < Effects.Num(); ++EffectIndex)

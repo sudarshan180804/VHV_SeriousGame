@@ -76,6 +76,7 @@ void UVHVTextbookSubsystem::EnterAskPhase()
     RuntimeState.CurrentPhase = ELearningPhase::Ask;
     RuntimeState.bAnswerSubmitted = false;
     RuntimeState.bAnswerCorrect = false;
+    RuntimeState.bAnswerPartial = false;
 
     OnLearningPhaseChanged.Broadcast(RuntimeState.CurrentPhase);
 }
@@ -117,7 +118,27 @@ void UVHVTextbookSubsystem::SubmitAnswer(const bool bWasCorrect, const bool bWas
     RuntimeState.bAnswerCorrect = bWasCorrect;
     RuntimeState.bAnswerPartial = bWasPartial;
 
+    const FTextbookActivityData CurrentActivity = GetCurrentActivity();
+    const bool bAssessedChoice = CurrentActivity.ActivityType == ETextbookActivityType::SingleChoice
+        || CurrentActivity.ActivityType == ETextbookActivityType::MultiChoice;
+    const bool bRetryEnabled = bAssessedChoice && CurrentActivity.AttemptPolicy.bEnabled;
+    const int32 MaxAttempts = FMath::Max(1, CurrentActivity.AttemptPolicy.MaxAttempts);
+    const bool bNeedsRetry = bRetryEnabled && !bWasCorrect && RuntimeState.AttemptCount < MaxAttempts;
+
+    if (bNeedsRetry)
+    {
+        UE_LOG(LogTemp, Log, TEXT("[VHVTextbook] Choice attempt=%d/%d result=Wrong -> Hint"),
+            RuntimeState.AttemptCount, MaxAttempts);
+        EnterHintPhase();
+        return;
+    }
+
+    // Result effects are terminal for retry-enabled questions. This prevents a
+    // first-attempt miss from applying failure state before the retry is used.
     ApplyCurrentActivityResultEffects(bWasCorrect, bWasPartial);
+    UE_LOG(LogTemp, Log, TEXT("[VHVTextbook] Choice attempt=%d/%d result=%s -> Feedback"),
+        RuntimeState.AttemptCount, bRetryEnabled ? MaxAttempts : RuntimeState.AttemptCount,
+        bWasCorrect ? TEXT("Correct") : TEXT("Wrong"));
     EnterFeedbackPhase();
 }
 
@@ -716,6 +737,7 @@ void UVHVTextbookSubsystem::ExitCurrentLearningSession()
     RuntimeState.bActivityActive = false;
     RuntimeState.bAnswerSubmitted = false;
     RuntimeState.bAnswerCorrect = false;
+    RuntimeState.bAnswerPartial = false;
     RuntimeState.CurrentPhase = ELearningPhase::Ask;
 }
 
@@ -729,6 +751,7 @@ void UVHVTextbookSubsystem::RetryCurrentActivityAfterHint()
     const FTextbookActivityData CurrentActivity = GetCurrentActivity();
     RuntimeState.bAnswerSubmitted = false;
     RuntimeState.bAnswerCorrect = false;
+    RuntimeState.bAnswerPartial = false;
     RuntimeState.CurrentPhase = ELearningPhase::Ask;
 
     UE_LOG(LogTemp, Warning, TEXT("[VHVTextbook] Hint dismissed -> retry ActivityID=%s"), *CurrentActivity.GetEffectiveActivityID());

@@ -67,6 +67,7 @@ private:
     float EntranceElapsed = 0.0f;
 
     TSharedPtr<SConstraintCanvas> ActivityContentSlate;
+    TSharedPtr<STextBlock> CategoryTextSlate;
     TSharedPtr<STextBlock> TitleTextSlate;
     TSharedPtr<STextBlock> ContentTextSlate;
     TSharedPtr<SVerticalBox> ReadingAreaSlate;

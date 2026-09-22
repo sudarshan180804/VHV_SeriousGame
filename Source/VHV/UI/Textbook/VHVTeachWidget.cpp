@@ -28,6 +28,22 @@ namespace
     constexpr float ContinueClusterWidth = 262.0f;
     constexpr float ContinueHeight = 52.0f;
     constexpr float TakeawayCardMinHeight = 116.0f;
+
+    FText TeachingCategoryText(const ETextbookTeachingCategory Category)
+    {
+        switch (Category)
+        {
+        case ETextbookTeachingCategory::KeyIdea:
+            return FText::FromString(TEXT("KEY IDEA"));
+        case ETextbookTeachingCategory::Technique:
+            return FText::FromString(TEXT("TECHNIQUE"));
+        case ETextbookTeachingCategory::Reflection:
+            return FText::FromString(TEXT("REFLECTION"));
+        case ETextbookTeachingCategory::Lesson:
+        default:
+            return FText::FromString(TEXT("LESSON"));
+        }
+    }
 }
 
 UVHVTeachWidget::UVHVTeachWidget()
@@ -120,10 +136,10 @@ TSharedRef<SWidget> UVHVTeachWidget::RebuildWidget()
                     .AutoHeight()
                     .HAlign(HAlign_Left)
                     [
-                        SNew(STextBlock)
+                        SAssignNew(CategoryTextSlate, STextBlock)
                         .Font(VHVActivityUIStyle::MediumFont(16))
                         .ColorAndOpacity(VHVActivityUIStyle::HeaderGold())
-                        .Text(FText::FromString(TEXT("LESSON")))
+                        .Text(TeachingCategoryText(TeachingContent.Category))
                     ]
                     + SVerticalBox::Slot()
                     .AutoHeight()
@@ -215,6 +231,7 @@ void UVHVTeachWidget::ReleaseSlateResources(const bool bReleaseChildren)
 {
     Super::ReleaseSlateResources(bReleaseChildren);
     ActivityContentSlate.Reset();
+    CategoryTextSlate.Reset();
     TitleTextSlate.Reset();
     ContentTextSlate.Reset();
     ReadingAreaSlate.Reset();
@@ -336,6 +353,10 @@ void UVHVTeachWidget::PopulateTeachingContent()
 
 void UVHVTeachWidget::RefreshSlateContent()
 {
+    if (CategoryTextSlate)
+    {
+        CategoryTextSlate->SetText(TeachingCategoryText(TeachingContent.Category));
+    }
     if (TitleTextSlate)
     {
         TitleTextSlate->SetText(FText::FromString(TeachingContent.Title));

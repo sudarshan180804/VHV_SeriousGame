@@ -122,12 +122,13 @@ TSharedRef<SWidget> UVHVQuestionWidget::RebuildWidget()
             ]
         ]
         + SConstraintCanvas::Slot()
-        .Anchors(FAnchors(0.6625f, 0.51f, 0.975f, 0.94f))
+        .Anchors(FAnchors(0.6625f, 0.42f, 0.975f, 0.95f))
         .Offset(FMargin(0.0f))
         [
             SAssignNew(AnswerPanel, SVerticalBox)
             + SVerticalBox::Slot()
-            .AutoHeight()
+            .FillHeight(1.0f)
+            .VAlign(VAlign_Center)
             [
                 SAssignNew(OptionsSlateContainer, SVerticalBox)
             ]
@@ -463,6 +464,7 @@ void UVHVQuestionWidget::RebuildChoiceCards()
             .OptionIndex(Index)
             .AnswerText(FText::FromString(CurrentQuestion.Options[Index].OptionText))
             .EntranceDelay(Index * VHVActivityUIStyle::AnimationStagger)
+            .AllowVariableHeight(true)
             .OnChosen(FOnVHVChoiceCardChosen::CreateUObject(this, &UVHVQuestionWidget::HandleChoiceCardChosen))
         ];
         ChoiceCards.Add(ChoiceCard);

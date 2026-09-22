@@ -14,7 +14,10 @@ UVHVWorldActionReceiverComponent::UVHVWorldActionReceiverComponent()
 void UVHVWorldActionReceiverComponent::BeginPlay()
 {
     Super::BeginPlay();
-    RegisterWithWorldActionSubsystem();
+    if (IsWorldActionRoutingEnabled())
+    {
+        RegisterWithWorldActionSubsystem();
+    }
 }
 
 void UVHVWorldActionReceiverComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -41,7 +44,7 @@ EVHVWorldActionExecutionResult UVHVWorldActionReceiverComponent::ExecuteWorldAct
     const FGuid RequestID,
     const FName ActionID)
 {
-    if (!bWorldActionsEnabled)
+    if (!IsWorldActionRoutingEnabled())
     {
         return EVHVWorldActionExecutionResult::Rejected;
     }
@@ -70,6 +73,11 @@ bool UVHVWorldActionReceiverComponent::SetWorldActionExecutionResult(
 
 void UVHVWorldActionReceiverComponent::RegisterWithWorldActionSubsystem()
 {
+    if (!IsWorldActionRoutingEnabled())
+    {
+        return;
+    }
+
     if (UWorld* World = GetWorld())
     {
         if (UVHVWorldActionSubsystem* Subsystem = World->GetSubsystem<UVHVWorldActionSubsystem>())
@@ -94,6 +102,11 @@ void UVHVWorldActionReceiverComponent::UnregisterFromWorldActionSubsystem()
 EDataValidationResult UVHVWorldActionReceiverComponent::IsDataValid(FDataValidationContext& Context) const
 {
     EDataValidationResult Result = Super::IsDataValid(Context);
+    if (!IsWorldActionRoutingEnabled())
+    {
+        return Result;
+    }
+
     if (GetEffectiveReceiverID().IsNone())
     {
         Context.AddError(FText::FromString(FString::Printf(TEXT("World Action receiver on '%s' has no effective Receiver ID."), *GetNameSafe(GetOwner()))));

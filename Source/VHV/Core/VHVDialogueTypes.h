@@ -15,6 +15,14 @@ enum class EVHVDialogueNodeType : uint8
     Unknown
 };
 
+/** Controls how an authored dialogue line is presented without changing conversation flow. */
+UENUM(BlueprintType)
+enum class EVHVDialoguePresentation : uint8
+{
+    Spoken UMETA(DisplayName = "Spoken"),
+    Thought UMETA(DisplayName = "Thought")
+};
+
 USTRUCT(BlueprintType)
 struct VHV_API FDialogueChoiceOption
 {
@@ -62,6 +70,9 @@ struct VHV_API FDialogueNode
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
     FText Text;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
+    EVHVDialoguePresentation Presentation = EVHVDialoguePresentation::Spoken;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
     TArray<FDialogueChoiceOption> Choices;
@@ -142,6 +153,9 @@ struct VHV_API FDialogueLine
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
     FText Text;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
+    EVHVDialoguePresentation Presentation = EVHVDialoguePresentation::Spoken;
 
     FString GetEffectiveSpeakerID() const { return VHVAuthoringReferences::ResolveStringID(SpeakerTag, SpeakerID, TEXT("VHV.Participant")); }
 };

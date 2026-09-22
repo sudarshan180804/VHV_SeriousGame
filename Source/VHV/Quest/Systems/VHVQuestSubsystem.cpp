@@ -735,6 +735,12 @@ bool UVHVQuestSubsystem::RegisterNPCCommandComponent(UVHVNPCQuestCommandComponen
     const UVHVQuestParticipantComponent* Participant = CommandComponent->GetOwner()
         ? CommandComponent->GetOwner()->FindComponentByClass<UVHVQuestParticipantComponent>()
         : nullptr;
+    if (Participant && !Participant->IsQuestParticipationEnabled())
+    {
+        // Ambient/background NPCs retain the reusable quest command component,
+        // but do not enter the stable-ID registry until quest participation is enabled.
+        return false;
+    }
     const FName ParticipantID = Participant ? Participant->GetEffectiveParticipantID() : NAME_None;
     if (!Participant || ParticipantID.IsNone())
     {

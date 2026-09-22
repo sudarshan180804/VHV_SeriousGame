@@ -190,10 +190,22 @@ struct FMatchingPair
 // TEACHING CONTENT
 // ============================================================
 
+UENUM(BlueprintType)
+enum class ETextbookTeachingCategory : uint8
+{
+    Lesson UMETA(DisplayName = "Lesson"),
+    KeyIdea UMETA(DisplayName = "Key Idea"),
+    Technique UMETA(DisplayName = "Technique"),
+    Reflection UMETA(DisplayName = "Reflection")
+};
+
 USTRUCT(BlueprintType)
 struct FTeachingContent
 {
     GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Teaching")
+    ETextbookTeachingCategory Category = ETextbookTeachingCategory::Lesson;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Teaching")
     FString Title;
@@ -206,6 +218,25 @@ struct FTeachingContent
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Teaching")
     TArray<FTextbookMediaReference> Media;
+};
+
+USTRUCT(BlueprintType)
+struct FTextbookAttemptPolicy
+{
+    GENERATED_BODY()
+
+    /** Enables retry behavior for assessed SingleChoice and MultiChoice activities. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attempts")
+    bool bEnabled = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attempts", meta = (ClampMin = "1", EditCondition = "bEnabled"))
+    int32 MaxAttempts = 2;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attempts", meta = (MultiLine = "true", EditCondition = "bEnabled"))
+    FString FirstIncorrectHint;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attempts", meta = (MultiLine = "true", EditCondition = "bEnabled"))
+    FString FinalIncorrectExplanation;
 };
 
 // ============================================================
@@ -300,6 +331,9 @@ struct FTextbookActivityData
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Progression")
     bool bRequireCorrectAnswerToAdvance = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Progression", meta = (EditCondition = "ActivityType == ETextbookActivityType::SingleChoice || ActivityType == ETextbookActivityType::MultiChoice", EditConditionHides))
+    FTextbookAttemptPolicy AttemptPolicy;
 
     // --------------------------------------------------------
     // Story State Effects

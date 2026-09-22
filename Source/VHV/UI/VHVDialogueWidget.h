@@ -69,6 +69,9 @@ protected:
     void EnsureChoiceContainer();
     void ClearChoices();
     void SetActivityChoicePresentation(bool bEnabled);
+    void SetPlayerThoughtPresentation(bool bEnabled, const FText& Text = FText::GetEmpty());
+    void RefreshNormalPresentationVisibility();
+    void UpdateNormalDialogueText(const FText& SpeakerName, const FText& Text);
     void RebuildActivityChoiceCards();
     void UpdateActivityChoicePresentation();
     void HandleActivityChoiceCardChosen(int32 ChoiceIndex);
@@ -83,9 +86,13 @@ protected:
     TArray<int32> AvailableChoiceIndices;
     TArray<TSharedPtr<SVHVChoiceCard>> ActivityChoiceCards;
     bool bActivityChoicePresentation = false;
+    bool bPlayerThoughtPresentation = false;
     float ActivityEntranceElapsed = 0.0f;
 
     TSharedPtr<SBox> NormalDialoguePresentation;
+    TSharedPtr<STextBlock> NormalSpeakerText;
+    TSharedPtr<STextBlock> NormalDialogueText;
+    TSharedPtr<SWidget> NormalSpeakerRow;
     TSharedPtr<SConstraintCanvas> ActivityRootCanvas;
     TSharedPtr<STextBlock> ActivitySpeakerText;
     TSharedPtr<STextBlock> ActivityPromptText;
@@ -97,6 +104,9 @@ protected:
     FSlateBrush ActivityKeycapBrush;
     FSlateBrush ActivityEmblemBrush;
     FSlateBrush ActivityDividerBrush;
+    FSlateBrush DialogueCardBrush;
+    FSlateBrush DialogueShadowBrush;
+    FSlateBrush DialogueKeycapBrush;
 
     UPROPERTY(BlueprintReadWrite, meta = (BindWidget))
     TObjectPtr<UTextBlock> SpeakerNameText;

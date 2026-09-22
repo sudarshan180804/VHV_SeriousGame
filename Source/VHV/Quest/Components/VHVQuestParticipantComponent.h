@@ -13,6 +13,10 @@ class VHV_API UVHVQuestParticipantComponent : public UActorComponent
 public:
     UVHVQuestParticipantComponent();
 
+    /** Explicitly enables quest participation when this actor is intended to be addressed by quests. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|Quest")
+    bool bQuestParticipationEnabled = false;
+
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|Quest", meta = (DisplayName = "Participant", Categories = "VHV.Participant"))
     FGameplayTag ParticipantTag;
 
@@ -22,6 +26,10 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "VHV|Quest")
     FName GetEffectiveParticipantID() const { return VHVAuthoringReferences::ResolveID(ParticipantTag, ParticipantID, TEXT("VHV.Participant")); }
+
+    /** An authored stable ID also opts existing quest NPCs in without requiring asset migration. */
+    UFUNCTION(BlueprintPure, Category = "VHV|Quest")
+    bool IsQuestParticipationEnabled() const { return bQuestParticipationEnabled || ParticipantTag.IsValid() || !ParticipantID.IsNone(); }
 
     UFUNCTION(BlueprintCallable, Category = "VHV|Quest")
     bool NotifyInteracted();

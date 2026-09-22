@@ -95,8 +95,9 @@ void UVHVFeedbackWidget::NativeTick(const FGeometry& MyGeometry, const float InD
     if (FeedbackPanel)
     {
         FeedbackPanel->SetRenderOpacity(Smoothed);
+        const float HintLift = bCurrentIsHint ? -300.0f : 0.0f;
         FeedbackPanel->SetRenderTransform(FSlateRenderTransform(
-            FVector2D(0.0f, FMath::Lerp(14.0f, 0.0f, Smoothed))));
+            FVector2D(0.0f, HintLift + FMath::Lerp(14.0f, 0.0f, Smoothed))));
     }
 }
 
@@ -138,7 +139,7 @@ void UVHVFeedbackWidget::RefreshPresentation()
     else if (CurrentTone == ETone::Caution)
     {
         Accent = FLinearColor(0.88f, 0.43f, 0.30f, 1.0f);
-        Title = FText::FromString(TEXT("TRY AGAIN"));
+        Title = FText::FromString(TEXT("REVIEW"));
     }
 
     PanelBrush = VHVActivityUIStyle::RoundedBrush(

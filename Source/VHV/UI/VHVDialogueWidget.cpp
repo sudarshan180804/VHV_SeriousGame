@@ -3,6 +3,7 @@
 #include "UI/VHVUIManagerComponent.h"
 #include "UI/Textbook/SVHVChoiceCard.h"
 #include "UI/Textbook/VHVActivityUIStyle.h"
+#include "NPC/Components/VHVAmbientSpeechComponent.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
@@ -24,7 +25,9 @@ UVHVDialogueWidget::UVHVDialogueWidget()
 
 TSharedRef<SWidget> UVHVDialogueWidget::RebuildWidget()
 {
-    TSharedRef<SWidget> ExistingDialoguePresentation = Super::RebuildWidget();
+    // Build the configured UMG tree so legacy BindWidget fields remain valid,
+    // then use the native presentation below as the actual runtime UI.
+    Super::RebuildWidget();
 
     ActivityQuestionPanelBrush = VHVActivityUIStyle::RoundedBrush(
         VHVActivityUIStyle::GlassMain(), VHVActivityUIStyle::QuestionPanelRadius,
@@ -38,13 +41,100 @@ TSharedRef<SWidget> UVHVDialogueWidget::RebuildWidget()
         VHVActivityUIStyle::FromSRGB(28, 26, 20, 128), 10.0f,
         VHVActivityUIStyle::HeaderGold(), VHVActivityUIStyle::BorderNormalWidth);
     ActivityDividerBrush = VHVActivityUIStyle::RoundedBrush(VHVActivityUIStyle::DividerGold(), 1.0f);
+    DialogueCardBrush = VHVActivityUIStyle::RoundedBrush(
+        VHVActivityUIStyle::FromSRGB(17, 23, 27, 204), 22.0f,
+        VHVActivityUIStyle::FromSRGB(190, 166, 107, 76), 1.0f);
+    DialogueShadowBrush = VHVActivityUIStyle::RoundedBrush(
+        VHVActivityUIStyle::FromSRGB(0, 0, 0, 58), 25.0f);
+    DialogueKeycapBrush = VHVActivityUIStyle::RoundedBrush(
+        VHVActivityUIStyle::FromSRGB(29, 34, 38, 205), 5.0f,
+        VHVActivityUIStyle::FromSRGB(190, 166, 107, 72), 1.0f);
 
     TSharedRef<SOverlay> Root = SNew(SOverlay)
         + SOverlay::Slot()
+        .HAlign(HAlign_Center)
+        .VAlign(VAlign_Bottom)
+        .Padding(FMargin(0.0f, 0.0f, 0.0f, 60.0f))
         [
             SAssignNew(NormalDialoguePresentation, SBox)
+            .WidthOverride(720.0f)
+            .MinDesiredHeight(90.0f)
+            .MaxDesiredHeight(210.0f)
             [
-                ExistingDialoguePresentation
+                SNew(SOverlay)
+                + SOverlay::Slot()
+                .Padding(FMargin(4.0f, 5.0f, -4.0f, -5.0f))
+                [
+                    SNew(SBorder)
+                    .BorderImage(&DialogueShadowBrush)
+                ]
+                + SOverlay::Slot()
+                [
+                    SNew(SBorder)
+                    .BorderImage(&DialogueCardBrush)
+                    .Padding(FMargin(26.0f, 22.0f))
+                    [
+                        SNew(SVerticalBox)
+                        + SVerticalBox::Slot()
+                        .AutoHeight()
+                        [
+                            SAssignNew(NormalSpeakerRow, SBox)
+                            [
+                                SAssignNew(NormalSpeakerText, STextBlock)
+                                .Font(VHVActivityUIStyle::MediumFont(15))
+                                .ColorAndOpacity(VHVActivityUIStyle::HeaderGold())
+                            ]
+                        ]
+                        + SVerticalBox::Slot()
+                        .AutoHeight()
+                        .Padding(FMargin(0.0f, 7.0f, 0.0f, 0.0f))
+                        [
+                            SAssignNew(NormalDialogueText, STextBlock)
+                            .Font(VHVActivityUIStyle::RegularFont(22))
+                            .ColorAndOpacity(VHVActivityUIStyle::TextPrimary())
+                            .AutoWrapText(true)
+                            .WrapTextAt(650.0f)
+                            .LineHeightPercentage(1.16f)
+                        ]
+                        + SVerticalBox::Slot()
+                        .AutoHeight()
+                        .HAlign(HAlign_Right)
+                        .Padding(FMargin(0.0f, 14.0f, 0.0f, 0.0f))
+                        [
+                            SNew(SHorizontalBox)
+                            + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+                            [
+                                SNew(SBorder).BorderImage(&DialogueKeycapBrush).Padding(FMargin(6.0f, 2.0f))
+                                [
+                                    SNew(STextBlock).Font(VHVActivityUIStyle::MediumFont(11))
+                                    .ColorAndOpacity(VHVActivityUIStyle::TextSecondary())
+                                    .Text(FText::FromString(TEXT("E")))
+                                ]
+                            ]
+                            + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(FMargin(6.0f, 0.0f))
+                            [
+                                SNew(STextBlock).Font(VHVActivityUIStyle::RegularFont(11))
+                                .ColorAndOpacity(VHVActivityUIStyle::TextSecondary())
+                                .Text(FText::FromString(TEXT("/")))
+                            ]
+                            + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+                            [
+                                SNew(SBorder).BorderImage(&DialogueKeycapBrush).Padding(FMargin(6.0f, 2.0f))
+                                [
+                                    SNew(STextBlock).Font(VHVActivityUIStyle::MediumFont(11))
+                                    .ColorAndOpacity(VHVActivityUIStyle::TextSecondary())
+                                    .Text(FText::FromString(TEXT("ENTER")))
+                                ]
+                            ]
+                            + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(FMargin(8.0f, 0.0f, 0.0f, 0.0f))
+                            [
+                                SNew(STextBlock).Font(VHVActivityUIStyle::RegularFont(12))
+                                .ColorAndOpacity(VHVActivityUIStyle::TextSecondary())
+                                .Text(FText::FromString(TEXT("Continue")))
+                            ]
+                        ]
+                    ]
+                ]
             ]
         ]
         + SOverlay::Slot()
@@ -209,6 +299,9 @@ void UVHVDialogueWidget::ReleaseSlateResources(const bool bReleaseChildren)
     Super::ReleaseSlateResources(bReleaseChildren);
     ActivityChoiceCards.Empty();
     NormalDialoguePresentation.Reset();
+    NormalSpeakerText.Reset();
+    NormalDialogueText.Reset();
+    NormalSpeakerRow.Reset();
     ActivityRootCanvas.Reset();
     ActivitySpeakerText.Reset();
     ActivityPromptText.Reset();
@@ -352,6 +445,7 @@ void UVHVDialogueWidget::ShowConversation(const FDialogueConversation& InConvers
 
 void UVHVDialogueWidget::HideDialogue()
 {
+    SetPlayerThoughtPresentation(false);
     SetActivityChoicePresentation(false);
     CurrentConversation = FDialogueConversation();
     CurrentNodeID = FString();
@@ -469,15 +563,8 @@ void UVHVDialogueWidget::UpdateDialogueLine()
     {
         const FDialogueLine& Line = CurrentDialogue.Lines[CurrentLineIndex];
 
-        if (SpeakerNameText)
-        {
-            SpeakerNameText->SetText(Line.SpeakerName);
-        }
-
-        if (DialogueText)
-        {
-            DialogueText->SetText(Line.Text);
-        }
+        UpdateNormalDialogueText(Line.SpeakerName, Line.Text);
+        SetPlayerThoughtPresentation(Line.Presentation == EVHVDialoguePresentation::Thought, Line.Text);
     }
 }
 
@@ -494,6 +581,10 @@ void UVHVDialogueWidget::UpdateFromNode()
         CurrentNode->NodeType == EVHVDialogueNodeType::Choice
         && OwningUIManager
         && OwningUIManager->IsDialogueChoiceLearningActivity(CurrentConversation.ConversationID, CurrentNodeID));
+
+    const bool bIsThought = CurrentNode->NodeType == EVHVDialogueNodeType::Text
+        && CurrentNode->Presentation == EVHVDialoguePresentation::Thought;
+    SetPlayerThoughtPresentation(bIsThought, CurrentNode->Text);
 
     if (SpeakerNameText)
     {
@@ -560,6 +651,9 @@ void UVHVDialogueWidget::UpdateFromNode()
             }
         }
     }
+    UpdateNormalDialogueText(
+        CurrentNode->SpeakerName.IsEmpty() ? FText::FromString(TEXT("Instructor")) : CurrentNode->SpeakerName,
+        CurrentNode->Text);
 
     UpdateActivityChoicePresentation();
 }
@@ -627,11 +721,7 @@ void UVHVDialogueWidget::SetActivityChoicePresentation(const bool bEnabled)
     const bool bStartingActivityPresentation = bEnabled && !bActivityChoicePresentation;
     bActivityChoicePresentation = bEnabled;
 
-    if (NormalDialoguePresentation)
-    {
-        NormalDialoguePresentation->SetVisibility(
-            bActivityChoicePresentation ? EVisibility::Collapsed : EVisibility::Visible);
-    }
+    RefreshNormalPresentationVisibility();
     if (ActivityRootCanvas)
     {
         ActivityRootCanvas->SetVisibility(
@@ -650,6 +740,54 @@ void UVHVDialogueWidget::SetActivityChoicePresentation(const bool bEnabled)
         {
             ActivityAnswerPanel->SetRenderOpacity(0.0f);
         }
+    }
+}
+
+void UVHVDialogueWidget::SetPlayerThoughtPresentation(const bool bEnabled, const FText& Text)
+{
+    bPlayerThoughtPresentation = bEnabled;
+    if (APawn* PlayerPawn = GetOwningPlayerPawn())
+    {
+        if (UVHVAmbientSpeechComponent* SpeechComponent =
+            PlayerPawn->FindComponentByClass<UVHVAmbientSpeechComponent>())
+        {
+            if (bEnabled)
+            {
+                SpeechComponent->ShowBubble(FText::GetEmpty(), Text, EVHVAmbientSpeechType::Thought, false);
+            }
+            else if (SpeechComponent->IsBubbleActive())
+            {
+                SpeechComponent->HideBubble(false);
+            }
+        }
+    }
+    RefreshNormalPresentationVisibility();
+}
+
+void UVHVDialogueWidget::RefreshNormalPresentationVisibility()
+{
+    if (NormalDialoguePresentation)
+    {
+        NormalDialoguePresentation->SetVisibility(
+            bActivityChoicePresentation || bPlayerThoughtPresentation
+                ? EVisibility::Collapsed
+                : EVisibility::Visible);
+    }
+}
+
+void UVHVDialogueWidget::UpdateNormalDialogueText(const FText& SpeakerName, const FText& Text)
+{
+    if (NormalSpeakerText)
+    {
+        NormalSpeakerText->SetText(FText::FromString(SpeakerName.ToString().ToUpper()));
+    }
+    if (NormalSpeakerRow)
+    {
+        NormalSpeakerRow->SetVisibility(SpeakerName.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible);
+    }
+    if (NormalDialogueText)
+    {
+        NormalDialogueText->SetText(Text);
     }
 }
 
