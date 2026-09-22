@@ -4,6 +4,8 @@
 #include "VHV/Story/Types/VHVStoryStateTypes.h"
 #include "VHVTextbookTypes.generated.h"
 
+class UTexture2D;
+
 // ============================================================
 // LEARNING PHASE
 // ============================================================
@@ -218,6 +220,65 @@ struct FTeachingContent
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Teaching")
     TArray<FTextbookMediaReference> Media;
+
+    /** Optional primary image presented large and centered on the lesson board. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Teaching|Media")
+    TSoftObjectPtr<UTexture2D> MediaTexture;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Teaching|Media", meta = (MultiLine = "true"))
+    FString MediaCaption;
+};
+
+// ============================================================
+// OPTIONAL OBSERVATION EVIDENCE TAGGING
+// ============================================================
+
+USTRUCT(BlueprintType)
+struct FObservationEvidenceCard
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Evidence Tagging", meta = (MultiLine = "true"))
+    FString Text;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Evidence Tagging")
+    bool bCorrect = false;
+};
+
+USTRUCT(BlueprintType)
+struct FObservationTakeawayCard
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Evidence Tagging")
+    FString Title;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Evidence Tagging", meta = (MultiLine = "true"))
+    FString Text;
+};
+
+USTRUCT(BlueprintType)
+struct FObservationEvidenceTaggingConfig
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Evidence Tagging")
+    bool bUseEvidenceTagging = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Evidence Tagging", meta = (EditCondition = "bUseEvidenceTagging", MultiLine = "true"))
+    FString Stage1Prompt;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Evidence Tagging", meta = (EditCondition = "bUseEvidenceTagging"))
+    TArray<FObservationEvidenceCard> EvidenceCards;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Evidence Tagging", meta = (EditCondition = "bUseEvidenceTagging", MultiLine = "true"))
+    FString Stage2Prompt;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Evidence Tagging", meta = (EditCondition = "bUseEvidenceTagging"))
+    TArray<FObservationEvidenceCard> ObstacleCards;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Evidence Tagging", meta = (EditCondition = "bUseEvidenceTagging"))
+    TArray<FObservationTakeawayCard> TakeawayCards;
 };
 
 USTRUCT(BlueprintType)
@@ -324,6 +385,9 @@ struct FTextbookActivityData
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Media", meta = (EditCondition = "ActivityType == ETextbookActivityType::Observation", EditConditionHides))
     TArray<FTextbookMediaReference> Media;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Observation", meta = (EditCondition = "ActivityType == ETextbookActivityType::Observation", EditConditionHides))
+    FObservationEvidenceTaggingConfig EvidenceTagging;
 
     // --------------------------------------------------------
     // Progression

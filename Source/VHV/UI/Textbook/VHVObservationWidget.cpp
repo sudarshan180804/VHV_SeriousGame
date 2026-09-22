@@ -17,6 +17,7 @@
 #include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/Layout/SUniformGridPanel.h"
 #include "Widgets/SBoxPanel.h"
+#include "Widgets/SCompoundWidget.h"
 #include "Widgets/SOverlay.h"
 #include "Widgets/Text/STextBlock.h"
 
@@ -59,6 +60,201 @@ namespace
             });
     }
 }
+
+DECLARE_DELEGATE_OneParam(FOnVHVEvidenceCardChosen, int32);
+
+/** Paper-surface multi-select card used only by Observation evidence tagging. */
+class SVHVEvidenceTagCard : public SCompoundWidget
+{
+public:
+    SLATE_BEGIN_ARGS(SVHVEvidenceTagCard)
+        : _CardIndex(INDEX_NONE), _Text(), _Correct(false)
+    {}
+        SLATE_ARGUMENT(int32, CardIndex)
+        SLATE_ARGUMENT(FText, Text)
+        SLATE_ARGUMENT(bool, Correct)
+        SLATE_EVENT(FOnVHVEvidenceCardChosen, OnChosen)
+    SLATE_END_ARGS()
+
+    void Construct(const FArguments& InArgs)
+    {
+        CardIndex = InArgs._CardIndex;
+        bCorrect = InArgs._Correct;
+        OnChosen = InArgs._OnChosen;
+        RefreshBrushes();
+
+        ChildSlot
+        [
+            SNew(SBox)
+            .MinDesiredHeight(78.0f)
+            [
+                SAssignNew(CardBorder, SBorder)
+                .BorderImage(this, &SVHVEvidenceTagCard::GetCardBrush)
+                .Padding(FMargin(17.0f, 14.0f))
+                [
+                    SNew(SHorizontalBox)
+                    + SHorizontalBox::Slot()
+                    .AutoWidth()
+                    .VAlign(VAlign_Center)
+                    .Padding(FMargin(0.0f, 0.0f, 13.0f, 0.0f))
+                    [
+                        SNew(SBox)
+                        .WidthOverride(28.0f)
+                        .HeightOverride(28.0f)
+                        [
+                            SNew(SBorder)
+                            .BorderImage(this, &SVHVEvidenceTagCard::GetMarkerBrush)
+                            .HAlign(HAlign_Center)
+                            .VAlign(VAlign_Center)
+                            [
+                                SNew(STextBlock)
+                                .Font(VHVActivityUIStyle::MediumFont(14))
+                                .ColorAndOpacity(this, &SVHVEvidenceTagCard::GetMarkerColor)
+                                .Text(this, &SVHVEvidenceTagCard::GetMarkerText)
+                            ]
+                        ]
+                    ]
+                    + SHorizontalBox::Slot()
+                    .FillWidth(1.0f)
+                    .VAlign(VAlign_Center)
+                    [
+                        SNew(STextBlock)
+                        .Font(VHVActivityUIStyle::RegularFont(17))
+                        .ColorAndOpacity(VHVActivityUIStyle::MatchingInk())
+                        .AutoWrapText(true)
+                        .LineHeightPercentage(1.16f)
+                        .Text(InArgs._Text)
+                    ]
+                ]
+            ]
+        ];
+    }
+
+    void SetPresentationState(const bool bInFocused, const bool bInSelected, const bool bInReveal)
+    {
+        bFocused = bInFocused;
+        bSelected = bInSelected;
+        bReveal = bInReveal;
+        SetEnabled(!bReveal);
+        RefreshBrushes();
+    }
+
+    virtual FReply OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override
+    {
+        if (IsEnabled() && MouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
+        {
+            bPressed = true;
+            return FReply::Handled().CaptureMouse(SharedThis(this));
+        }
+        return SCompoundWidget::OnMouseButtonDown(MyGeometry, MouseEvent);
+    }
+
+    virtual FReply OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override
+    {
+        if (bPressed && MouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
+        {
+            bPressed = false;
+            if (MyGeometry.IsUnderLocation(MouseEvent.GetScreenSpacePosition()))
+            {
+                OnChosen.ExecuteIfBound(CardIndex);
+            }
+            return FReply::Handled().ReleaseMouseCapture();
+        }
+        return SCompoundWidget::OnMouseButtonUp(MyGeometry, MouseEvent);
+    }
+
+    virtual void OnMouseEnter(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override
+    {
+        bHovered = true;
+        RefreshBrushes();
+        SCompoundWidget::OnMouseEnter(MyGeometry, MouseEvent);
+    }
+
+    virtual void OnMouseLeave(const FPointerEvent& MouseEvent) override
+    {
+        bHovered = false;
+        bPressed = false;
+        RefreshBrushes();
+        SCompoundWidget::OnMouseLeave(MouseEvent);
+    }
+
+private:
+    const FSlateBrush* GetCardBrush() const { return &CardBrush; }
+    const FSlateBrush* GetMarkerBrush() const { return &MarkerBrush; }
+    FSlateColor GetMarkerColor() const { return MarkerColor; }
+    FText GetMarkerText() const
+    {
+        if (bReveal)
+        {
+            if (bCorrect) return FText::FromString(TEXT("\u2713"));
+            if (bSelected) return FText::FromString(TEXT("\u00D7"));
+            return FText::GetEmpty();
+        }
+        return bSelected ? FText::FromString(TEXT("\u2713")) : FText::GetEmpty();
+    }
+
+    void RefreshBrushes()
+    {
+        FLinearColor Fill = VHVActivityUIStyle::MatchingPaperCard();
+        FLinearColor Outline = VHVActivityUIStyle::MatchingPaperBorder();
+        float OutlineWidth = VHVActivityUIStyle::BorderNormalWidth;
+        FLinearColor MarkerFill = VHVActivityUIStyle::MatchingConnectorFill();
+        FLinearColor MarkerOutline = VHVActivityUIStyle::MatchingPaperBorder();
+        MarkerColor = VHVActivityUIStyle::MatchingInkMuted();
+
+        if (bReveal && bCorrect)
+        {
+            Fill = VHVActivityUIStyle::FromSRGB(222, 232, 215, 246);
+            Outline = VHVActivityUIStyle::PositiveMuted().CopyWithNewOpacity(0.78f);
+            MarkerFill = VHVActivityUIStyle::PositiveMuted().CopyWithNewOpacity(0.18f);
+            MarkerOutline = VHVActivityUIStyle::PositiveMuted();
+            MarkerColor = VHVActivityUIStyle::PositiveMuted();
+            OutlineWidth = 1.6f;
+        }
+        else if (bReveal && bSelected)
+        {
+            Fill = VHVActivityUIStyle::FromSRGB(242, 224, 218, 246);
+            Outline = VHVActivityUIStyle::NegativeMuted().CopyWithNewOpacity(0.78f);
+            MarkerFill = VHVActivityUIStyle::NegativeMuted().CopyWithNewOpacity(0.14f);
+            MarkerOutline = VHVActivityUIStyle::NegativeMuted();
+            MarkerColor = VHVActivityUIStyle::NegativeMuted();
+            OutlineWidth = 1.6f;
+        }
+        else if (bSelected)
+        {
+            Fill = VHVActivityUIStyle::MatchingPaperSelected();
+            Outline = VHVActivityUIStyle::GoldPrimary().CopyWithNewOpacity(0.82f);
+            MarkerFill = VHVActivityUIStyle::GoldPrimary().CopyWithNewOpacity(0.16f);
+            MarkerOutline = VHVActivityUIStyle::GoldPrimary();
+            MarkerColor = VHVActivityUIStyle::GoldPrimary();
+            OutlineWidth = 1.6f;
+        }
+        else if (bFocused || bHovered)
+        {
+            Fill = bFocused ? VHVActivityUIStyle::MatchingPaperFocused() : VHVActivityUIStyle::MatchingPaperHover();
+            Outline = VHVActivityUIStyle::BorderFocused();
+            MarkerOutline = VHVActivityUIStyle::BorderFocused();
+        }
+
+        CardBrush = VHVActivityUIStyle::RoundedBrush(Fill, 16.0f, Outline, OutlineWidth);
+        MarkerBrush = VHVActivityUIStyle::RoundedBrush(MarkerFill, 14.0f, MarkerOutline, OutlineWidth);
+        if (CardBorder) CardBorder->Invalidate(EInvalidateWidgetReason::Paint);
+        Invalidate(EInvalidateWidgetReason::Paint);
+    }
+
+    int32 CardIndex = INDEX_NONE;
+    bool bCorrect = false;
+    bool bFocused = false;
+    bool bSelected = false;
+    bool bReveal = false;
+    bool bHovered = false;
+    bool bPressed = false;
+    FOnVHVEvidenceCardChosen OnChosen;
+    TSharedPtr<SBorder> CardBorder;
+    FSlateBrush CardBrush;
+    FSlateBrush MarkerBrush;
+    FSlateColor MarkerColor;
+};
 
 UVHVObservationWidget::UVHVObservationWidget()
 {
@@ -192,11 +388,12 @@ TSharedRef<SWidget> UVHVObservationWidget::RebuildWidget()
             + SConstraintCanvas::Slot()
             .Anchors(FAnchors(BoardLeft, BoardActionY))
             .Alignment(FVector2D(0.0f, 0.5f))
-            .Offset(FMargin(0.0f, 0.0f, 330.0f, 34.0f))
+            .Offset(FMargin(0.0f, 0.0f, 760.0f, 40.0f))
             [
-                SNew(STextBlock)
+                SAssignNew(BoardInstructionSlate, STextBlock)
                 .Font(VHVActivityUIStyle::RegularFont(13))
                 .ColorAndOpacity(VHVActivityUIStyle::MatchingInkMuted().CopyWithNewOpacity(0.72f))
+                .AutoWrapText(true)
                 .Text(FText::FromString(TEXT("Take a moment to review the information.")))
             ]
             + SConstraintCanvas::Slot()
@@ -227,15 +424,18 @@ TSharedRef<SWidget> UVHVObservationWidget::RebuildWidget()
                     .WidthOverride(ContinueWidth)
                     .HeightOverride(ContinueHeight)
                     [
-                        SNew(SButton)
+                        SAssignNew(ActionButtonSlate, SButton)
                         .ButtonStyle(&ContinueButtonStyle)
+                        .IsEnabled(TAttribute<bool>::Create(
+                            TAttribute<bool>::FGetter::CreateUObject(
+                                this, &UVHVObservationWidget::CanAdvanceObservation)))
                         .HAlign(HAlign_Center)
                         .VAlign(VAlign_Center)
                         .ContentPadding(FMargin(22.0f, 10.0f))
                         .OnClicked(FOnClicked::CreateUObject(
                             this, &UVHVObservationWidget::HandleContinueClicked))
                         [
-                            SNew(STextBlock)
+                            SAssignNew(ActionButtonTextSlate, STextBlock)
                             .Font(VHVActivityUIStyle::MediumFont(16))
                             .ColorAndOpacity(VHVActivityUIStyle::MatchingInk())
                             .Text(FText::FromString(TEXT("Continue  \u2192")))
@@ -256,7 +456,11 @@ void UVHVObservationWidget::ReleaseSlateResources(const bool bReleaseChildren)
     PrimaryTitleSlate.Reset();
     SecondaryTextSlate.Reset();
     ObservationItemsSlate.Reset();
+    BoardInstructionSlate.Reset();
+    ActionButtonTextSlate.Reset();
+    ActionButtonSlate.Reset();
     ObservationCardsSlate.Reset();
+    EvidenceCardsSlate.Reset();
     MediaBrushes.Reset();
     LoadedMediaTextures.Reset();
 }
@@ -310,16 +514,57 @@ void UVHVObservationWidget::NativeTick(const FGeometry& MyGeometry, const float 
         ObservationCardsSlate[Index]->SetRenderTransform(FSlateRenderTransform(
             FVector2D(0.0f, FMath::Lerp(7.0f, 0.0f, CardAlpha))));
     }
+
+    if (CurrentActivity.EvidenceTagging.bUseEvidenceTagging
+        && EvidenceStage == EEvidenceTaggingStage::Reveal)
+    {
+        RevealElapsed += InDeltaTime;
+        if (RevealPage == 0 && RevealElapsed >= 0.75f)
+        {
+            RevealPage = 1;
+            RefreshEvidenceTaggingContent();
+        }
+        else if (RevealElapsed >= 1.50f)
+        {
+            EvidenceStage = EEvidenceTaggingStage::Result;
+            RefreshEvidenceTaggingContent();
+        }
+    }
 }
 
 FReply UVHVObservationWidget::NativeOnKeyDown(
     const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
 {
     const FKey Key = InKeyEvent.GetKey();
+    if (CurrentActivity.EvidenceTagging.bUseEvidenceTagging
+        && (EvidenceStage == EEvidenceTaggingStage::Stage1
+            || EvidenceStage == EEvidenceTaggingStage::Stage2))
+    {
+        if (Key == EKeys::Left || Key == EKeys::A || Key == EKeys::Gamepad_DPad_Left)
+        {
+            MoveEvidenceFocus(-1, 0);
+            return FReply::Handled();
+        }
+        if (Key == EKeys::Right || Key == EKeys::D || Key == EKeys::Gamepad_DPad_Right)
+        {
+            MoveEvidenceFocus(1, 0);
+            return FReply::Handled();
+        }
+        if (Key == EKeys::Up || Key == EKeys::W || Key == EKeys::Gamepad_DPad_Up)
+        {
+            MoveEvidenceFocus(0, -1);
+            return FReply::Handled();
+        }
+        if (Key == EKeys::Down || Key == EKeys::S || Key == EKeys::Gamepad_DPad_Down)
+        {
+            MoveEvidenceFocus(0, 1);
+            return FReply::Handled();
+        }
+    }
     if (Key == EKeys::Enter || Key == EKeys::SpaceBar
         || Key == EKeys::Gamepad_FaceButton_Bottom)
     {
-        SubmitObservation();
+        AdvanceObservation();
         return FReply::Handled();
     }
     return Super::NativeOnKeyDown(InGeometry, InKeyEvent);
@@ -329,6 +574,13 @@ void UVHVObservationWidget::SetObservationData(const FTextbookActivityData& InAc
 {
     CurrentActivity = InActivity;
     bHasObservationData = true;
+    bCompletionRequested = false;
+    EvidenceStage = EEvidenceTaggingStage::Stage1;
+    Stage1Selections.Reset();
+    Stage2Selections.Reset();
+    FocusedEvidenceCard = INDEX_NONE;
+    RevealElapsed = 0.0f;
+    RevealPage = 0;
     EntranceElapsed = 0.0f;
     if (ActivityContentSlate)
     {
@@ -345,17 +597,79 @@ void UVHVObservationWidget::SetOwningUIManager(UVHVUIManagerComponent* InUIManag
 
 void UVHVObservationWidget::SubmitObservation()
 {
-    if (OwningUIManager)
+    if (!bCompletionRequested && OwningUIManager && OwningUIManager->SubmitObservation())
     {
-        OwningUIManager->SubmitObservation();
+        bCompletionRequested = true;
     }
 }
 
 FReply UVHVObservationWidget::HandleContinueClicked()
 {
-    SubmitObservation();
+    AdvanceObservation();
     SetKeyboardFocus();
     return FReply::Handled();
+}
+
+bool UVHVObservationWidget::ActivateFocusedEvidenceCard()
+{
+    if (!CurrentActivity.EvidenceTagging.bUseEvidenceTagging
+        || (EvidenceStage != EEvidenceTaggingStage::Stage1
+            && EvidenceStage != EEvidenceTaggingStage::Stage2))
+    {
+        return false;
+    }
+    if (!GetCurrentEvidenceCards().IsValidIndex(FocusedEvidenceCard))
+    {
+        return false;
+    }
+    ToggleEvidenceCard(FocusedEvidenceCard);
+    return true;
+}
+
+bool UVHVObservationWidget::AdvanceObservation()
+{
+    if (bCompletionRequested)
+    {
+        return false;
+    }
+    if (!CurrentActivity.EvidenceTagging.bUseEvidenceTagging)
+    {
+        SubmitObservation();
+        return true;
+    }
+
+    if (!CanAdvanceObservation())
+    {
+        if (BoardInstructionSlate)
+        {
+            BoardInstructionSlate->SetText(FText::FromString(TEXT("Select at least one card before continuing.")));
+            BoardInstructionSlate->SetColorAndOpacity(VHVActivityUIStyle::WarningText());
+        }
+        return false;
+    }
+
+    if (EvidenceStage == EEvidenceTaggingStage::Stage1)
+    {
+        EvidenceStage = EEvidenceTaggingStage::Stage2;
+        FocusedEvidenceCard = 0;
+        RefreshEvidenceTaggingContent();
+        return true;
+    }
+    if (EvidenceStage == EEvidenceTaggingStage::Stage2)
+    {
+        EvidenceStage = EEvidenceTaggingStage::Reveal;
+        RevealElapsed = 0.0f;
+        RevealPage = 0;
+        FocusedEvidenceCard = INDEX_NONE;
+        RefreshEvidenceTaggingContent();
+        return true;
+    }
+    if (EvidenceStage == EEvidenceTaggingStage::Result)
+    {
+        SubmitObservation();
+        return true;
+    }
+    return false;
 }
 
 void UVHVObservationWidget::PopulateObservation()
@@ -386,6 +700,18 @@ void UVHVObservationWidget::PopulateObservation()
 }
 
 void UVHVObservationWidget::RefreshSlateContent()
+{
+    if (CurrentActivity.EvidenceTagging.bUseEvidenceTagging)
+    {
+        RefreshEvidenceTaggingContent();
+    }
+    else
+    {
+        RefreshPassiveContent();
+    }
+}
+
+void UVHVObservationWidget::RefreshPassiveContent()
 {
     if (!PrimaryTitleSlate || !SecondaryTextSlate || !ObservationItemsSlate)
     {
@@ -603,4 +929,266 @@ void UVHVObservationWidget::RefreshSlateContent()
         [
             Grid
         ];
+}
+
+void UVHVObservationWidget::RefreshEvidenceTaggingContent()
+{
+    if (!PrimaryTitleSlate || !SecondaryTextSlate || !ObservationItemsSlate)
+    {
+        return;
+    }
+
+    SecondaryTextSlate->ClearChildren();
+    ObservationItemsSlate->ClearChildren();
+    ObservationCardsSlate.Reset();
+    EvidenceCardsSlate.Reset();
+    MediaBrushes.Reset();
+    LoadedMediaTextures.Reset();
+
+    PrimaryTitleSlate->SetText(FText::FromString(CurrentActivity.ActivityTitle.ToUpper()));
+
+    FString Prompt;
+    FString Instruction;
+    FString ActionText;
+    switch (EvidenceStage)
+    {
+    case EEvidenceTaggingStage::Stage1:
+        Prompt = CurrentActivity.EvidenceTagging.Stage1Prompt;
+        Instruction = TEXT("W/A/S/D or arrows Navigate    E Toggle    Enter Continue");
+        ActionText = TEXT("CONTINUE");
+        break;
+    case EEvidenceTaggingStage::Stage2:
+        Prompt = CurrentActivity.EvidenceTagging.Stage2Prompt;
+        Instruction = TEXT("W/A/S/D or arrows Navigate    E Toggle    Enter Submit");
+        ActionText = TEXT("SUBMIT");
+        break;
+    case EEvidenceTaggingStage::Reveal:
+        Prompt = RevealPage == 0
+            ? TEXT("Compare the evidence you tagged.")
+            : TEXT("Compare the obstacles you tagged.");
+        Instruction = TEXT("Correct evidence is highlighted in green; selected distractors are highlighted in red.");
+        ActionText = TEXT("REVIEWING");
+        break;
+    case EEvidenceTaggingStage::Result:
+        Prompt = TEXT("What the market evidence tells us");
+        Instruction = TEXT("Review the takeaways, then continue.");
+        ActionText = TEXT("CONTINUE");
+        break;
+    }
+
+    SecondaryTextSlate->AddSlot()
+        .AutoHeight()
+        [
+            SNew(STextBlock)
+            .Font(VHVActivityUIStyle::RegularFont(21))
+            .ColorAndOpacity(VHVActivityUIStyle::MatchingInkMuted())
+            .AutoWrapText(true)
+            .LineHeightPercentage(1.20f)
+            .Text(FText::FromString(Prompt))
+        ];
+
+    if (BoardInstructionSlate)
+    {
+        BoardInstructionSlate->SetText(FText::FromString(Instruction));
+        BoardInstructionSlate->SetColorAndOpacity(
+            VHVActivityUIStyle::MatchingInkMuted().CopyWithNewOpacity(0.78f));
+    }
+    if (ActionButtonTextSlate)
+    {
+        ActionButtonTextSlate->SetText(FText::FromString(ActionText));
+    }
+
+    if (EvidenceStage != EEvidenceTaggingStage::Result)
+    {
+        RebuildEvidenceCards();
+        return;
+    }
+
+    const TArray<FObservationTakeawayCard>& Takeaways = CurrentActivity.EvidenceTagging.TakeawayCards;
+    TSharedRef<SUniformGridPanel> Grid = SNew(SUniformGridPanel).SlotPadding(FMargin(8.0f));
+    for (int32 Index = 0; Index < Takeaways.Num(); ++Index)
+    {
+        TSharedPtr<SBox> CardBox;
+        TSharedRef<SWidget> Card =
+            SAssignNew(CardBox, SBox)
+            .MinDesiredHeight(156.0f)
+            [
+                SNew(SOverlay)
+                + SOverlay::Slot().Padding(FMargin(3.0f, 4.0f, -3.0f, -4.0f))
+                [
+                    SNew(SBorder).BorderImage(&CardShadowBrush)
+                ]
+                + SOverlay::Slot()
+                [
+                    SNew(SBorder)
+                    .BorderImage(&CardSurfaceBrush)
+                    .Padding(FMargin(20.0f, 17.0f))
+                    [
+                        SNew(SVerticalBox)
+                        + SVerticalBox::Slot().AutoHeight().Padding(FMargin(0.0f, 0.0f, 0.0f, 10.0f))
+                        [
+                            SNew(STextBlock)
+                            .Font(VHVActivityUIStyle::MediumFont(14))
+                            .ColorAndOpacity(VHVActivityUIStyle::GoldPrimary())
+                            .AutoWrapText(true)
+                            .Text(FText::FromString(Takeaways[Index].Title))
+                        ]
+                        + SVerticalBox::Slot().AutoHeight()
+                        [
+                            SNew(STextBlock)
+                            .Font(VHVActivityUIStyle::RegularFont(16))
+                            .ColorAndOpacity(VHVActivityUIStyle::MatchingInk())
+                            .AutoWrapText(true)
+                            .LineHeightPercentage(1.18f)
+                            .Text(FText::FromString(Takeaways[Index].Text))
+                        ]
+                    ]
+                ]
+            ];
+        CardBox->SetRenderOpacity(0.0f);
+        ObservationCardsSlate.Add(CardBox);
+        Grid->AddSlot(Index % 3, Index / 3)[Card];
+    }
+    ObservationItemsSlate->AddSlot().AutoHeight()[Grid];
+}
+
+void UVHVObservationWidget::RebuildEvidenceCards()
+{
+    const TArray<FObservationEvidenceCard>& Cards = GetCurrentEvidenceCards();
+    if (Cards.IsEmpty())
+    {
+        return;
+    }
+
+    EvidenceColumnCount = Cards.Num() <= 4 ? 2 : 3;
+    if (EvidenceStage == EEvidenceTaggingStage::Stage1
+        || EvidenceStage == EEvidenceTaggingStage::Stage2)
+    {
+        FocusedEvidenceCard = Cards.IsValidIndex(FocusedEvidenceCard) ? FocusedEvidenceCard : 0;
+    }
+
+    TSharedRef<SUniformGridPanel> Grid = SNew(SUniformGridPanel).SlotPadding(FMargin(8.0f));
+    for (int32 Index = 0; Index < Cards.Num(); ++Index)
+    {
+        TSharedPtr<SVHVEvidenceTagCard> Card;
+        SAssignNew(Card, SVHVEvidenceTagCard)
+            .CardIndex(Index)
+            .Text(FText::FromString(Cards[Index].Text))
+            .Correct(Cards[Index].bCorrect)
+            .OnChosen(FOnVHVEvidenceCardChosen::CreateUObject(
+                this, &UVHVObservationWidget::HandleEvidenceCardChosen));
+        EvidenceCardsSlate.Add(Card);
+        ObservationCardsSlate.Add(Card);
+        Grid->AddSlot(Index % EvidenceColumnCount, Index / EvidenceColumnCount)[Card.ToSharedRef()];
+    }
+    ObservationItemsSlate->AddSlot().AutoHeight()[Grid];
+    UpdateEvidenceCardStates();
+}
+
+void UVHVObservationWidget::UpdateEvidenceCardStates()
+{
+    const TSet<int32>& Selection = GetCurrentEvidenceSelection();
+    const bool bReveal = EvidenceStage == EEvidenceTaggingStage::Reveal;
+    for (int32 Index = 0; Index < EvidenceCardsSlate.Num(); ++Index)
+    {
+        if (EvidenceCardsSlate[Index])
+        {
+            EvidenceCardsSlate[Index]->SetPresentationState(
+                !bReveal && Index == FocusedEvidenceCard,
+                Selection.Contains(Index),
+                bReveal);
+        }
+    }
+}
+
+void UVHVObservationWidget::MoveEvidenceFocus(const int32 ColumnDelta, const int32 RowDelta)
+{
+    const int32 CardCount = GetCurrentEvidenceCards().Num();
+    if (CardCount == 0)
+    {
+        return;
+    }
+    const int32 Current = FMath::Clamp(FocusedEvidenceCard, 0, CardCount - 1);
+    const int32 Delta = ColumnDelta + RowDelta * EvidenceColumnCount;
+    FocusedEvidenceCard = FMath::Clamp(Current + Delta, 0, CardCount - 1);
+    UpdateEvidenceCardStates();
+}
+
+void UVHVObservationWidget::ToggleEvidenceCard(const int32 CardIndex)
+{
+    if (!GetCurrentEvidenceCards().IsValidIndex(CardIndex))
+    {
+        return;
+    }
+    TSet<int32>& Selection = GetCurrentEvidenceSelection();
+    if (Selection.Contains(CardIndex)) Selection.Remove(CardIndex);
+    else Selection.Add(CardIndex);
+
+    if (BoardInstructionSlate)
+    {
+        BoardInstructionSlate->SetText(FText::FromString(
+            EvidenceStage == EEvidenceTaggingStage::Stage1
+                ? TEXT("W/A/S/D or arrows Navigate    E Toggle    Enter Continue")
+                : TEXT("W/A/S/D or arrows Navigate    E Toggle    Enter Submit")));
+        BoardInstructionSlate->SetColorAndOpacity(
+            VHVActivityUIStyle::MatchingInkMuted().CopyWithNewOpacity(0.78f));
+    }
+    UpdateEvidenceCardStates();
+}
+
+void UVHVObservationWidget::HandleEvidenceCardChosen(const int32 CardIndex)
+{
+    FocusedEvidenceCard = CardIndex;
+    ToggleEvidenceCard(CardIndex);
+    SetKeyboardFocus();
+}
+
+bool UVHVObservationWidget::CanAdvanceObservation() const
+{
+    if (!CurrentActivity.EvidenceTagging.bUseEvidenceTagging)
+    {
+        return !bCompletionRequested;
+    }
+    switch (EvidenceStage)
+    {
+    case EEvidenceTaggingStage::Stage1:
+        return !Stage1Selections.IsEmpty();
+    case EEvidenceTaggingStage::Stage2:
+        return !Stage2Selections.IsEmpty();
+    case EEvidenceTaggingStage::Result:
+        return !bCompletionRequested;
+    case EEvidenceTaggingStage::Reveal:
+    default:
+        return false;
+    }
+}
+
+const TArray<FObservationEvidenceCard>& UVHVObservationWidget::GetCurrentEvidenceCards() const
+{
+    if (EvidenceStage == EEvidenceTaggingStage::Stage1
+        || (EvidenceStage == EEvidenceTaggingStage::Reveal && RevealPage == 0))
+    {
+        return CurrentActivity.EvidenceTagging.EvidenceCards;
+    }
+    return CurrentActivity.EvidenceTagging.ObstacleCards;
+}
+
+const TSet<int32>& UVHVObservationWidget::GetCurrentEvidenceSelection() const
+{
+    if (EvidenceStage == EEvidenceTaggingStage::Stage1
+        || (EvidenceStage == EEvidenceTaggingStage::Reveal && RevealPage == 0))
+    {
+        return Stage1Selections;
+    }
+    return Stage2Selections;
+}
+
+TSet<int32>& UVHVObservationWidget::GetCurrentEvidenceSelection()
+{
+    if (EvidenceStage == EEvidenceTaggingStage::Stage1
+        || (EvidenceStage == EEvidenceTaggingStage::Reveal && RevealPage == 0))
+    {
+        return Stage1Selections;
+    }
+    return Stage2Selections;
 }

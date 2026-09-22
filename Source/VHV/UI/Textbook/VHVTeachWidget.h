@@ -81,6 +81,7 @@ private:
     FSlateBrush TakeawayTealBrush;
     FSlateBrush TakeawayShadowBrush;
     FSlateBrush MediaSurfaceBrush;
+    FSlateBrush LargeMediaBrush;
     FSlateBrush KeycapBrush;
     FButtonStyle ContinueButtonStyle;
     TArray<FSlateBrush> MediaBrushes;
@@ -90,4 +91,7 @@ private:
 
     UPROPERTY(Transient)
     TArray<TObjectPtr<UTexture2D>> LoadedMediaTextures;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UTexture2D> LoadedLargeMediaTexture;
 };

@@ -72,7 +72,7 @@ def effect(flag_name):
         value=0)
 
 
-def teaching(title, content, takeaways, category=None):
+def teaching(title, content, takeaways, category=None, media_texture=None, media_caption=""):
     if category is None:
         category = unreal.TextbookTeachingCategory.LESSON
     return struct(
@@ -81,7 +81,9 @@ def teaching(title, content, takeaways, category=None):
         title=title,
         content=content,
         key_takeaways=takeaways,
-        media=[])
+        media=[],
+        media_texture=media_texture,
+        media_caption=media_caption)
 
 
 def attempt_policy(first_hint, final_explanation, max_attempts=2):
@@ -113,6 +115,25 @@ def observation_media(media_id, description):
         required=False)
 
 
+def evidence_card(text, correct):
+    return struct(unreal.ObservationEvidenceCard, text=text, correct=correct)
+
+
+def takeaway_card(title, text):
+    return struct(unreal.ObservationTakeawayCard, title=title, text=text)
+
+
+def evidence_tagging(stage1_prompt, evidence_cards, stage2_prompt, obstacle_cards, takeaways):
+    return struct(
+        unreal.ObservationEvidenceTaggingConfig,
+        use_evidence_tagging=True,
+        stage1_prompt=stage1_prompt,
+        evidence_cards=evidence_cards,
+        stage2_prompt=stage2_prompt,
+        obstacle_cards=obstacle_cards,
+        takeaway_cards=takeaways)
+
+
 def activity(tag_name, title, activity_type, prompt, teaching_data, **properties):
     values = {
         "activity_tag": tag(tag_name),
@@ -138,22 +159,52 @@ def build_activities():
     observation = unreal.TextbookActivityType.OBSERVATION
     single = unreal.TextbookActivityType.SINGLE_CHOICE
     matching = unreal.TextbookActivityType.MATCHING
+    why_behavior_media = unreal.load_asset(
+        "/Game/VHV_Stuff/UI/Teaching/Media/T_UI_HBCT_WhyBehaviorChange")
+    if not why_behavior_media:
+        raise RuntimeError("Missing Why Behavior Change teaching media")
     return [
         activity(
             "VHV.Activity.HBCT.Intro.MarketObservation",
             "Market Observation",
             observation,
-            "What unhealthy behavior did you notice?\nWhich person understood the risk but still did not act?\nWhat obstacle might be present?",
+            "Tag the evidence you noticed in the market.",
             teaching(
                 "Knowledge Is Not Always Action",
                 "People may understand a health risk and still repeat a familiar behavior. Habits, convenience, feelings, confidence, and social expectations can all become obstacles.",
                 ["Notice the behavior.", "Listen for awareness of risk.", "Consider the obstacle before giving advice."]),
-            narrative_context="Recall the five short scenes you observed in the market.",
-            media=[
-                observation_media("HBCT_MARKET_BEHAVIOR", "Unhealthy behavior: sweet drinks, fried food, smoking, junk food, and avoidable inactivity."),
-                observation_media("HBCT_MARKET_KNOWLEDGE", "Knowledge-action gap: knowing the risk did not automatically change the choice."),
-                observation_media("HBCT_MARKET_OBSTACLE", "Possible obstacles: habit, convenience, low readiness, social pressure, or low confidence."),
-            ]),
+            narrative_context="Recall the short scenes you observed in the market.",
+            evidence_tagging=evidence_tagging(
+                "What unhealthy behaviors did you notice?",
+                [
+                    evidence_card("Sugary drinks", True),
+                    evidence_card("Fried or junk food", True),
+                    evidence_card("Smoking", True),
+                    evidence_card("Taking a motorcycle for a very short trip", True),
+                    evidence_card("Choosing unhealthy food despite saying they want better health", True),
+                    evidence_card("Buying fresh vegetables for dinner", False),
+                    evidence_card("Walking home after shopping", False),
+                ],
+                "What might make someone continue an unhealthy behavior even when they know the risk?",
+                [
+                    evidence_card("Habit", True),
+                    evidence_card("Convenience", True),
+                    evidence_card("Low readiness to change", True),
+                    evidence_card("Social pressure", True),
+                    evidence_card("Low confidence", True),
+                    evidence_card("Having plenty of free time", False),
+                ],
+                [
+                    takeaway_card(
+                        "KNOWING IS NOT ALWAYS DOING",
+                        "Understanding a health risk does not automatically change behavior."),
+                    takeaway_card(
+                        "CHANGE HAS OBSTACLES",
+                        "Habits, convenience, readiness, confidence and social influences can make change difficult."),
+                    takeaway_card(
+                        "VHVs HELP TURN INTENTION INTO ACTION",
+                        "Support, guidance and behavior-change techniques can help people build sustainable healthier behavior."),
+                ])),
         activity(
             "VHV.Activity.HBCT.Intro.IntroLesson",
             "Why Behavior Change Is Difficult",
@@ -161,14 +212,10 @@ def build_activities():
             "Review what helps a person move from knowing to doing.",
             teaching(
                 "WHY BEHAVIOR CHANGE IS DIFFICULT",
-                "Knowing a health risk does not always lead to action. Changing familiar behavior requires commitment, self-regulation, and confidence despite obstacles.",
-                [
-                    "SUPPORT — Friends, family, and community can help new behavior become sustainable.",
-                    "RESPONSIBILITY — The person still owns the daily choice.",
-                    "VHV ROLE — Support eating, exercise and movement, emotional and stress management, and reduction of smoking and alcohol use.",
-                ],
-                unreal.TextbookTeachingCategory.LESSON),
-            media=[observation_media("HBCT_INTRO_DOMAINS", "VHV support spans eating, movement, emotions and stress, smoking, and alcohol risk reduction.")]),
+                "",
+                [],
+                unreal.TextbookTeachingCategory.LESSON,
+                why_behavior_media)),
         activity(
             "VHV.Activity.HBCT.Motivation.TechniqueTitle",
             "TECHNIQUE 1",
@@ -1043,6 +1090,25 @@ def validate_content_integrity(level, conversations, arc):
             raise RuntimeError("{} has teaching category {}; expected {}".format(
                 activity_id, actual, expected_category))
 
+    market_evidence = activities_by_id["MarketObservation"].get_editor_property("evidence_tagging")
+    if (not market_evidence.get_editor_property("use_evidence_tagging")
+            or len(market_evidence.get_editor_property("evidence_cards")) != 7
+            or len(market_evidence.get_editor_property("obstacle_cards")) != 6
+            or len(market_evidence.get_editor_property("takeaway_cards")) != 3):
+        raise RuntimeError("MarketObservation evidence-tagging content is incomplete")
+    if activities_by_id["MarketObservation"].get_editor_property("media"):
+        raise RuntimeError("MarketObservation must not expose answer media before evidence tagging")
+    if activities_by_id["IntroLesson"].get_editor_property("evidence_tagging").get_editor_property("use_evidence_tagging"):
+        raise RuntimeError("Passive Observation unexpectedly enables evidence tagging")
+
+    intro_teaching = activities_by_id["IntroLesson"].get_editor_property("teaching")
+    intro_media = intro_teaching.get_editor_property("media_texture")
+    if (not intro_media
+            or intro_media.get_path_name() != "/Game/VHV_Stuff/UI/Teaching/Media/T_UI_HBCT_WhyBehaviorChange.T_UI_HBCT_WhyBehaviorChange"
+            or str(intro_teaching.get_editor_property("content")).strip()
+            or intro_teaching.get_editor_property("key_takeaways")):
+        raise RuntimeError("IntroLesson must use only the authored Why Behavior Change media body")
+
     for asset in conversations.values():
         conversation = asset.get_editor_property("conversation")
         nodes = conversation.get_editor_property("nodes")
@@ -1120,6 +1186,29 @@ def validate_attempt_runtime(level):
         raise RuntimeError("Correct retry did not enter normal positive Feedback")
 
 
+def validate_observation_runtime(level):
+    game_instance = unreal.new_object(unreal.GameInstance)
+    subsystem = unreal.new_object(unreal.VHVTextbookSubsystem, outer=game_instance)
+    subsystem.start_journey(level)
+    subsystem.set_progression_mode(unreal.VHVTextbookProgressionMode.QUEST_MANAGED)
+
+    if not subsystem.start_activity_by_id("IntroLesson") or not subsystem.submit_observation():
+        raise RuntimeError("Passive Observation completion path failed")
+    passive_state = subsystem.get_runtime_state()
+    if (passive_state.get_editor_property("current_phase") != unreal.LearningPhase.FEEDBACK
+            or not passive_state.get_editor_property("activity_active")):
+        raise RuntimeError("Passive Observation behavior changed")
+
+    if not subsystem.start_activity_by_id("MarketObservation") or not subsystem.submit_observation():
+        raise RuntimeError("Evidence-tagging Observation completion path failed")
+    evidence_state = subsystem.get_runtime_state()
+    if (evidence_state.get_editor_property("activity_active")
+            or not evidence_state.get_editor_property("activity_completed")):
+        raise RuntimeError("Evidence-tagging Observation did not complete directly")
+    if subsystem.submit_observation():
+        raise RuntimeError("Evidence-tagging Observation completed more than once")
+
+
 def run():
     for directory in (ROOT, ACTIVITY_DIR, CONVERSATION_DIR, AMBIENT_DIR, QUEST_DIR):
         ensure_directory(directory)
@@ -1133,6 +1222,7 @@ def run():
     all_assets = [level] + list(conversations.values()) + list(ambient_assets.values()) + [arc]
     validate_content_integrity(level, conversations, arc)
     validate_attempt_runtime(level)
+    validate_observation_runtime(level)
     validate_arc_runtime(arc)
     validate_assets(all_assets)
     for asset in all_assets:

@@ -239,6 +239,7 @@ void UVHVTeachWidget::ReleaseSlateResources(const bool bReleaseChildren)
     TakeawayCardsSlate.Reset();
     MediaBrushes.Reset();
     LoadedMediaTextures.Reset();
+    LoadedLargeMediaTexture = nullptr;
 }
 
 void UVHVTeachWidget::SetOwningUIManager(UVHVUIManagerComponent* InUIManager)
@@ -371,6 +372,64 @@ void UVHVTeachWidget::RefreshSlateContent()
     TakeawayCardsSlate.Reset();
     MediaBrushes.Reset();
     LoadedMediaTextures.Reset();
+    LoadedLargeMediaTexture = TeachingContent.MediaTexture.LoadSynchronous();
+
+    if (LoadedLargeMediaTexture)
+    {
+        ContentTextSlate.Reset();
+        LargeMediaBrush.DrawAs = ESlateBrushDrawType::Image;
+        LargeMediaBrush.SetResourceObject(LoadedLargeMediaTexture);
+        LargeMediaBrush.SetImageSize(FVector2D(
+            LoadedLargeMediaTexture->GetSizeX(), LoadedLargeMediaTexture->GetSizeY()));
+
+        TSharedRef<SVerticalBox> LargeMediaContent = SNew(SVerticalBox)
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            .HAlign(HAlign_Center)
+            [
+                SNew(SBox)
+                .WidthOverride(980.0f)
+                .HeightOverride(390.0f)
+                [
+                    SNew(SBorder)
+                    .BorderImage(&MediaSurfaceBrush)
+                    .Padding(FMargin(8.0f))
+                    [
+                        SNew(SScaleBox)
+                        .Stretch(EStretch::ScaleToFit)
+                        .StretchDirection(EStretchDirection::Both)
+                        [
+                            SNew(SImage)
+                            .Image(&LargeMediaBrush)
+                        ]
+                    ]
+                ]
+            ];
+
+        if (!TeachingContent.MediaCaption.TrimStartAndEnd().IsEmpty())
+        {
+            LargeMediaContent->AddSlot()
+                .AutoHeight()
+                .HAlign(HAlign_Center)
+                .Padding(FMargin(24.0f, 9.0f, 24.0f, 0.0f))
+                [
+                    SNew(STextBlock)
+                    .Font(VHVActivityUIStyle::RegularFont(13))
+                    .ColorAndOpacity(VHVActivityUIStyle::MatchingInkMuted())
+                    .Justification(ETextJustify::Center)
+                    .AutoWrapText(true)
+                    .Text(FText::FromString(TeachingContent.MediaCaption))
+                ];
+        }
+
+        ReadingAreaSlate->AddSlot()
+            .AutoHeight()
+            .HAlign(HAlign_Center)
+            [
+                LargeMediaContent
+            ];
+        return;
+    }
 
     ContentTextSlate = SNew(STextBlock)
         .Font(VHVActivityUIStyle::RegularFont(20))

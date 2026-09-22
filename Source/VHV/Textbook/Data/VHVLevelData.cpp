@@ -53,6 +53,47 @@ EDataValidationResult UVHVLevelData::IsDataValid(FDataValidationContext& Context
 				}
 			}
 
+			if (Activity.EvidenceTagging.bUseEvidenceTagging)
+			{
+				if (Activity.ActivityType != ETextbookActivityType::Observation)
+				{
+					Context.AddError(FText::FromString(FString::Printf(
+						TEXT("Activity '%s' enables EvidenceTagging but is not an Observation."),
+						*EffectiveActivityID)));
+					Result = EDataValidationResult::Invalid;
+				}
+				if (Activity.EvidenceTagging.Stage1Prompt.IsEmpty()
+					|| Activity.EvidenceTagging.Stage2Prompt.IsEmpty()
+					|| Activity.EvidenceTagging.EvidenceCards.IsEmpty()
+					|| Activity.EvidenceTagging.ObstacleCards.IsEmpty()
+					|| Activity.EvidenceTagging.TakeawayCards.IsEmpty())
+				{
+					Context.AddError(FText::FromString(FString::Printf(
+						TEXT("Observation '%s' has an incomplete EvidenceTagging configuration."),
+						*EffectiveActivityID)));
+					Result = EDataValidationResult::Invalid;
+				}
+
+				const auto HasValidEvidenceCards = [](const TArray<FObservationEvidenceCard>& Cards)
+				{
+					return Cards.ContainsByPredicate([](const FObservationEvidenceCard& Card) { return Card.bCorrect; })
+						&& !Cards.ContainsByPredicate([](const FObservationEvidenceCard& Card) { return Card.Text.TrimStartAndEnd().IsEmpty(); });
+				};
+				if (!HasValidEvidenceCards(Activity.EvidenceTagging.EvidenceCards)
+					|| !HasValidEvidenceCards(Activity.EvidenceTagging.ObstacleCards)
+					|| Activity.EvidenceTagging.TakeawayCards.ContainsByPredicate(
+						[](const FObservationTakeawayCard& Card)
+						{
+							return Card.Title.TrimStartAndEnd().IsEmpty() || Card.Text.TrimStartAndEnd().IsEmpty();
+						}))
+				{
+					Context.AddError(FText::FromString(FString::Printf(
+						TEXT("Observation '%s' has empty EvidenceTagging copy or no correct card in a stage."),
+						*EffectiveActivityID)));
+					Result = EDataValidationResult::Invalid;
+				}
+			}
+
 			auto ValidateEffects = [&Context, &Result, &Activity](const TArray<FVHVStoryEffect>& Effects, const TCHAR* EffectArrayName)
 			{
 				for (int32 EffectIndex = 0; EffectIndex < Effects.Num(); ++EffectIndex)

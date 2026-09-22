@@ -1472,6 +1472,12 @@ bool UVHVUIManagerComponent::HandleActivityInteractionInput()
             MatchingWidget->ActivateFocusedSelection();
         }
         break;
+    case ETextbookActivityType::Observation:
+        if (ObservationWidget)
+        {
+            ObservationWidget->ActivateFocusedEvidenceCard();
+        }
+        break;
     default:
         break;
     }
@@ -1768,6 +1774,12 @@ void UVHVUIManagerComponent::ConfirmChoiceInput()
     {
         if (TextbookSubsystem && TextbookSubsystem->GetCurrentPhase() == ELearningPhase::Ask)
         {
+            if (TextbookSubsystem->GetCurrentActivity().ActivityType == ETextbookActivityType::Observation
+                && ObservationWidget)
+            {
+                ObservationWidget->AdvanceObservation();
+                return;
+            }
             TrySubmitCurrentQuestionAnswer();
             return;
         }

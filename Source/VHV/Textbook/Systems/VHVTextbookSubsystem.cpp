@@ -406,6 +406,16 @@ bool UVHVTextbookSubsystem::SubmitObservation()
     }
 
     UE_LOG(LogTemp, Log, TEXT("[VHVTextbook] Observation submitted ActivityID=%s"), *CurrentActivity.GetEffectiveActivityID());
+    if (CurrentActivity.EvidenceTagging.bUseEvidenceTagging)
+    {
+        RuntimeState.AttemptCount++;
+        RuntimeState.bAnswerSubmitted = true;
+        RuntimeState.bAnswerCorrect = true;
+        RuntimeState.bAnswerPartial = false;
+        AdvanceToNextActivity();
+        return true;
+    }
+
     SubmitAnswer(true);
     return true;
 }
