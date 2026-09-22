@@ -5,6 +5,7 @@
 #include "UI/Textbook/VHVFeedbackWidget.h"
 #include "UI/Textbook/VHVTeachWidget.h"
 #include "UI/Textbook/VHVObservationWidget.h"
+#include "UI/VHVMajorQuestStingerWidget.h"
 #include "UI/VHVOrderingWidget.h"
 #include "UI/VHVMatchingWidget.h"
 #include "Core/VHVDialogueTypes.h"
@@ -31,6 +32,23 @@
 
 namespace
 {
+    bool IsContinuousTeachingPage(const FTextbookActivityData& Activity)
+    {
+        const FTeachingContent& Teaching = Activity.Teaching;
+        const FString TeachingTitle = Teaching.Title.TrimStartAndEnd();
+        const bool bHasTeachingContent = !Teaching.Title.TrimStartAndEnd().IsEmpty()
+            || !Teaching.Content.TrimStartAndEnd().IsEmpty()
+            || !Teaching.KeyTakeaways.IsEmpty()
+            || !Teaching.MediaTexture.IsNull()
+            || !Teaching.Media.IsEmpty();
+        const bool bTechniqueIntroduction = Teaching.Category == ETextbookTeachingCategory::Technique
+            || TeachingTitle.StartsWith(TEXT("TECHNIQUE "), ESearchCase::IgnoreCase);
+        return Activity.ActivityType == ETextbookActivityType::Observation
+            && !Activity.EvidenceTagging.bUseEvidenceTagging
+            && !bTechniqueIntroduction
+            && bHasTeachingContent;
+    }
+
     void ApplyPanelSlotLayout(UWidget* ChildWidget, UPanelWidget* ParentPanel)
     {
         if (!ChildWidget || !ParentPanel)
@@ -219,6 +237,8 @@ void UVHVUIManagerComponent::BeginPlay()
         if (QuestSubsystem)
         {
             QuestSubsystem->OnObjectiveActivationRequested.AddDynamic(this, &UVHVUIManagerComponent::HandleQuestObjectiveActivationRequested);
+            QuestSubsystem->OnQuestStarted.AddDynamic(this, &UVHVUIManagerComponent::HandleQuestStarted);
+            QuestSubsystem->OnQuestCompleted.AddDynamic(this, &UVHVUIManagerComponent::HandleQuestCompleted);
             if (QuestTrackerWidget)
             {
                 QuestTrackerWidget->SetQuestSubsystem(QuestSubsystem);
@@ -244,6 +264,11 @@ void UVHVUIManagerComponent::BeginPlay()
 
 void UVHVUIManagerComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+    if (MajorQuestStingerWidget)
+    {
+        MajorQuestStingerWidget->OnStingerFinished.RemoveAll(this);
+    }
+
     if (PlayerInteractionComponent)
     {
         PlayerInteractionComponent->OnInteractionTargetChanged.RemoveDynamic(this, &UVHVUIManagerComponent::HandleInteractionTargetChanged);
@@ -258,6 +283,8 @@ void UVHVUIManagerComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
     if (QuestSubsystem)
     {
         QuestSubsystem->OnObjectiveActivationRequested.RemoveDynamic(this, &UVHVUIManagerComponent::HandleQuestObjectiveActivationRequested);
+        QuestSubsystem->OnQuestStarted.RemoveDynamic(this, &UVHVUIManagerComponent::HandleQuestStarted);
+        QuestSubsystem->OnQuestCompleted.RemoveDynamic(this, &UVHVUIManagerComponent::HandleQuestCompleted);
     }
 
     Super::EndPlay(EndPlayReason);
@@ -271,8 +298,35 @@ void UVHVUIManagerComponent::HandleInteractionTargetChanged(UVHVInteractionCompo
 
 void UVHVUIManagerComponent::HandleLearningPhaseChanged(ELearningPhase NewPhase)
 {
+    if (bStartingMajorStingerActivity && NewPhase == ELearningPhase::Ask)
+    {
+        HideQuestionUI();
+        HideObservationUI();
+        HideFeedbackUI();
+        HideTeachUI();
+        return;
+    }
+
     if (NewPhase == ELearningPhase::Ask)
     {
+        if (TextbookSubsystem && TextbookSubsystem->IsActivityActive())
+        {
+            const FTextbookActivityData CurrentActivity = TextbookSubsystem->GetCurrentActivity();
+            const bool bDirectMediaLesson = CurrentActivity.ActivityType == ETextbookActivityType::Observation
+                && !CurrentActivity.EvidenceTagging.bUseEvidenceTagging
+                && CurrentActivity.Teaching.Category != ETextbookTeachingCategory::Technique
+                && !CurrentActivity.Teaching.MediaTexture.IsNull();
+            if (bDirectMediaLesson
+                || (bAwaitingContinuousTeachingResult && IsContinuousTeachingPage(CurrentActivity)))
+            {
+                // Passive lesson entries use Observation as their launch shell.
+                // A primary media image is already the complete teaching page,
+                // so bypass the otherwise empty Observation prompt page.
+                TextbookSubsystem->EnterTeachPhase();
+                return;
+            }
+        }
+
         HideFeedbackUI();
         HideTeachUI();
         RefreshCurrentAskQuestionUI();
@@ -392,7 +446,7 @@ void UVHVUIManagerComponent::HandleTextbookActivityCompleted()
 
     if (!bConversationActive)
     {
-        if (bQuestManagedLearningActivityActive)
+        if (bQuestManagedLearningActivityActive && !bAwaitingContinuousTeachingResult)
         {
             bQuestManagedLearningActivityActive = false;
             RestoreGameplayAfterQuestModalIfNeeded();
@@ -724,6 +778,18 @@ void UVHVUIManagerComponent::ApplyUIState(EVHVUIState NewState)
     case EVHVUIState::LearningTeach:
     {
         ApplyModalInputAndFocus(NewState);
+        if (MainHUD)
+        {
+            MainHUD->SetInteractionPromptVisible(false);
+        }
+        break;
+    }
+    case EVHVUIState::MajorStinger:
+    {
+        FInputModeGameOnly InputMode;
+        PC->SetInputMode(InputMode);
+        PC->bShowMouseCursor = false;
+        SetMovementLocked(true);
         if (MainHUD)
         {
             MainHUD->SetInteractionPromptVisible(false);
@@ -1082,6 +1148,195 @@ bool UVHVUIManagerComponent::SubmitObservation()
     return TextbookSubsystem && TextbookSubsystem->SubmitObservation();
 }
 
+bool UVHVUIManagerComponent::ShowMajorQuestStinger(
+    const FVHVMajorQuestStingerData& StingerData)
+{
+    return QueueMajorQuestStinger(StingerData);
+}
+
+bool UVHVUIManagerComponent::IsQuestTrackerSuppressedForMajorStinger() const
+{
+    return QuestTrackerWidget && QuestTrackerWidget->IsMajorStingerSuppressed();
+}
+
+bool UVHVUIManagerComponent::QueueMajorQuestStinger(
+    const FVHVMajorQuestStingerData& StingerData,
+    const bool bCompletesLearningActivity)
+{
+    if (!StingerData.IsConfigured() || !MainHUD)
+    {
+        return false;
+    }
+
+    FQueuedMajorStinger& Queued = PendingMajorStingers.AddDefaulted_GetRef();
+    Queued.Data = StingerData;
+    Queued.bCompletesLearningActivity = bCompletesLearningActivity;
+
+    if (bMajorStingerSequenceActive)
+    {
+        UE_LOG(LogVHV, Log, TEXT("[VHVUI] Queued major stinger '%s' behind the active presentation."),
+            *StingerData.Title);
+        return true;
+    }
+
+    bMajorStingerSequenceActive = true;
+    if (QuestTrackerWidget)
+    {
+        QuestTrackerWidget->BeginMajorStingerSuppression();
+    }
+    ApplyUIState(EVHVUIState::MajorStinger);
+    return PlayNextMajorQuestStinger();
+}
+
+bool UVHVUIManagerComponent::PlayNextMajorQuestStinger()
+{
+    if (!bMajorStingerSequenceActive || PendingMajorStingers.IsEmpty())
+    {
+        FinishMajorQuestStingerSequence();
+        return false;
+    }
+
+    if (!MajorQuestStingerWidget)
+    {
+        APlayerController* PC = Cast<APlayerController>(GetOwner());
+        UPanelWidget* StingerLayer = MainHUD->TopLayer
+            ? MainHUD->TopLayer.Get()
+            : MainHUD->TextbookLayer.Get();
+        if (!PC || !StingerLayer)
+        {
+            PendingMajorStingers.Reset();
+            FinishMajorQuestStingerSequence();
+            return false;
+        }
+
+        MajorQuestStingerWidget = CreateWidget<UVHVMajorQuestStingerWidget>(
+            PC, UVHVMajorQuestStingerWidget::StaticClass());
+        if (!MajorQuestStingerWidget)
+        {
+            PendingMajorStingers.Reset();
+            FinishMajorQuestStingerSequence();
+            return false;
+        }
+
+        ApplyPanelSlotLayout(MajorQuestStingerWidget, StingerLayer);
+        MajorQuestStingerWidget->OnStingerFinished.AddUObject(
+            this, &UVHVUIManagerComponent::HandleMajorQuestStingerFinished);
+        MajorQuestStingerWidget->SetVisibility(ESlateVisibility::Collapsed);
+    }
+
+    if (MajorQuestStingerWidget->IsPlaying())
+    {
+        return false;
+    }
+
+    FQueuedMajorStinger Queued = MoveTemp(PendingMajorStingers[0]);
+    PendingMajorStingers.RemoveAt(0);
+    bCurrentMajorStingerCompletesActivity = Queued.bCompletesLearningActivity;
+    UE_LOG(LogVHV, Log, TEXT("[VHVUI] Major stinger begin: '%s'."), *Queued.Data.Title);
+    MajorQuestStingerWidget->ShowStinger(Queued.Data);
+    if (!MajorQuestStingerWidget->IsPlaying())
+    {
+        bCurrentMajorStingerCompletesActivity = false;
+        PendingMajorStingers.Reset();
+        FinishMajorQuestStingerSequence();
+        return false;
+    }
+    return true;
+}
+
+void UVHVUIManagerComponent::HandleMajorQuestStingerFinished()
+{
+    UE_LOG(LogVHV, Log, TEXT("[VHVUI] Major stinger complete."));
+    const bool bCompleteActivity = bCurrentMajorStingerCompletesActivity;
+    bCurrentMajorStingerCompletesActivity = false;
+
+    if (bCompleteActivity && TextbookSubsystem && TextbookSubsystem->IsActivityActive())
+    {
+        TextbookSubsystem->AdvanceToNextActivity();
+    }
+
+    if (!PendingMajorStingers.IsEmpty())
+    {
+        PlayNextMajorQuestStinger();
+        return;
+    }
+
+    FinishMajorQuestStingerSequence();
+}
+
+void UVHVUIManagerComponent::FinishMajorQuestStingerSequence()
+{
+    if (!bMajorStingerSequenceActive)
+    {
+        return;
+    }
+
+    bMajorStingerSequenceActive = false;
+    bCurrentMajorStingerCompletesActivity = false;
+    PendingMajorStingers.Reset();
+
+    if (QuestTrackerWidget)
+    {
+        QuestTrackerWidget->EndMajorStingerSuppressionAndReveal();
+    }
+
+    ReconcileUIStateAfterMajorStinger();
+    UE_LOG(LogVHV, Log, TEXT("[VHVUI] Major stinger sequence complete; tracker and input ownership reconciled."));
+}
+
+void UVHVUIManagerComponent::ReconcileUIStateAfterMajorStinger()
+{
+    if (bConversationActive)
+    {
+        ApplyUIState(EVHVUIState::Dialogue);
+        return;
+    }
+
+    if (TextbookSubsystem && TextbookSubsystem->IsActivityActive())
+    {
+        switch (TextbookSubsystem->GetCurrentPhase())
+        {
+        case ELearningPhase::Ask:
+            ApplyUIState(EVHVUIState::LearningAsk);
+            return;
+        case ELearningPhase::Hint:
+            ApplyUIState(EVHVUIState::LearningHint);
+            return;
+        case ELearningPhase::Feedback:
+            ApplyUIState(EVHVUIState::LearningFeedback);
+            return;
+        case ELearningPhase::Teach:
+            ApplyUIState(EVHVUIState::LearningTeach);
+            return;
+        default:
+            break;
+        }
+    }
+
+    ApplyUIState(EVHVUIState::Gameplay);
+    EndConversationSession();
+}
+
+void UVHVUIManagerComponent::HandleQuestStarted(const FName QuestID)
+{
+    FVHVQuestDefinition Quest;
+    if (QuestSubsystem && QuestSubsystem->GetQuestDefinition(QuestID, Quest)
+        && Quest.StartStinger.IsConfigured())
+    {
+        QueueMajorQuestStinger(Quest.StartStinger);
+    }
+}
+
+void UVHVUIManagerComponent::HandleQuestCompleted(const FName QuestID)
+{
+    FVHVQuestDefinition Quest;
+    if (QuestSubsystem && QuestSubsystem->GetQuestDefinition(QuestID, Quest)
+        && Quest.CompletionStinger.IsConfigured())
+    {
+        QueueMajorQuestStinger(Quest.CompletionStinger);
+    }
+}
+
 void UVHVUIManagerComponent::RefreshCurrentTeachUI()
 {
     if (!MainHUD || !MainHUD->TextbookLayer || !TextbookSubsystem || !TeachWidget)
@@ -1161,6 +1416,20 @@ void UVHVUIManagerComponent::AdvanceTeach()
         return;
     }
 
+    const FTextbookActivityData CurrentActivity = TextbookSubsystem->GetCurrentActivity();
+    if (TeachWidget && IsContinuousTeachingPage(CurrentActivity))
+    {
+        if (TeachWidget->IsContentTransitionActive())
+        {
+            return;
+        }
+        if (TeachWidget->BeginContentTransition(
+            FSimpleDelegate::CreateUObject(this, &UVHVUIManagerComponent::CompleteTeachingAdvanceAfterFade)))
+        {
+            return;
+        }
+    }
+
     const bool bQuestManaged = TextbookSubsystem->GetProgressionMode() == EVHVTextbookProgressionMode::QuestManaged;
     TextbookSubsystem->AdvanceToNextActivity();
     HideTeachUI();
@@ -1168,6 +1437,48 @@ void UVHVUIManagerComponent::AdvanceTeach()
     {
         RestoreGameplayAfterQuestModalIfNeeded();
     }
+    RefreshInteractionPrompt();
+}
+
+void UVHVUIManagerComponent::CompleteTeachingAdvanceAfterFade()
+{
+    if (!TextbookSubsystem || !TextbookSubsystem->IsActivityActive())
+    {
+        if (TeachWidget)
+        {
+            TeachWidget->CancelContentTransition();
+        }
+        HideTeachUI();
+        return;
+    }
+
+    const bool bQuestManaged = TextbookSubsystem->GetProgressionMode() == EVHVTextbookProgressionMode::QuestManaged;
+    bAwaitingContinuousTeachingResult = true;
+    TextbookSubsystem->AdvanceToNextActivity();
+
+    const bool bContinues = TextbookSubsystem->IsActivityActive()
+        && TextbookSubsystem->GetCurrentPhase() == ELearningPhase::Teach
+        && IsContinuousTeachingPage(TextbookSubsystem->GetCurrentActivity());
+    bAwaitingContinuousTeachingResult = false;
+
+    if (!bContinues)
+    {
+        if (!bConversationActive)
+        {
+            bQuestManagedLearningActivityActive = false;
+        }
+        if (TeachWidget)
+        {
+            TeachWidget->CancelContentTransition();
+        }
+        HideTeachUI();
+        if (bQuestManaged && CurrentUIState == EVHVUIState::LearningTeach
+            && !TextbookSubsystem->IsActivityActive())
+        {
+            RestoreGameplayAfterQuestModalIfNeeded();
+        }
+    }
+
     RefreshInteractionPrompt();
 }
 
@@ -1402,8 +1713,21 @@ bool UVHVUIManagerComponent::StartLinkedLearningActivity(const FTextbookActivity
     }
 
     TextbookSubsystem = TextbookSubsystemInstance;
+    FTextbookActivityData LinkedActivity;
+    const bool bUsesMajorStinger = TextbookSubsystem->TryGetActivityByID(ActivityID, LinkedActivity)
+        && LinkedActivity.MajorStinger.IsConfigured();
+    bStartingMajorStingerActivity = bUsesMajorStinger;
     const bool bStarted = TextbookSubsystem->StartActivityByID(ActivityID);
-    if (bStarted)
+    bStartingMajorStingerActivity = false;
+    if (bStarted && bUsesMajorStinger)
+    {
+        if (!QueueMajorQuestStinger(LinkedActivity.MajorStinger, true))
+        {
+            HandleLearningPhaseChanged(TextbookSubsystem->GetCurrentPhase());
+        }
+        return bStarted;
+    }
+    if (bStarted && TextbookSubsystem->GetCurrentPhase() == ELearningPhase::Ask)
     {
         RefreshCurrentAskQuestionUI();
     }
@@ -1445,6 +1769,11 @@ bool UVHVUIManagerComponent::TrySubmitCurrentQuestionAnswer()
 
 bool UVHVUIManagerComponent::HandleActivityInteractionInput()
 {
+    if (CurrentUIState == EVHVUIState::MajorStinger)
+    {
+        return true;
+    }
+
     if (CurrentUIState != EVHVUIState::LearningAsk || !TextbookSubsystem ||
         TextbookSubsystem->GetCurrentPhase() != ELearningPhase::Ask || !TextbookSubsystem->IsActivityActive())
     {
@@ -1730,6 +2059,13 @@ void UVHVUIManagerComponent::CompleteConversation()
 
 void UVHVUIManagerComponent::RestoreGameplayAfterQuestModalIfNeeded()
 {
+    // Quest/activity callbacks can complete synchronously beneath a stinger.
+    // The active sequence remains the sole modal owner until its last callback.
+    if (bMajorStingerSequenceActive)
+    {
+        return;
+    }
+
     FVHVQuestObjectiveDefinition Objective;
     if (QuestSubsystem && QuestSubsystem->GetCurrentObjective(Objective))
     {
@@ -1764,6 +2100,11 @@ void UVHVUIManagerComponent::EndConversationSession()
 
 void UVHVUIManagerComponent::ConfirmChoiceInput()
 {
+    if (CurrentUIState == EVHVUIState::MajorStinger)
+    {
+        return;
+    }
+
     if (CurrentUIState == EVHVUIState::Dialogue)
     {
         AdvanceConversation();

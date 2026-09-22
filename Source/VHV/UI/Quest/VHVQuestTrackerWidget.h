@@ -14,10 +14,14 @@ class VHV_API UVHVQuestTrackerWidget : public UVHVUserWidgetBase
 
 public:
     void SetQuestSubsystem(UVHVQuestSubsystem* InQuestSubsystem);
+    void BeginMajorStingerSuppression();
+    void EndMajorStingerSuppressionAndReveal();
+    bool IsMajorStingerSuppressed() const { return bUpdatesSuppressed; }
 
 protected:
     virtual void NativeConstruct() override;
     virtual void NativeDestruct() override;
+    virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
     UPROPERTY(BlueprintReadWrite, meta = (BindWidget))
     TObjectPtr<UTextBlock> QuestTitleText;
@@ -38,4 +42,8 @@ private:
 
     UPROPERTY()
     TObjectPtr<UVHVQuestSubsystem> QuestSubsystem;
+
+    bool bUpdatesSuppressed = false;
+    bool bRevealAnimating = false;
+    float RevealElapsed = 0.0f;
 };

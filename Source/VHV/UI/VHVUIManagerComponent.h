@@ -5,6 +5,7 @@
 #include "Core/VHVDialogueTypes.h"
 #include "Core/VHVConversationDataAsset.h"
 #include "Containers/Map.h"
+#include "UI/VHVMajorQuestStingerTypes.h"
 #include "VHVUIManagerComponent.generated.h"
 
 class UVHVPlayerInteractionComponent;
@@ -22,6 +23,7 @@ class UVHVMatchingCardWidget;
 class UVHVTextbookSubsystem;
 class UVHVQuestSubsystem;
 class UVHVQuestTrackerWidget;
+class UVHVMajorQuestStingerWidget;
 class UVHVStoryStateSubsystem;
 class UUserWidget;
 struct FVHVDialogueCheckpointSaveState;
@@ -36,7 +38,8 @@ enum class EVHVUIState : uint8
     LearningAsk,
     LearningHint,
     LearningFeedback,
-    LearningTeach
+    LearningTeach,
+    MajorStinger
 };
 
 UCLASS(ClassGroup=(VHV), meta=(BlueprintSpawnableComponent))
@@ -48,6 +51,12 @@ public:
     UVHVUIManagerComponent();
 
 protected:
+    struct FQueuedMajorStinger
+    {
+        FVHVMajorQuestStingerData Data;
+        bool bCompletesLearningActivity = false;
+    };
+
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
@@ -112,6 +121,9 @@ public:
 
     UPROPERTY()
     TObjectPtr<UVHVQuestTrackerWidget> QuestTrackerWidget;
+
+    UPROPERTY()
+    TObjectPtr<UVHVMajorQuestStingerWidget> MajorQuestStingerWidget;
 
     UPROPERTY()
     TObjectPtr<UVHVInteractionComponent> CurrentInteractionTarget;
@@ -207,6 +219,21 @@ public:
     UFUNCTION(BlueprintCallable, Category = "VHV|Textbook")
     bool SubmitObservation();
 
+    UFUNCTION(BlueprintCallable, Category = "VHV|UI")
+    bool ShowMajorQuestStinger(const FVHVMajorQuestStingerData& StingerData);
+
+    UFUNCTION(BlueprintPure, Category = "VHV|UI|Diagnostics")
+    bool IsMajorQuestStingerSequenceActive() const { return bMajorStingerSequenceActive; }
+
+    UFUNCTION(BlueprintPure, Category = "VHV|UI|Diagnostics")
+    bool IsGameplayUIActive() const { return CurrentUIState == EVHVUIState::Gameplay; }
+
+    UFUNCTION(BlueprintPure, Category = "VHV|UI|Diagnostics")
+    bool IsLearningAskUIActive() const { return CurrentUIState == EVHVUIState::LearningAsk; }
+
+    UFUNCTION(BlueprintPure, Category = "VHV|UI|Diagnostics")
+    bool IsQuestTrackerSuppressedForMajorStinger() const;
+
     /** Routes the existing IA_Interact action to the active modal activity. */
     bool HandleActivityInteractionInput();
 
@@ -227,6 +254,11 @@ protected:
     TObjectPtr<UVHVStoryStateSubsystem> StoryStateSubsystem;
 
     bool bCurrentDialogueNodeCompleted = false;
+    bool bAwaitingContinuousTeachingResult = false;
+    bool bStartingMajorStingerActivity = false;
+    bool bMajorStingerSequenceActive = false;
+    bool bCurrentMajorStingerCompletesActivity = false;
+    TArray<FQueuedMajorStinger> PendingMajorStingers;
 
     UFUNCTION()
     void HandleInteractionTargetChanged(UVHVInteractionComponent* NewTarget);
@@ -239,6 +271,15 @@ protected:
 
     UFUNCTION()
     void HandleQuestObjectiveActivationRequested(FName QuestID, FName ObjectiveID);
+    UFUNCTION()
+    void HandleQuestStarted(FName QuestID);
+    UFUNCTION()
+    void HandleQuestCompleted(FName QuestID);
+    void HandleMajorQuestStingerFinished();
+    bool QueueMajorQuestStinger(const FVHVMajorQuestStingerData& StingerData, bool bCompletesLearningActivity = false);
+    bool PlayNextMajorQuestStinger();
+    void FinishMajorQuestStingerSequence();
+    void ReconcileUIStateAfterMajorStinger();
 
     void EnsureFeedbackWidget();
     void EnsureObservationWidget();
@@ -259,6 +300,7 @@ protected:
     void AdvanceFeedback();
     void AdvanceHint();
     void AdvanceTeach();
+    void CompleteTeachingAdvanceAfterFade();
     void SetMovementLocked(bool bLocked);
     UUserWidget* ResolveModalFocusTarget(EVHVUIState State) const;
     void ApplyModalInputAndFocus(EVHVUIState State);

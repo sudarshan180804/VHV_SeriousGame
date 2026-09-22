@@ -56,6 +56,14 @@ namespace
         }
     }
 
+    void ActivateQuestObjectiveCommand(const TArray<FString>& Args, UWorld* World)
+    {
+        if (RequireArgumentCount(Args, 0, TEXT("vhv.quest.activate")))
+        {
+            if (UVHVDeveloperSubsystem* Developer = ResolveDeveloperSubsystem(World)) Developer->ActivateCurrentObjective();
+        }
+    }
+
     void SetFlagCommand(const TArray<FString>& Args, UWorld* World)
     {
         if (RequireArgumentCount(Args, 1, TEXT("vhv.story.setflag <FlagID>")))
@@ -126,6 +134,8 @@ namespace
         TEXT("vhv.quest.complete"), TEXT("Complete the current objective through normal quest progression."), FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&CompleteQuestCommand), ECVF_Cheat);
     static FAutoConsoleCommandWithWorldAndArgs GRestartQuestCommand(
         TEXT("vhv.quest.restart"), TEXT("Restart the active authored quest at its first objective."), FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&RestartQuestCommand), ECVF_Cheat);
+    static FAutoConsoleCommandWithWorldAndArgs GActivateQuestObjectiveCommand(
+        TEXT("vhv.quest.activate"), TEXT("Request the active quest objective's normal presentation/interaction path."), FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&ActivateQuestObjectiveCommand), ECVF_Cheat);
     static FAutoConsoleCommandWithWorldAndArgs GSetFlagCommand(
         TEXT("vhv.story.setflag"), TEXT("Usage: vhv.story.setflag <FlagID>"), FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&SetFlagCommand), ECVF_Cheat);
     static FAutoConsoleCommandWithWorldAndArgs GClearFlagCommand(
@@ -206,6 +216,15 @@ bool UVHVDeveloperSubsystem::RestartCurrentQuest()
 {
 #if !UE_BUILD_SHIPPING
     return QuestSubsystem && QuestSubsystem->DebugRestartCurrentQuest();
+#else
+    return false;
+#endif
+}
+
+bool UVHVDeveloperSubsystem::ActivateCurrentObjective()
+{
+#if !UE_BUILD_SHIPPING
+    return QuestSubsystem && QuestSubsystem->RequestCurrentObjectiveActivation();
 #else
     return false;
 #endif

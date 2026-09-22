@@ -52,6 +52,10 @@ public:
     UFUNCTION(BlueprintPure, Category = "VHV|Quest")
     bool GetQuestState(FName QuestID, FVHVQuestRuntimeState& OutState) const;
 
+    /** Read-only access to authored quest metadata for presentation and journal clients. */
+    UFUNCTION(BlueprintPure, Category = "VHV|Quest")
+    bool GetQuestDefinition(FName QuestID, FVHVQuestDefinition& OutDefinition) const;
+
     UFUNCTION(BlueprintPure, Category = "VHV|Quest")
     FVHVQuestArcRuntimeState GetRuntimeState() const;
 

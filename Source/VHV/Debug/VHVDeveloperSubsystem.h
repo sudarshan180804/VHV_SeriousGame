@@ -28,6 +28,9 @@ public:
     bool RestartCurrentQuest();
 
     UFUNCTION(BlueprintCallable, Category = "VHV|Developer")
+    bool ActivateCurrentObjective();
+
+    UFUNCTION(BlueprintCallable, Category = "VHV|Developer")
     bool SetStoryFlag(FName FlagID);
 
     UFUNCTION(BlueprintCallable, Category = "VHV|Developer")

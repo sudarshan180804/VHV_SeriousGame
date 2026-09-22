@@ -28,6 +28,11 @@ namespace
     constexpr float ContinueClusterWidth = 262.0f;
     constexpr float ContinueHeight = 52.0f;
     constexpr float TakeawayCardMinHeight = 116.0f;
+    constexpr float LargeMediaMaxWidth = 1130.0f;
+    constexpr float LargeMediaMaxHeight = 515.0f;
+    constexpr float ContentFadeOutDuration = 0.12f;
+    constexpr float ContentFadeInDuration = 0.18f;
+    constexpr float ContentTransitionOffset = 8.0f;
 
     FText TeachingCategoryText(const ETextbookTeachingCategory Category)
     {
@@ -240,11 +245,43 @@ void UVHVTeachWidget::ReleaseSlateResources(const bool bReleaseChildren)
     MediaBrushes.Reset();
     LoadedMediaTextures.Reset();
     LoadedLargeMediaTexture = nullptr;
+    PendingContentSwap.Unbind();
+    ContentTransitionPhase = EContentTransitionPhase::None;
 }
 
 void UVHVTeachWidget::SetOwningUIManager(UVHVUIManagerComponent* InUIManager)
 {
     OwningUIManager = InUIManager;
+}
+
+bool UVHVTeachWidget::BeginContentTransition(const FSimpleDelegate& OnFadeOutComplete)
+{
+    if (!ActivityContentSlate || ContentTransitionPhase != EContentTransitionPhase::None)
+    {
+        return false;
+    }
+
+    PendingContentSwap = OnFadeOutComplete;
+    ContentTransitionElapsed = 0.0f;
+    ContentTransitionPhase = EContentTransitionPhase::FadingOut;
+    return true;
+}
+
+void UVHVTeachWidget::CancelContentTransition()
+{
+    PendingContentSwap.Unbind();
+    ContentTransitionElapsed = 0.0f;
+    ContentTransitionPhase = EContentTransitionPhase::None;
+    if (ActivityContentSlate)
+    {
+        ActivityContentSlate->SetRenderOpacity(1.0f);
+        ActivityContentSlate->SetRenderTransform(FSlateRenderTransform());
+    }
+}
+
+bool UVHVTeachWidget::IsContentTransitionActive() const
+{
+    return ContentTransitionPhase != EContentTransitionPhase::None;
 }
 
 void UVHVTeachWidget::NativeConstruct()
@@ -265,6 +302,57 @@ void UVHVTeachWidget::NativeConstruct()
 void UVHVTeachWidget::NativeTick(const FGeometry& MyGeometry, const float InDeltaTime)
 {
     Super::NativeTick(MyGeometry, InDeltaTime);
+
+    if (ContentTransitionPhase == EContentTransitionPhase::FadingOut)
+    {
+        ContentTransitionElapsed = FMath::Min(
+            ContentTransitionElapsed + InDeltaTime, ContentFadeOutDuration);
+        const float Alpha = FMath::Clamp(ContentTransitionElapsed / ContentFadeOutDuration, 0.0f, 1.0f);
+        if (ActivityContentSlate)
+        {
+            ActivityContentSlate->SetRenderOpacity(1.0f - Alpha);
+            ActivityContentSlate->SetRenderTransform(FSlateRenderTransform(
+                FVector2D(0.0f, FMath::Lerp(0.0f, -ContentTransitionOffset, Alpha))));
+        }
+
+        if (Alpha >= 1.0f)
+        {
+            ContentTransitionElapsed = 0.0f;
+            ContentTransitionPhase = EContentTransitionPhase::FadingIn;
+            const FSimpleDelegate ContentSwap = PendingContentSwap;
+            PendingContentSwap.Unbind();
+            ContentSwap.ExecuteIfBound();
+        }
+        return;
+    }
+
+    if (ContentTransitionPhase == EContentTransitionPhase::FadingIn)
+    {
+        ContentTransitionElapsed = FMath::Min(
+            ContentTransitionElapsed + InDeltaTime, ContentFadeInDuration);
+        const float RawAlpha = FMath::Clamp(ContentTransitionElapsed / ContentFadeInDuration, 0.0f, 1.0f);
+        const float Alpha = FMath::InterpEaseOut(0.0f, 1.0f, RawAlpha, 3.0f);
+        if (ActivityContentSlate)
+        {
+            ActivityContentSlate->SetRenderOpacity(Alpha);
+            ActivityContentSlate->SetRenderTransform(FSlateRenderTransform(
+                FVector2D(0.0f, FMath::Lerp(ContentTransitionOffset, 0.0f, Alpha))));
+        }
+        for (const TSharedPtr<SWidget>& Card : TakeawayCardsSlate)
+        {
+            if (Card)
+            {
+                Card->SetRenderOpacity(1.0f);
+                Card->SetRenderTransform(FSlateRenderTransform());
+            }
+        }
+
+        if (RawAlpha >= 1.0f)
+        {
+            ContentTransitionPhase = EContentTransitionPhase::None;
+        }
+        return;
+    }
 
     EntranceElapsed = FMath::Min(
         EntranceElapsed + InDeltaTime,
@@ -369,6 +457,7 @@ void UVHVTeachWidget::RefreshSlateContent()
 
     ReadingAreaSlate->ClearChildren();
     TakeawaysSectionSlate->ClearChildren();
+    TakeawaysSectionSlate->SetVisibility(EVisibility::Collapsed);
     TakeawayCardsSlate.Reset();
     MediaBrushes.Reset();
     LoadedMediaTextures.Reset();
@@ -382,51 +471,25 @@ void UVHVTeachWidget::RefreshSlateContent()
         LargeMediaBrush.SetImageSize(FVector2D(
             LoadedLargeMediaTexture->GetSizeX(), LoadedLargeMediaTexture->GetSizeY()));
 
-        TSharedRef<SVerticalBox> LargeMediaContent = SNew(SVerticalBox)
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .HAlign(HAlign_Center)
-            [
-                SNew(SBox)
-                .WidthOverride(980.0f)
-                .HeightOverride(390.0f)
-                [
-                    SNew(SBorder)
-                    .BorderImage(&MediaSurfaceBrush)
-                    .Padding(FMargin(8.0f))
-                    [
-                        SNew(SScaleBox)
-                        .Stretch(EStretch::ScaleToFit)
-                        .StretchDirection(EStretchDirection::Both)
-                        [
-                            SNew(SImage)
-                            .Image(&LargeMediaBrush)
-                        ]
-                    ]
-                ]
-            ];
-
-        if (!TeachingContent.MediaCaption.TrimStartAndEnd().IsEmpty())
-        {
-            LargeMediaContent->AddSlot()
-                .AutoHeight()
-                .HAlign(HAlign_Center)
-                .Padding(FMargin(24.0f, 9.0f, 24.0f, 0.0f))
-                [
-                    SNew(STextBlock)
-                    .Font(VHVActivityUIStyle::RegularFont(13))
-                    .ColorAndOpacity(VHVActivityUIStyle::MatchingInkMuted())
-                    .Justification(ETextJustify::Center)
-                    .AutoWrapText(true)
-                    .Text(FText::FromString(TeachingContent.MediaCaption))
-                ];
-        }
+        const FVector2D NaturalSize(
+            FMath::Max(1, LoadedLargeMediaTexture->GetSizeX()),
+            FMath::Max(1, LoadedLargeMediaTexture->GetSizeY()));
+        const float UniformScale = FMath::Min(
+            LargeMediaMaxWidth / NaturalSize.X,
+            LargeMediaMaxHeight / NaturalSize.Y);
+        const FVector2D DisplaySize = NaturalSize * UniformScale;
 
         ReadingAreaSlate->AddSlot()
             .AutoHeight()
             .HAlign(HAlign_Center)
             [
-                LargeMediaContent
+                SNew(SBox)
+                .WidthOverride(DisplaySize.X)
+                .HeightOverride(DisplaySize.Y)
+                [
+                    SNew(SImage)
+                    .Image(&LargeMediaBrush)
+                ]
             ];
         return;
     }
@@ -550,6 +613,8 @@ void UVHVTeachWidget::RefreshSlateContent()
     {
         return;
     }
+
+    TakeawaysSectionSlate->SetVisibility(EVisibility::Visible);
 
     TakeawaysSectionSlate->AddSlot()
         .AutoHeight()

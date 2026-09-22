@@ -33,6 +33,10 @@ public:
     UFUNCTION()
     void SetOwningUIManager(UVHVUIManagerComponent* InUIManager);
 
+    bool BeginContentTransition(const FSimpleDelegate& OnFadeOutComplete);
+    void CancelContentTransition();
+    bool IsContentTransitionActive() const;
+
 protected:
     virtual TSharedRef<SWidget> RebuildWidget() override;
     virtual void ReleaseSlateResources(bool bReleaseChildren) override;
@@ -65,6 +69,17 @@ private:
     FTeachingContent TeachingContent;
     bool bHasTeachingContent = false;
     float EntranceElapsed = 0.0f;
+
+    enum class EContentTransitionPhase : uint8
+    {
+        None,
+        FadingOut,
+        FadingIn
+    };
+
+    EContentTransitionPhase ContentTransitionPhase = EContentTransitionPhase::None;
+    float ContentTransitionElapsed = 0.0f;
+    FSimpleDelegate PendingContentSwap;
 
     TSharedPtr<SConstraintCanvas> ActivityContentSlate;
     TSharedPtr<STextBlock> CategoryTextSlate;

@@ -167,6 +167,20 @@ bool UVHVQuestSubsystem::GetCurrentObjective(FVHVQuestObjectiveDefinition& OutOb
     return true;
 }
 
+bool UVHVQuestSubsystem::GetQuestDefinition(
+    const FName QuestID, FVHVQuestDefinition& OutDefinition) const
+{
+    const FVHVQuestDefinition* Definition = FindQuestDefinition(QuestID);
+    if (!Definition)
+    {
+        OutDefinition = FVHVQuestDefinition();
+        return false;
+    }
+
+    OutDefinition = *Definition;
+    return true;
+}
+
 bool UVHVQuestSubsystem::CompleteCurrentObjective()
 {
     FVHVQuestRuntimeState* QuestState = FindQuestState(RuntimeState.ActiveQuestID);

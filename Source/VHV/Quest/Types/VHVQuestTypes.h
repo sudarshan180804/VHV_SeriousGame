@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "NPC/Types/VHVNPCBehaviorTypes.h"
 #include "Story/Types/VHVStoryStateTypes.h"
+#include "UI/VHVMajorQuestStingerTypes.h"
 #include "VHVQuestTypes.generated.h"
 
 class UVHVConversationDataAsset;
@@ -173,6 +174,14 @@ struct VHV_API FVHVQuestDefinition
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Quest")
     bool bAutoStartNextQuest = true;
+
+    /** Optional non-interactive presentation shown when this quest becomes active. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Quest|Presentation")
+    FVHVMajorQuestStingerData StartStinger;
+
+    /** Optional non-interactive presentation shown when this quest completes. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Quest|Presentation")
+    FVHVMajorQuestStingerData CompletionStinger;
 };
 
 USTRUCT(BlueprintType)

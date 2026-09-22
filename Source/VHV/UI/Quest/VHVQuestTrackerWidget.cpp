@@ -3,6 +3,13 @@
 #include "Components/TextBlock.h"
 #include "Engine/GameInstance.h"
 #include "Quest/Systems/VHVQuestSubsystem.h"
+#include "VHV.h"
+
+namespace
+{
+    constexpr float TrackerRevealDuration = 0.22f;
+    constexpr float TrackerRevealOffsetX = -10.0f;
+}
 
 void UVHVQuestTrackerWidget::SetQuestSubsystem(UVHVQuestSubsystem* InQuestSubsystem)
 {
@@ -32,6 +39,59 @@ void UVHVQuestTrackerWidget::NativeDestruct()
 {
     UnbindFromQuestSubsystem();
     Super::NativeDestruct();
+}
+
+void UVHVQuestTrackerWidget::NativeTick(
+    const FGeometry& MyGeometry, const float InDeltaTime)
+{
+    Super::NativeTick(MyGeometry, InDeltaTime);
+    if (!bRevealAnimating)
+    {
+        return;
+    }
+
+    RevealElapsed = FMath::Min(RevealElapsed + InDeltaTime, TrackerRevealDuration);
+    const float RawAlpha = FMath::Clamp(RevealElapsed / TrackerRevealDuration, 0.0f, 1.0f);
+    const float Alpha = FMath::InterpEaseOut(0.0f, 1.0f, RawAlpha, 3.0f);
+    SetRenderOpacity(Alpha);
+    SetRenderTranslation(FVector2D(FMath::Lerp(TrackerRevealOffsetX, 0.0f, Alpha), 0.0f));
+
+    if (RawAlpha >= 1.0f)
+    {
+        bRevealAnimating = false;
+    }
+}
+
+void UVHVQuestTrackerWidget::BeginMajorStingerSuppression()
+{
+    if (!bUpdatesSuppressed)
+    {
+        UE_LOG(LogVHV, Log, TEXT("[VHVQuestTracker] Suppressed for major stinger sequence."));
+    }
+    bUpdatesSuppressed = true;
+    bRevealAnimating = false;
+    SetRenderOpacity(1.0f);
+    SetRenderTranslation(FVector2D::ZeroVector);
+    SetVisibility(ESlateVisibility::Collapsed);
+}
+
+void UVHVQuestTrackerWidget::EndMajorStingerSuppressionAndReveal()
+{
+    if (!bUpdatesSuppressed)
+    {
+        return;
+    }
+
+    bUpdatesSuppressed = false;
+    RefreshTracker();
+    UE_LOG(LogVHV, Log, TEXT("[VHVQuestTracker] Refreshed once after major stinger sequence."));
+    if (GetVisibility() != ESlateVisibility::Collapsed)
+    {
+        RevealElapsed = 0.0f;
+        bRevealAnimating = true;
+        SetRenderOpacity(0.0f);
+        SetRenderTranslation(FVector2D(TrackerRevealOffsetX, 0.0f));
+    }
 }
 
 void UVHVQuestTrackerWidget::HandleQuestUpdated(FName QuestID)
@@ -64,6 +124,11 @@ void UVHVQuestTrackerWidget::UnbindFromQuestSubsystem()
 
 void UVHVQuestTrackerWidget::RefreshTracker()
 {
+    if (bUpdatesSuppressed)
+    {
+        return;
+    }
+
     FVHVQuestJournalEntry Quest;
     const bool bHasActiveTrackedQuest = QuestSubsystem && QuestSubsystem->GetTrackedQuest(Quest) && Quest.Status == EVHVQuestStatus::Active;
     if (!bHasActiveTrackedQuest)

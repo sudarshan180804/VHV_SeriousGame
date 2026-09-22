@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "VHV/Story/Types/VHVStoryStateTypes.h"
+#include "UI/VHVMajorQuestStingerTypes.h"
 #include "VHVTextbookTypes.generated.h"
 
 class UTexture2D;
@@ -371,6 +372,10 @@ struct FTextbookActivityData
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Teaching")
     FTeachingContent Teaching;
+
+    /** Optional automatic full-screen presentation used instead of the teaching board. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation")
+    FVHVMajorQuestStingerData MajorStinger;
 
     // --------------------------------------------------------
     // Hints

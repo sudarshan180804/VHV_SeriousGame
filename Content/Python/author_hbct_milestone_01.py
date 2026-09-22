@@ -134,6 +134,16 @@ def evidence_tagging(stage1_prompt, evidence_cards, stage2_prompt, obstacle_card
         takeaway_cards=takeaways)
 
 
+def major_stinger(label, title, subtitle="", hold_duration=1.8):
+    return struct(
+        unreal.VHVMajorQuestStingerData,
+        label=label,
+        title=title,
+        subtitle=subtitle,
+        intro_sound=None,
+        hold_duration=hold_duration)
+
+
 def activity(tag_name, title, activity_type, prompt, teaching_data, **properties):
     values = {
         "activity_tag": tag(tag_name),
@@ -141,7 +151,7 @@ def activity(tag_name, title, activity_type, prompt, teaching_data, **properties
         "activity_type": activity_type,
         "narrative_context": "",
         "prompt_text": prompt,
-        "correct_feedback": "That is the key idea.",
+        "correct_feedback": "",
         "incorrect_feedback": "Look for what helps the person find their own reason and next step.",
         "partial_feedback": "You identified part of the idea.",
         "teaching": teaching_data,
@@ -222,10 +232,14 @@ def build_activities():
             observation,
             "Continue to begin the first behavior-change technique.",
             teaching(
-                "TECHNIQUE 1 — BUILDING MOTIVATION",
-                "Before someone changes behavior, something has to move inside them first.",
-                ["Discover what matters.", "Explore obstacles.", "Offer choices and make a small plan."],
-                unreal.TextbookTeachingCategory.TECHNIQUE)),
+                "",
+                "",
+                [],
+                unreal.TextbookTeachingCategory.TECHNIQUE),
+            major_stinger=major_stinger(
+                "TECHNIQUE 1",
+                "BUILDING MOTIVATION",
+                "HEALTH BEHAVIOR CHANGE")),
         activity(
             "VHV.Activity.HBCT.Motivation.PrasertObservation",
             "Observe Uncle Prasert",
@@ -238,7 +252,8 @@ def build_activities():
             media=[
                 observation_media("HBCT_PRASERT_HABITS", "Sweet drinks, snack packets, television, and little movement."),
                 observation_media("HBCT_PRASERT_READINESS", "'I am too tired' and 'I will start tomorrow' signal hesitation."),
-            ]),
+            ],
+            correct_feedback="Good observation. Readiness and personal priorities matter before advice."),
         activity(
             "VHV.Activity.HBCT.Motivation.MotivationLesson",
             "What Is Motivation Building?",
@@ -253,7 +268,8 @@ def build_activities():
                     "ASK WHAT MATTERS — Connect health change to an important life goal.",
                     "APPRECIATE — Recognize intention and effort through supportive conversation.",
                 ],
-                unreal.TextbookTeachingCategory.KEY_IDEA)),
+                unreal.TextbookTeachingCategory.KEY_IDEA),
+            correct_feedback="Exactly. Motivation grows when support connects change to what matters personally."),
         activity(
             "VHV.Activity.HBCT.Motivation.DemoReflection",
             "Reflect on the Demonstration",
@@ -316,7 +332,8 @@ def build_activities():
                 ], 1),
             attempt_policy=attempt_policy(
                 "Look for the future Mali says she personally wants.",
-                "Mali's wish to stay independent and attend her grandchild's graduation is the personal goal that can support change.")),
+                "Mali's wish to stay independent and attend her grandchild's graduation is the personal goal that can support change."),
+            correct_feedback="Exactly. Mali's own hope for independence and her grandchild's graduation gives change personal meaning."),
         activity(
             "VHV.Activity.HBCT.Motivation.MaliObstacle",
             "Understand Mali's Obstacle",
@@ -336,7 +353,8 @@ def build_activities():
                 ], 1),
             attempt_policy=attempt_policy(
                 "Listen for the feeling that makes refusing the treats difficult.",
-                "Mali understands the health risk, but she worries that refusing her children's gifts will hurt their feelings. The obstacle is social and emotional.")),
+                "Mali understands the health risk, but she worries that refusing her children's gifts will hurt their feelings. The obstacle is social and emotional."),
+            correct_feedback="Correct. The obstacle is her concern for her children's feelings, not a lack of health knowledge."),
         activity(
             "VHV.Activity.HBCT.Motivation.SupportiveInformation",
             "Offer Supportive Information",
@@ -377,25 +395,8 @@ def build_activities():
                 ], 1),
             attempt_policy=attempt_policy(
                 "Choose the summary that links Mali's own goal to the specific step she selected.",
-                "A useful summary names what matters, acknowledges the obstacle, and repeats a clear next action that Mali chose herself.")),
-        activity(
-            "VHV.Activity.HBCT.Motivation.QuestComplete",
-            "QUEST COMPLETE",
-            observation,
-            "Continue to close Building Motivation.",
-            teaching(
-                "QUEST COMPLETE — BUILDING MOTIVATION",
-                "You observed readiness, discovered a personal reason, explored an obstacle, offered useful choices, and summarized a feasible plan.",
-                ["Guide rather than command.", "Find what matters.", "End with a small plan the person owns."])),
-        activity(
-            "VHV.Activity.HBCT.Motivation.GoalSettingTeaser",
-            "NEXT TECHNIQUE",
-            observation,
-            "Continue to preview the next technique.",
-            teaching(
-                "TECHNIQUE 2 — GOAL-SETTING FOR HEALTH BEHAVIOR CHANGE",
-                "Coming next: turn motivation into a clear health-behavior goal.",
-                ["Technique 2 is a teaser only in this milestone."])),
+                "A useful summary names what matters, acknowledges the obstacle, and repeats a clear next action that Mali chose herself."),
+            correct_feedback="Exactly. The summary connects Mali's goal and obstacle to the clear first step she chose."),
     ]
 
 
@@ -547,9 +548,7 @@ def create_conversations():
         [
             text_node("Final_01", "Instructor", "Motivation grows from what matters personally. A VHV guides rather than commands.", "Final_02", "VHV.Participant.Instructor"),
             text_node("Final_02", "Instructor", "Discover the person's important life goal, identify obstacles, offer useful choices, and finish with a small feasible plan.", "Final_03", "VHV.Participant.Instructor"),
-            text_node("Final_03", "Instructor", "The key is not to push people. The key is to help them discover why change matters to them.", "Final_04", "VHV.Participant.Instructor"),
-            learning_node("Final_04", "VHV.Activity.HBCT.Motivation.QuestComplete", "Final_05"),
-            learning_node("Final_05", "VHV.Activity.HBCT.Motivation.GoalSettingTeaser"),
+            text_node("Final_03", "Instructor", "The key is not to push people. The key is to help them discover why change matters to them.", speaker_tag="VHV.Participant.Instructor"),
         ])
 
     assets = {}
@@ -738,6 +737,10 @@ def configure_arc(arc, level, conversations):
                   conversation=conversations["DA_Conversation_HBCT_FinalDebrief"],
                   entry_node_id="Final_01", auto_start=False),
     ]
+    goal_setting = [
+        objective("O01_BeginGoalSetting", "Meet the Instructor to begin Goal Setting", q.CUSTOM_EVENT,
+                  custom_event_tag=tag("VHV.CustomEvent.HBCT.GoalSetting.Begin")),
+    ]
     quests = [
         struct(unreal.VHVQuestDefinition,
                quest_id="Q_HBCT_00_INTRO",
@@ -754,7 +757,19 @@ def configure_arc(arc, level, conversations):
                category=unreal.VHVQuestCategory.MAIN_STORY,
                objectives=motivation,
                auto_track=True,
-               auto_start_next_quest=False),
+               auto_start_next_quest=True,
+               completion_stinger=major_stinger(
+                   "QUEST COMPLETE", "BUILDING MOTIVATION", "TECHNIQUE 1", 1.9)),
+        struct(unreal.VHVQuestDefinition,
+               quest_id="Q_HBCT_02_GOAL_SETTING",
+               quest_title="Technique 2 — Goal Setting",
+               quest_description="Turn motivation into a clear, feasible health behavior goal.",
+               category=unreal.VHVQuestCategory.MAIN_STORY,
+               objectives=goal_setting,
+               auto_track=True,
+               auto_start_next_quest=False,
+               start_stinger=major_stinger(
+                   "TECHNIQUE 2", "GOAL SETTING", "HEALTH BEHAVIOR CHANGE", 1.9)),
     ]
     arc.set_editor_properties({
         "quest_arc_id": "HBCT",
@@ -1050,8 +1065,8 @@ def validate_content_integrity(level, conversations, arc):
         str(unreal.GameplayTagLibrary.get_tag_name(item.get_editor_property("activity_tag"))).split(".")[-1]
         for item in authored_activities
     }
-    if len(authored_activities) != 13 or len(activity_ids) != 13:
-        raise RuntimeError("HBCT milestone must contain 13 uniquely addressed activities")
+    if len(authored_activities) != 11 or len(activity_ids) != 11:
+        raise RuntimeError("HBCT milestone must contain 11 uniquely addressed activities")
 
     placeholder = "HBCT production learning content."
     activities_by_id = {}
@@ -1089,6 +1104,13 @@ def validate_content_integrity(level, conversations, arc):
         if actual != expected_category:
             raise RuntimeError("{} has teaching category {}; expected {}".format(
                 activity_id, actual, expected_category))
+
+    technique_stinger = activities_by_id["TechniqueTitle"].get_editor_property("major_stinger")
+    if (str(technique_stinger.get_editor_property("label")) != "TECHNIQUE 1"
+            or str(technique_stinger.get_editor_property("title")) != "BUILDING MOTIVATION"
+            or str(technique_stinger.get_editor_property("subtitle")) != "HEALTH BEHAVIOR CHANGE"
+            or abs(technique_stinger.get_editor_property("hold_duration") - 1.8) > 0.001):
+        raise RuntimeError("TechniqueTitle major stinger is not authored correctly")
 
     market_evidence = activities_by_id["MarketObservation"].get_editor_property("evidence_tagging")
     if (not market_evidence.get_editor_property("use_evidence_tagging")
@@ -1144,15 +1166,39 @@ def validate_content_integrity(level, conversations, arc):
             "O07_ObserveAppreciation", "O08_LearnMotivationMethods", "O09_ReachMaliHouse",
             "O10_FindWhatMatters", "O11_FindObstacle", "O12_OfferSupportiveInformation",
             "O13_SummarizePlan", "O14_FinalDebrief"],
+        "Q_HBCT_02_GOAL_SETTING": ["O01_BeginGoalSetting"],
     }
-    if len(quests) != 2:
-        raise RuntimeError("HBCT milestone must contain exactly two quests")
+    if len(quests) != 3:
+        raise RuntimeError("HBCT transition shell must contain exactly three quests")
     for quest in quests:
         quest_id = str(quest.get_editor_property("quest_id"))
         objective_ids = [str(item.get_editor_property("objective_id"))
                          for item in quest.get_editor_property("objectives")]
         if objective_ids != expected.get(quest_id):
             raise RuntimeError("Unexpected objective sequence for {}: {}".format(quest_id, objective_ids))
+
+    motivation_quest = next(quest for quest in quests
+                            if str(quest.get_editor_property("quest_id")) == "Q_HBCT_01_MOTIVATION")
+    completion_stinger = motivation_quest.get_editor_property("completion_stinger")
+    if (str(completion_stinger.get_editor_property("label")) != "QUEST COMPLETE"
+            or str(completion_stinger.get_editor_property("title")) != "BUILDING MOTIVATION"
+            or str(completion_stinger.get_editor_property("subtitle")) != "TECHNIQUE 1"
+            or not motivation_quest.get_editor_property("auto_start_next_quest")):
+        raise RuntimeError("Building Motivation completion transition is not authored correctly")
+
+    goal_setting_quest = next(quest for quest in quests
+                              if str(quest.get_editor_property("quest_id")) == "Q_HBCT_02_GOAL_SETTING")
+    start_stinger = goal_setting_quest.get_editor_property("start_stinger")
+    if (str(start_stinger.get_editor_property("label")) != "TECHNIQUE 2"
+            or str(start_stinger.get_editor_property("title")) != "GOAL SETTING"
+            or str(start_stinger.get_editor_property("subtitle")) != "HEALTH BEHAVIOR CHANGE"):
+        raise RuntimeError("Goal Setting start transition is not authored correctly")
+
+    final_nodes = conversations["DA_Conversation_HBCT_FinalDebrief"].get_editor_property(
+        "conversation").get_editor_property("nodes")
+    if ([str(node.get_editor_property("node_id")) for node in final_nodes]
+            != ["Final_01", "Final_02", "Final_03"]):
+        raise RuntimeError("Final debrief still contains obsolete presentation activity nodes")
 
 
 def validate_attempt_runtime(level):
@@ -1230,7 +1276,7 @@ def run():
     configure_map(ambient_assets)
     configure_player_controller(level, arc)
     validate_map_and_defaults(level, arc)
-    unreal.log("{} Authored {} activities, {} conversations, {} ambient sequences, 2 quests, and the production level bindings.".format(
+    unreal.log("{} Authored {} activities, {} conversations, {} ambient sequences, 3 quests, and the production level bindings.".format(
         LOG, len(build_activities()), len(conversations), len(ambient_assets)))
 
 
