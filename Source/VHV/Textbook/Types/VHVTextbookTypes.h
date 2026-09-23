@@ -228,6 +228,24 @@ struct FTeachingContent
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Teaching|Media", meta = (MultiLine = "true"))
     FString MediaCaption;
+
+    /** True only when this struct contains something worth presenting on a teaching screen. */
+    bool HasMeaningfulContent() const
+    {
+        if (!Title.TrimStartAndEnd().IsEmpty()
+            || !Content.TrimStartAndEnd().IsEmpty()
+            || !MediaCaption.TrimStartAndEnd().IsEmpty()
+            || !MediaTexture.IsNull()
+            || !Media.IsEmpty())
+        {
+            return true;
+        }
+
+        return KeyTakeaways.ContainsByPredicate([](const FString& Takeaway)
+        {
+            return !Takeaway.TrimStartAndEnd().IsEmpty();
+        });
+    }
 };
 
 // ============================================================
@@ -415,6 +433,26 @@ struct FTextbookActivityData
     TArray<FVHVStoryEffect> FailureEffects;
 
     FString GetEffectiveActivityID() const { return VHVAuthoringReferences::ResolveStringID(ActivityTag, ActivityID, TEXT("VHV.Activity")); }
+
+    FString GetFeedbackTextForResult(const bool bWasCorrect, const bool bWasPartial) const
+    {
+        if (bWasCorrect)
+        {
+            return CorrectFeedback;
+        }
+
+        if (AttemptPolicy.bEnabled && !AttemptPolicy.FinalIncorrectExplanation.TrimStartAndEnd().IsEmpty())
+        {
+            return AttemptPolicy.FinalIncorrectExplanation;
+        }
+
+        return bWasPartial ? PartialFeedback : IncorrectFeedback;
+    }
+
+    bool HasMeaningfulFeedbackForResult(const bool bWasCorrect, const bool bWasPartial) const
+    {
+        return !GetFeedbackTextForResult(bWasCorrect, bWasPartial).TrimStartAndEnd().IsEmpty();
+    }
 };
 
 // ============================================================

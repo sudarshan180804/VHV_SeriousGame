@@ -828,14 +828,14 @@ void UVHVQuestSubsystem::HandleStoryFlagChanged(const FName FlagID, const bool b
 {
     (void)FlagID;
     (void)bValue;
-    ReevaluateWaitingObjective();
+    if (!TryCompleteCurrentObjectiveFromStoryState()) ReevaluateWaitingObjective();
 }
 
 void UVHVQuestSubsystem::HandleStoryCounterChanged(const FName CounterID, const int32 NewValue)
 {
     (void)CounterID;
     (void)NewValue;
-    ReevaluateWaitingObjective();
+    if (!TryCompleteCurrentObjectiveFromStoryState()) ReevaluateWaitingObjective();
 }
 
 bool UVHVQuestSubsystem::ValidateQuestArc(const UVHVQuestArcData* QuestArc) const
@@ -1056,6 +1056,18 @@ bool UVHVQuestSubsystem::ValidateQuestArc(const UVHVQuestArcData* QuestArc) cons
                         *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString(), *Condition.StateTag.ToString(), *VHVAuthoringReferences::ResolveTagLeaf(Condition.StateTag).ToString(), *Condition.StateID.ToString());
                 }
             }
+            for (const FVHVStoryCondition& Condition : Objective.CompletionConditions.Conditions)
+            {
+                const FName StateID = Condition.GetEffectiveStateID();
+                const bool bFlagCondition = Condition.ConditionType == EVHVStoryConditionType::FlagSet || Condition.ConditionType == EVHVStoryConditionType::FlagNotSet;
+                const TCHAR* ExpectedCategory = bFlagCondition ? TEXT("VHV.Story.Flag") : TEXT("VHV.Story.Counter");
+                if (StateID.IsNone() || !VHVAuthoringReferences::IsValidReferenceTag(Condition.StateTag, ExpectedCategory))
+                {
+                    UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Quest '%s' objective '%s' has an invalid Completion Condition tag '%s' beneath %s."),
+                        *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString(), *Condition.StateTag.ToString(), ExpectedCategory);
+                    bValid = false;
+                }
+            }
             for (const FVHVStoryEffect& Effect : Objective.CompletionEffects)
             {
                 const FName StateID = Effect.GetEffectiveStateID();
@@ -1162,7 +1174,7 @@ void UVHVQuestSubsystem::TryActivateCurrentObjective()
         return;
     }
 
-    if (!Objective->ActivationConditions.Conditions.IsEmpty())
+    if (!Objective->ActivationConditions.Conditions.IsEmpty() || !Objective->CompletionConditions.Conditions.IsEmpty())
     {
         EnsureStoryStateDelegateBindings();
     }
@@ -1183,6 +1195,10 @@ void UVHVQuestSubsystem::TryActivateCurrentObjective()
 
     bCurrentObjectiveWaitingOnConditions = false;
     bCurrentObjectiveActivated = true;
+    if (TryCompleteCurrentObjectiveFromStoryState())
+    {
+        return;
+    }
     if (Objective->ObjectiveType == EVHVQuestObjectiveType::NPCAction)
     {
         ExecuteActiveNPCAction();
@@ -1228,6 +1244,18 @@ void UVHVQuestSubsystem::ReevaluateWaitingObjective()
     {
         TryActivateCurrentObjective();
     }
+}
+
+bool UVHVQuestSubsystem::TryCompleteCurrentObjectiveFromStoryState()
+{
+    const FVHVQuestObjectiveDefinition* Objective = GetActiveObjective();
+    if (!Objective || !bCurrentObjectiveActivated || bCompletingCurrentObjective
+        || Objective->CompletionConditions.Conditions.IsEmpty() || !StoryStateSubsystem)
+    {
+        return false;
+    }
+    return StoryStateSubsystem->EvaluateConditionSet(Objective->CompletionConditions)
+        && CompleteCurrentObjective();
 }
 
 void UVHVQuestSubsystem::EnsureStoryStateDelegateBindings()

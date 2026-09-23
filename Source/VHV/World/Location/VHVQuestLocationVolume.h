@@ -7,8 +7,10 @@
 #include "VHVQuestLocationVolume.generated.h"
 
 class AVHVCharacter;
+class UBillboardComponent;
 class UBoxComponent;
 class UPrimitiveComponent;
+class UTextRenderComponent;
 class UVHVQuestSubsystem;
 class UVHVStoryStateSubsystem;
 struct FHitResult;
@@ -25,6 +27,8 @@ protected:
     virtual void BeginPlay() override;
 
 #if WITH_EDITOR
+    virtual void OnConstruction(const FTransform& Transform) override;
+    virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
     virtual EDataValidationResult IsDataValid(class FDataValidationContext& Context) const override;
 #endif
 
@@ -74,19 +78,44 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|Location|World Action", meta = (EditCondition = "bTriggerWorldAction", EditConditionHides))
     bool bTriggerWorldActionOnce = true;
 
+    /** Route the WorldAction through the active Explicit Trigger objective so async completion advances it. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|Location|World Action", meta = (EditCondition = "bTriggerWorldAction", EditConditionHides))
+    bool bTrackWorldActionAsObjective = true;
+
+    /** Ask the QuestSubsystem to open the active Conversation or LearningActivity on entry. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|Location|Objective Activation")
+    bool bActivateCurrentObjective = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|Location|Objective Activation", meta = (EditCondition = "bActivateCurrentObjective", EditConditionHides))
+    bool bActivateCurrentObjectiveOnce = true;
+
     /** Optional quest gate. When set, only this active quest may dispatch the WorldAction. */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|Location|World Action|Gating", meta = (EditCondition = "bTriggerWorldAction", EditConditionHides))
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|Location|Story Trigger|Gating")
     FName RequiredActiveQuestID;
 
     /** Optional objective gate. When set, only this active objective may dispatch the WorldAction. */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|Location|World Action|Gating", meta = (EditCondition = "bTriggerWorldAction", EditConditionHides))
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|Location|Story Trigger|Gating")
     FName RequiredActiveObjectiveID;
 
     /** Optional Story State conditions evaluated when the player enters. */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|Location|World Action|Gating", meta = (EditCondition = "bTriggerWorldAction", EditConditionHides))
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|Location|Story Trigger|Gating")
     FVHVStoryConditionSet TriggerConditions;
 
 private:
+#if WITH_EDITORONLY_DATA
+    /** Screen-scaled editor handle that makes large trigger volumes easy to pick. Never cooked. */
+    UPROPERTY()
+    TObjectPtr<UBillboardComponent> EditorTriggerSprite;
+
+    /** Editor-only identifier displayed above the trigger. Never cooked. */
+    UPROPERTY()
+    TObjectPtr<UTextRenderComponent> EditorTriggerLabel;
+#endif
+
+#if WITH_EDITOR
+    void RefreshEditorVisualization();
+#endif
+
     UPROPERTY(Transient)
     TObjectPtr<UVHVQuestSubsystem> QuestSubsystem;
 
@@ -95,4 +124,5 @@ private:
 
     TSet<TWeakObjectPtr<AVHVCharacter>> PlayersInside;
     bool bWorldActionTriggered = false;
+    bool bCurrentObjectiveActivatedByTrigger = false;
 };

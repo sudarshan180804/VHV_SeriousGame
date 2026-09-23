@@ -1,7 +1,9 @@
 #include "UI/Textbook/VHVFeedbackWidget.h"
 
 #include "UI/Textbook/VHVActivityUIStyle.h"
+#include "UI/VHVUIManagerComponent.h"
 #include "Components/TextBlock.h"
+#include "Widgets/Input/SButton.h"
 #include "Widgets/Layout/SBackgroundBlur.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SConstraintCanvas.h"
@@ -14,6 +16,17 @@ TSharedRef<SWidget> UVHVFeedbackWidget::RebuildWidget()
     ShadowBrush = VHVActivityUIStyle::RoundedBrush(FLinearColor(0.0f, 0.0f, 0.0f, 0.42f), 17.0f);
     PanelBrush = VHVActivityUIStyle::RoundedBrush(
         VHVActivityUIStyle::CharcoalGlass(), 16.0f, VHVActivityUIStyle::SoftGold(), 1.0f);
+    ContinueButtonStyle = FButtonStyle()
+        .SetNormal(VHVActivityUIStyle::RoundedBrush(
+            VHVActivityUIStyle::GoldPrimary(), 22.0f))
+        .SetHovered(VHVActivityUIStyle::RoundedBrush(
+            VHVActivityUIStyle::GoldSelected(), 22.0f))
+        .SetPressed(VHVActivityUIStyle::RoundedBrush(
+            VHVActivityUIStyle::FromSRGB(202, 161, 79), 22.0f))
+        .SetDisabled(VHVActivityUIStyle::RoundedBrush(
+            VHVActivityUIStyle::FromSRGB(181, 166, 135, 170), 22.0f))
+        .SetNormalPadding(FMargin(0.0f))
+        .SetPressedPadding(FMargin(1.0f, 2.0f, 0.0f, 0.0f));
 
     TSharedRef<SWidget> Result =
         SNew(SConstraintCanvas)
@@ -63,10 +76,19 @@ TSharedRef<SWidget> UVHVFeedbackWidget::RebuildWidget()
                     .AutoHeight()
                     .HAlign(HAlign_Right)
                     [
-                        SNew(STextBlock)
-                        .Font(VHVActivityUIStyle::RegularFont(14))
-                        .ColorAndOpacity(VHVActivityUIStyle::SecondaryText())
-                        .Text(FText::FromString(TEXT("Enter  Continue")))
+                        SNew(SButton)
+                        .ButtonStyle(&ContinueButtonStyle)
+                        .IsEnabled(true)
+                        .HAlign(HAlign_Center)
+                        .VAlign(VAlign_Center)
+                        .ContentPadding(FMargin(22.0f, 10.0f))
+                        .OnClicked(FOnClicked::CreateUObject(this, &UVHVFeedbackWidget::HandleContinueClicked))
+                        [
+                            SNew(STextBlock)
+                            .Font(VHVActivityUIStyle::MediumFont(15))
+                            .ColorAndOpacity(VHVActivityUIStyle::MatchingInk())
+                            .Text(FText::FromString(TEXT("Continue  \u2192")))
+                        ]
                     ]
                 ]
             ]
@@ -119,8 +141,24 @@ void UVHVFeedbackWidget::SetFeedbackPresentation(const FText& InText, const ETon
     CurrentText = InText;
     CurrentTone = InTone;
     bCurrentIsHint = bIsHint;
+    bContinueActivated = false;
     EntranceElapsed = 0.0f;
     RefreshPresentation();
+}
+
+void UVHVFeedbackWidget::SetOwningUIManager(UVHVUIManagerComponent* InUIManager)
+{
+    OwningUIManager = InUIManager;
+}
+
+FReply UVHVFeedbackWidget::HandleContinueClicked()
+{
+    if (!bContinueActivated && OwningUIManager)
+    {
+        bContinueActivated = true;
+        OwningUIManager->ConfirmChoiceInput();
+    }
+    return FReply::Handled();
 }
 
 void UVHVFeedbackWidget::RefreshPresentation()

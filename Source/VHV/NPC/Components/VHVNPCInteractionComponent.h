@@ -26,6 +26,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|NPC|Interaction")
 	FText DefaultInteractionPrompt;
 
+	/** When disabled, keep the normal interaction verb instead of replacing it with tracker copy. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|NPC|Interaction")
+	bool bUseQuestObjectiveTextAsPrompt = true;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|NPC|Interaction")
 	bool bInteractionEnabled = true;
 

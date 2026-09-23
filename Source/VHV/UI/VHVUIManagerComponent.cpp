@@ -37,17 +37,12 @@ namespace
     {
         const FTeachingContent& Teaching = Activity.Teaching;
         const FString TeachingTitle = Teaching.Title.TrimStartAndEnd();
-        const bool bHasTeachingContent = !Teaching.Title.TrimStartAndEnd().IsEmpty()
-            || !Teaching.Content.TrimStartAndEnd().IsEmpty()
-            || !Teaching.KeyTakeaways.IsEmpty()
-            || !Teaching.MediaTexture.IsNull()
-            || !Teaching.Media.IsEmpty();
         const bool bTechniqueIntroduction = Teaching.Category == ETextbookTeachingCategory::Technique
             || TeachingTitle.StartsWith(TEXT("TECHNIQUE "), ESearchCase::IgnoreCase);
         return Activity.ActivityType == ETextbookActivityType::Observation
             && !Activity.EvidenceTagging.bUseEvidenceTagging
             && !bTechniqueIntroduction
-            && bHasTeachingContent;
+            && Teaching.HasMeaningfulContent();
     }
 
     void ApplyPanelSlotLayout(UWidget* ChildWidget, UPanelWidget* ParentPanel)
@@ -160,6 +155,7 @@ void UVHVUIManagerComponent::BeginPlay()
                 FeedbackWidget = CreateWidget<UVHVFeedbackWidget>(PC, FeedbackWidgetClass);
                 if (FeedbackWidget && MainHUD->TextbookLayer)
                 {
+                    FeedbackWidget->SetOwningUIManager(this);
                     if (!FeedbackWidget->GetParent())
                     {
                         ApplyPanelSlotLayout(FeedbackWidget, MainHUD->TextbookLayer);
@@ -370,6 +366,12 @@ void UVHVUIManagerComponent::HandleLearningPhaseChanged(ELearningPhase NewPhase)
 
     if (NewPhase == ELearningPhase::Teach)
     {
+        if (TextbookSubsystem && TextbookSubsystem->IsActivityActive()
+            && !TextbookSubsystem->GetCurrentActivity().Teaching.HasMeaningfulContent())
+        {
+            TextbookSubsystem->AdvanceToNextActivity();
+            return;
+        }
         HideQuestionUI();
         HideObservationUI();
         HideFeedbackUI();
@@ -507,6 +509,8 @@ void UVHVUIManagerComponent::EnsureFeedbackWidget()
     {
         return;
     }
+
+    FeedbackWidget->SetOwningUIManager(this);
 
     if (!FeedbackWidget->GetParent())
     {
@@ -1058,21 +1062,16 @@ void UVHVUIManagerComponent::RefreshCurrentFeedbackUI()
     }
 
     const FTextbookRuntimeState RuntimeState = TextbookSubsystem->GetRuntimeState();
-    FString FeedbackText;
-    if (RuntimeState.bAnswerCorrect)
+    const FString FeedbackText = CurrentActivity.GetFeedbackTextForResult(
+        RuntimeState.bAnswerCorrect, RuntimeState.bAnswerPartial);
+    if (FeedbackText.TrimStartAndEnd().IsEmpty())
     {
-        FeedbackText = CurrentActivity.CorrectFeedback;
-    }
-    else if (CurrentActivity.AttemptPolicy.bEnabled
-        && !CurrentActivity.AttemptPolicy.FinalIncorrectExplanation.IsEmpty())
-    {
-        FeedbackText = CurrentActivity.AttemptPolicy.FinalIncorrectExplanation;
-    }
-    else
-    {
-        FeedbackText = RuntimeState.bAnswerPartial
-            ? CurrentActivity.PartialFeedback
-            : CurrentActivity.IncorrectFeedback;
+        // Imported or legacy runtime state may still point at Feedback. Collapse
+        // it through the same safe Teach/completion path instead of showing an
+        // empty result panel.
+        HideFeedbackUI();
+        TextbookSubsystem->EnterTeachPhase();
+        return;
     }
 
     FeedbackWidget->SetFeedbackPresentation(

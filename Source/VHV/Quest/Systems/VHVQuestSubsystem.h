@@ -175,6 +175,7 @@ private:
     void ActivateCurrentObjective();
     void TryActivateCurrentObjective();
     void ReevaluateWaitingObjective();
+    bool TryCompleteCurrentObjectiveFromStoryState();
     void EnsureStoryStateDelegateBindings();
     void ExecuteActiveNPCAction();
     void ClearActiveNPCActionTracking();

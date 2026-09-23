@@ -39,7 +39,7 @@ FText UVHVNPCInteractionComponent::GetInteractionPrompt() const
 		: nullptr;
 
 	const FName ParticipantID = QuestParticipant ? QuestParticipant->GetEffectiveParticipantID() : NAME_None;
-	if (!ParticipantID.IsNone() && World && World->GetGameInstance())
+	if (bUseQuestObjectiveTextAsPrompt && !ParticipantID.IsNone() && World && World->GetGameInstance())
 	{
 		const UVHVQuestSubsystem* QuestSubsystem = World->GetGameInstance()->GetSubsystem<UVHVQuestSubsystem>();
 		FVHVQuestObjectiveDefinition Objective;

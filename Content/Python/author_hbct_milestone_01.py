@@ -1,4 +1,4 @@
-"""Author the first production HBCT story milestone.
+"""Author the production HBCT prologue and Techniques 1–2.
 
 This idempotent editor script owns only production content below
 /Game/VHV_Stuff/HBCT, HBCT-labelled actors in Lvl_Village_Blockout, and the
@@ -64,12 +64,31 @@ def save_asset(asset):
         raise RuntimeError("Could not save {}".format(asset.get_path_name()))
 
 
-def effect(flag_name):
+def story_effect(state_name, effect_type, value=0):
     return struct(
         unreal.VHVStoryEffect,
-        effect_type=unreal.VHVStoryEffectType.SET_FLAG,
-        state_tag=tag(flag_name),
-        value=0)
+        effect_type=effect_type,
+        state_tag=tag(state_name),
+        value=value)
+
+
+def effect(flag_name):
+    return story_effect(flag_name, unreal.VHVStoryEffectType.SET_FLAG)
+
+
+def counter_effect(counter_name, value=1):
+    return story_effect(counter_name, unreal.VHVStoryEffectType.ADD_COUNTER, value)
+
+
+def completion_condition(counter_name, compare_value):
+    return struct(
+        unreal.VHVStoryConditionSet,
+        match_mode=unreal.VHVStoryConditionMatch.ALL,
+        conditions=[struct(
+            unreal.VHVStoryCondition,
+            condition_type=unreal.VHVStoryConditionType.COUNTER_GREATER_OR_EQUAL,
+            state_tag=tag(counter_name),
+            compare_value=compare_value)])
 
 
 def teaching(title, content, takeaways, category=None, media_texture=None, media_caption=""):
@@ -103,6 +122,17 @@ def question(question_id, prompt, options, correct_index):
         options=[
             struct(unreal.QuestionOption, option_text=text, is_correct=index == correct_index)
             for index, text in enumerate(options)
+        ])
+
+
+def multi_question(question_id, prompt, options):
+    return struct(
+        unreal.QuestionData,
+        question_id=question_id,
+        question_text=prompt,
+        options=[
+            struct(unreal.QuestionOption, option_text=text, is_correct=is_correct)
+            for text, is_correct in options
         ])
 
 
@@ -154,7 +184,7 @@ def activity(tag_name, title, activity_type, prompt, teaching_data, **properties
         "correct_feedback": "",
         "incorrect_feedback": "Look for what helps the person find their own reason and next step.",
         "partial_feedback": "You identified part of the idea.",
-        "teaching": teaching_data,
+        "teaching": teaching_data if teaching_data is not None else unreal.TeachingContent(),
         "hints": [],
         "media": [],
         "require_correct_answer_to_advance": False,
@@ -400,30 +430,285 @@ def build_activities():
     ]
 
 
+def build_goal_setting_activities():
+    observation = unreal.TextbookActivityType.OBSERVATION
+    single = unreal.TextbookActivityType.SINGLE_CHOICE
+    multi = unreal.TextbookActivityType.MULTI_CHOICE
+    lesson = unreal.TextbookTeachingCategory.LESSON
+    return [
+        activity(
+            "VHV.Activity.HBCT.GoalSetting.GoalParts", "OBSERVATION", observation,
+            "What made Auntie Nuan's plan more concrete?", None,
+            evidence_tagging=evidence_tagging(
+                "What made Auntie Nuan's plan more concrete?",
+                [
+                    evidence_card("She identified a behavior to change.", True),
+                    evidence_card("She decided how often she would do it.", True),
+                    evidence_card("She gave the plan a time frame.", True),
+                    evidence_card("She added a specific walking behavior.", True),
+                    evidence_card("She said only that she wanted better health.", False),
+                    evidence_card("The VHV chose every decision without asking her.", False),
+                ],
+                "Which summary best captures what made the plan concrete?",
+                [
+                    evidence_card("A useful goal turns a general intention into a behavior, target, and time frame.", True),
+                    evidence_card("A useful goal stays broad so it never needs to be measured.", False),
+                ],
+                [takeaway_card("REVIEW", "A useful goal turns a general intention into a behavior, target, and time frame.")]),
+            correct_feedback="A useful goal turns a general intention into a behavior, target, and time frame."),
+        activity(
+            "VHV.Activity.HBCT.GoalSetting.WhatIsGoalSetting", "LESSON", observation,
+            "Review the meaning of goal setting.",
+            teaching(
+                "WHAT IS GOAL SETTING?",
+                "Goal setting means deciding what health behavior should change and defining a clear target to work toward.",
+                [
+                    "BEHAVIOR — What will change?",
+                    "TARGET — What are we trying to achieve?",
+                    "PATH — What practical action moves us toward it?",
+                    "Motivation gives energy. Goals give direction.",
+                ], lesson)),
+        activity(
+            "VHV.Activity.HBCT.GoalSetting.ClearerPath", "Compare the Two Villagers", single,
+            "Which villager has a clearer path for changing their behavior?", None,
+            question=question(
+                "HBCT_GOAL_CLEARER_PATH",
+                "Which villager has a clearer path for changing their behavior?",
+                [
+                    "Auntie Nuan, because she has defined actions and a time frame.",
+                    "Uncle Chai, because he is trying many different things.",
+                    "Both are equally clear because both want better health.",
+                ], 0),
+            attempt_policy=attempt_policy(
+                "Look at whether each person knows exactly what behavior they will do and when.",
+                "Wanting better health is useful, but without a defined behavior and target it is difficult to judge progress or stay consistent."),
+            correct_feedback="Nuan can compare what she actually does with the target she set. Her goal gives her direction."),
+        activity(
+            "VHV.Activity.HBCT.GoalSetting.GoalFunction", "Function of a Behavioral Goal", single,
+            "What is one important function of a behavioral goal?", None,
+            question=question(
+                "HBCT_GOAL_FUNCTION",
+                "What is one important function of a behavioral goal?",
+                [
+                    "It gives a target that actual behavior can be compared with.",
+                    "It guarantees success.",
+                    "It removes every obstacle.",
+                    "It allows the VHV to make all decisions for the person.",
+                ], 0),
+            attempt_policy=attempt_policy(
+                "Think about how a person can judge whether their actions match their plan.",
+                "A goal does not guarantee success or remove obstacles. It provides a clear reference point for action and progress."),
+            correct_feedback="A goal provides direction and a reference point for comparing actual behavior with the intended behavior."),
+        activity(
+            "VHV.Activity.HBCT.GoalSetting.IdentifyMethods", "Identify Self-Set Goals", multi,
+            "Which examples show a SELF-SET goal?", None,
+            question=multi_question(
+                "HBCT_GOAL_METHODS",
+                "Which examples show a SELF-SET goal?",
+                [
+                    ("The person chooses a suitable target themselves.", True),
+                    ("The person is unsure what target is appropriate, so the VHV helps shape one.", False),
+                    ("I will reduce iced milk tea to once a week.", True),
+                    ("Let's begin with 30 minutes of walking, three days this week.", False),
+                ]),
+            attempt_policy=attempt_policy(
+                "Look for examples where the person chooses the target themselves.",
+                "Self-set goals are chosen by the person. Jointly set goals involve the VHV helping shape an appropriate target."),
+            correct_feedback="These goals are self-set because the person chooses their own appropriate target. The other examples involve the VHV helping shape the goal."),
+        activity(
+            "VHV.Activity.HBCT.GoalSetting.UsefulGoals", "Evaluate Useful Goals", multi,
+            "Which goals would give someone a clear and realistic direction?", None,
+            question=multi_question(
+                "HBCT_USEFUL_GOALS",
+                "Which goals would give someone a clear and realistic direction?",
+                [
+                    ("This month I will walk briskly for 30 minutes, 3–5 days per week.", True),
+                    ("Within 1 month, I will reduce iced milk tea from every day to once a week.", True),
+                    ("I will be healthier.", False),
+                    ("I will never eat sugar again starting tomorrow forever.", False),
+                ]),
+            attempt_policy=attempt_policy(
+                "Look for goals that describe a specific action and are realistic enough to follow.",
+                "'Be healthier' is too vague to guide behavior. 'Never eat sugar again' is extreme and difficult to sustain. A useful goal gives clear direction while remaining realistic."),
+            correct_feedback="The stronger goals describe exactly what the person will do and give them a practical target."),
+        activity(
+            "VHV.Activity.HBCT.GoalSetting.DiagnoseVagueGoal", "Diagnose a Weak Goal", single,
+            "'I will be healthier.' What is the main problem?", None,
+            question=question(
+                "HBCT_DIAGNOSE_VAGUE_GOAL",
+                "'I will be healthier.' What is the main problem?",
+                [
+                    "It does not say what behavior should actually change.",
+                    "It includes too much detail about the behavior.",
+                    "It asks for too little improvement.",
+                    "It gives the person too much ownership.",
+                ], 0),
+            attempt_policy=attempt_policy(
+                "Ask whether the person would know exactly what action to take.",
+                "The statement names a broad outcome but does not identify a behavior the person can perform."),
+            correct_feedback="Correct. The goal is too vague to guide a specific action."),
+        activity(
+            "VHV.Activity.HBCT.GoalSetting.DiagnoseExtremeGoal", "Diagnose an Unrealistic Goal", single,
+            "'I will never eat sugar again starting tomorrow.' What is the main problem?", None,
+            question=question(
+                "HBCT_DIAGNOSE_EXTREME_GOAL",
+                "'I will never eat sugar again starting tomorrow.' What is the main problem?",
+                [
+                    "The target is unnecessarily extreme and may be unrealistic to sustain.",
+                    "It does not mention any behavior.",
+                    "It gives the person too much time to begin.",
+                    "It is too easy to measure.",
+                ], 0),
+            attempt_policy=attempt_policy(
+                "Consider whether the target is realistic enough to maintain.",
+                "A target can be specific and still be unhelpful when it is unnecessarily extreme or unrealistic to sustain."),
+            correct_feedback="Correct. Useful goals should challenge the person while remaining realistic."),
+        activity(
+            "VHV.Activity.HBCT.GoalSetting.UsefulGoalCharacteristics", "LESSON", observation,
+            "Review the characteristics of a useful goal.",
+            teaching(
+                "WHAT MAKES A USEFUL GOAL?", "",
+                [
+                    "SPECIFIC — The behavior is clear.",
+                    "CHALLENGING — The goal requires meaningful effort.",
+                    "CLEARLY DIRECTED — The person knows what they are working toward.",
+                    "SHORT-TERM — There is an achievable target that can be worked on now.",
+                    "REALISTIC — The goal is possible for this person and situation.",
+                    "A useful goal should guide action, not merely sound ambitious.",
+                ], lesson)),
+        activity(
+            "VHV.Activity.HBCT.GoalSetting.ImproveVagueGoal", "Improve a Vague Goal", single,
+            "Which version improves the vague goal 'I will exercise more'?", None,
+            question=question(
+                "HBCT_IMPROVE_VAGUE_GOAL",
+                "Which version improves the vague goal 'I will exercise more'?",
+                [
+                    "I will walk briskly for 30 minutes after dinner on Monday, Wednesday, and Friday this week.",
+                    "I will exercise whenever I can.",
+                    "I will become very fit.",
+                    "I will exercise every day forever.",
+                ], 0),
+            attempt_policy=attempt_policy(
+                "Look for a version that names the activity, amount, schedule, and immediate time frame.",
+                "A useful short-term goal makes the action and schedule clear while keeping the target realistic."),
+            correct_feedback="The improved version names the behavior, amount, schedule, and immediate time frame."),
+        activity(
+            "VHV.Activity.HBCT.GoalSetting.MaliDifficulty", "OBSERVATION", observation,
+            "What is still making Mali's change difficult?", None,
+            evidence_tagging=evidence_tagging(
+                "What is still making Mali's change difficult?",
+                [
+                    evidence_card("Sweets and sweet drinks are still brought into the home.", True),
+                    evidence_card("Her behavior is inconsistent from day to day.", True),
+                    evidence_card("She has not yet defined a clear behavioral target.", True),
+                    evidence_card("She has a meaningful reason to improve her health.", False),
+                    evidence_card("She has completely stopped caring about her health.", False),
+                ],
+                "Which summary best identifies what Mali still needs?",
+                [
+                    evidence_card("Mali needs a sufficiently clear target for what she will do consistently.", True),
+                    evidence_card("Mali needs someone else to make every decision for her.", False),
+                ],
+                [takeaway_card("REVIEW", "Mali already has motivation. What she lacks is a sufficiently clear target for what she will do consistently.")]),
+            correct_feedback="Mali already has motivation. What she lacks is a sufficiently clear target for what she will do consistently."),
+        activity(
+            "VHV.Activity.HBCT.GoalSetting.MaliBehaviors", "Choose Mali's Behaviors", multi,
+            "Which behaviors can Mali directly work on now?", None,
+            question=multi_question(
+                "HBCT_MALI_BEHAVIORS",
+                "Which behaviors can Mali directly work on now?",
+                [
+                    ("Reduce sugary drinks / added sugar.", True),
+                    ("Increase regular walking.", True),
+                    ("Become completely healthy immediately.", False),
+                    ("Make her children stop buying every sweet food.", False),
+                    ("Guarantee that her blood glucose will never rise again.", False),
+                ]),
+            attempt_policy=attempt_policy(
+                "Choose actions Mali can perform herself now.",
+                "A behavioral goal should focus on Mali's own actions rather than immediate health outcomes or other people's behavior."),
+            correct_feedback="Behavioral goals should focus on actions Mali can actually perform, not outcomes she cannot completely control."),
+        activity(
+            "VHV.Activity.HBCT.GoalSetting.MaliGoalBoardA", "Mali's Short-Term Goals", multi,
+            "Which statements are SHORT-TERM GOALS in Mali's plan?", None,
+            question=multi_question(
+                "HBCT_MALI_SHORT_TERM_GOALS",
+                "Which statements are SHORT-TERM GOALS in Mali's plan?",
+                [
+                    ("For the next month, reduce iced milk tea from every day to once a week.", True),
+                    ("Stop adding sugar to coffee.", True),
+                    ("Reduce sugary drinks and added sugar.", False),
+                    ("Increase regular walking.", False),
+                ]),
+            attempt_policy=attempt_policy(
+                "Look for statements that define a concrete target Mali can work on now.",
+                "Short-term goals state concrete targets for now; desired behaviors describe the broader actions Mali wants to change."),
+            correct_feedback="The selected statements define concrete targets Mali will work on now. The other statements describe the broader behaviors she wants to change."),
+        activity(
+            "VHV.Activity.HBCT.GoalSetting.MaliGoalBoardB", "Mali's Long-Term Goals", multi,
+            "Which statements describe Mali's LONG-TERM GOALS?", None,
+            question=multi_question(
+                "HBCT_MALI_LONG_TERM_GOALS",
+                "Which statements describe Mali's LONG-TERM GOALS?",
+                [
+                    ("Improve blood glucose control and maintain healthier daily habits.", True),
+                    ("Work toward blood glucose below 130 mg/dL within 3 months.", True),
+                    ("Walk briskly for about 30 minutes, 3–5 days each week.", False),
+                ]),
+            attempt_policy=attempt_policy(
+                "Look for the health outcomes and longer direction supported by Mali's repeated behaviors.",
+                "The walking plan is an immediate behavioral target. Long-term goals describe the outcomes and direction it supports."),
+            correct_feedback="The walking plan is an immediate behavioral target. The long-term goals describe the health outcomes and direction those repeated behaviors support."),
+        activity(
+            "VHV.Activity.HBCT.GoalSetting.FinalTransfer", "Final Transfer Check", single,
+            "A villager says: 'I want to exercise more.' What should a VHV help clarify first?", None,
+            question=question(
+                "HBCT_GOAL_FINAL_TRANSFER",
+                "A villager says: 'I want to exercise more.' What should a VHV help clarify first?",
+                [
+                    "What activity they will do, how much, and over what period.",
+                    "Which exercise is the most difficult possible.",
+                    "A permanent goal for the rest of their life.",
+                    "A reward before they begin.",
+                ], 0),
+            attempt_policy=attempt_policy(
+                "Look for the details that turn a broad intention into an actionable target.",
+                "A broad intention needs a defined behavior, amount, and time period before it can guide action."),
+            correct_feedback="A broad intention becomes useful when it is translated into a clear behavioral target."),
+    ]
+
+
 def configure_level(level):
-    topic = struct(
+    motivation_topic = struct(
         unreal.TopicData,
         topic_id="HBCT_M01_BUILDING_MOTIVATION",
         topic_title="Arrival, Observation, and Building Motivation",
         narrative_introduction="Observe village life, then practice helping a person discover their own reason for change.",
         activities=build_activities())
+    goal_setting_topic = struct(
+        unreal.TopicData,
+        topic_id="HBCT_M02_GOAL_SETTING",
+        topic_title="Technique 2 — Goal Setting",
+        narrative_introduction="Turn a broad health intention into a clear short-term goal and a longer-term direction.",
+        activities=build_goal_setting_activities())
     day = struct(
         unreal.DayData,
         day_number=1,
         day_title="First Day in the Village",
-        narrative_role="Production HBCT prologue and Technique 1",
+        narrative_role="Production HBCT prologue, Technique 1, and Technique 2",
         introduction_text="Meet the Instructor and begin by observing real life.",
-        topics=[topic],
-        completion_summary="Building Motivation complete.",
+        topics=[motivation_topic, goal_setting_topic],
+        completion_summary="Building Motivation and Goal Setting complete.",
         completion_takeaways=[
             "Motivation comes from what matters personally.",
             "A VHV guides rather than commands.",
             "A small feasible plan turns readiness toward action.",
+            "A useful goal turns intention into a clear behavior, target, and time frame.",
         ])
     level.set_editor_properties({
         "level_number": 1,
         "level_title": "HBCT — Building Motivation",
-        "level_description": "Production prologue, market observation, and Technique 1 content.",
+        "level_description": "Production prologue, market observation, Building Motivation, and Goal Setting content.",
         "day_data": day,
     })
 
@@ -448,7 +733,7 @@ def text_node(node_id, speaker_name, line, next_id="", speaker_tag="", checkpoin
     return struct(unreal.DialogueNode, **values)
 
 
-def learning_node(node_id, activity_tag, next_id=""):
+def learning_node(node_id, activity_tag, next_id="", topic_id="HBCT_M01_BUILDING_MOTIVATION"):
     return struct(
         unreal.DialogueNode,
         node_id=node_id,
@@ -461,7 +746,7 @@ def learning_node(node_id, activity_tag, next_id=""):
         linked_activity=struct(
             unreal.TextbookActivityReference,
             activity_tag=tag(activity_tag),
-            topic_id="HBCT_M01_BUILDING_MOTIVATION",
+            topic_id=topic_id,
             required_for_progress=True),
         completion_effects=[])
 
@@ -549,6 +834,146 @@ def create_conversations():
             text_node("Final_01", "Instructor", "Motivation grows from what matters personally. A VHV guides rather than commands.", "Final_02", "VHV.Participant.Instructor"),
             text_node("Final_02", "Instructor", "Discover the person's important life goal, identify obstacles, offer useful choices, and finish with a small feasible plan.", "Final_03", "VHV.Participant.Instructor"),
             text_node("Final_03", "Instructor", "The key is not to push people. The key is to help them discover why change matters to them.", speaker_tag="VHV.Participant.Instructor"),
+        ])
+
+    goal_topic = "HBCT_M02_GOAL_SETTING"
+    specs["DA_Conversation_HBCT_GoalSetting_Arrival"] = (
+        "HBCT_GoalSetting_Arrival",
+        [
+            text_node("GSArrival_01", "Instructor", "You helped Aunt Mali find a reason that matters to her.", "GSArrival_02", "VHV.Participant.Instructor"),
+            text_node("GSArrival_02", "Instructor", "But wanting to change is only the beginning.", "GSArrival_03", "VHV.Participant.Instructor"),
+            text_node("GSArrival_03", "Player", "She still needs to know what she is actually going to do.", "GSArrival_04"),
+            text_node("GSArrival_04", "Instructor", "Exactly. Watch this conversation.", speaker_tag="VHV.Participant.Instructor"),
+        ])
+    specs["DA_Conversation_HBCT_GoalSetting_Lesson"] = (
+        "HBCT_GoalSetting_Lesson",
+        [
+            text_node("GSLesson_01", "Player", "So the important part wasn't just wanting better health. She made the change specific.", "GSLesson_02", presentation=unreal.VHVDialoguePresentation.THOUGHT),
+            text_node("GSLesson_02", "Player", "So motivation gets someone moving. Goals tell them where to go?", "GSLesson_03"),
+            text_node("GSLesson_03", "Instructor", "Exactly. Motivation gives energy. Goals give direction.", "GSLesson_04", "VHV.Participant.Instructor"),
+            learning_node("GSLesson_04", "VHV.Activity.HBCT.GoalSetting.WhatIsGoalSetting", "GSLesson_05", goal_topic),
+            text_node("GSLesson_05", "Instructor", "A definition is easy to remember. The difference becomes clearer when you watch people trying to change.", "GSLesson_06", "VHV.Participant.Instructor"),
+            text_node("GSLesson_06", "Instructor", "There are two villagers nearby. Both want better health.", "GSLesson_07", "VHV.Participant.Instructor"),
+            text_node("GSLesson_07", "Instructor", "Watch what happens when only one of them has a clear goal.", speaker_tag="VHV.Participant.Instructor"),
+        ])
+    specs["DA_Conversation_HBCT_GoalSetting_ComparisonReflection"] = (
+        "HBCT_GoalSetting_ComparisonReflection",
+        [
+            learning_node("GSCompare_01", "VHV.Activity.HBCT.GoalSetting.ClearerPath", "GSCompare_02", goal_topic),
+            learning_node("GSCompare_02", "VHV.Activity.HBCT.GoalSetting.GoalFunction", "GSCompare_03", goal_topic),
+            text_node("GSCompare_03", "Instructor", "Both people wanted better health.", "GSCompare_04", "VHV.Participant.Instructor"),
+            text_node("GSCompare_04", "Instructor", "But only one could answer three useful questions.", "GSCompare_05", "VHV.Participant.Instructor"),
+            text_node("GSCompare_05", "Instructor", "What am I doing?", "GSCompare_06", "VHV.Participant.Instructor"),
+            text_node("GSCompare_06", "Instructor", "How much am I doing?", "GSCompare_07", "VHV.Participant.Instructor"),
+            text_node("GSCompare_07", "Instructor", "Am I getting closer to my target?", "GSCompare_08", "VHV.Participant.Instructor"),
+            text_node("GSCompare_08", "Player", "So the goal gives them something to compare their actual behavior with.", "GSCompare_09"),
+            text_node("GSCompare_09", "Instructor", "Exactly.", speaker_tag="VHV.Participant.Instructor"),
+        ])
+    specs["DA_Conversation_HBCT_GoalSetting_Methods"] = (
+        "HBCT_GoalSetting_Methods",
+        [
+            text_node("GSMethods_01", "Player", "The patient chose the target themselves.", "GSMethods_02", presentation=unreal.VHVDialoguePresentation.THOUGHT),
+            text_node("GSMethods_02", "Player", "This time the VHV helped shape the goal.", "GSMethods_03", presentation=unreal.VHVDialoguePresentation.THOUGHT),
+            learning_node("GSMethods_03", "VHV.Activity.HBCT.GoalSetting.IdentifyMethods", "GSMethods_04", goal_topic),
+            text_node("GSMethods_04", "Player", "Wouldn't it be easier if the VHV simply told everyone what goal to follow?", "GSMethods_05"),
+            text_node("GSMethods_05", "Instructor", "Sometimes guidance is necessary.", "GSMethods_06", "VHV.Participant.Instructor"),
+            text_node("GSMethods_06", "Instructor", "But the person still has to live with the goal.", "GSMethods_07", "VHV.Participant.Instructor"),
+            text_node("GSMethods_07", "Instructor", "When they can choose an appropriate target themselves, that ownership matters.", "GSMethods_08", "VHV.Participant.Instructor"),
+            text_node("GSMethods_08", "Player", "And when they are unsure, we help shape something realistic.", "GSMethods_09"),
+            text_node("GSMethods_09", "Instructor", "Exactly.", speaker_tag="VHV.Participant.Instructor"),
+        ])
+    specs["DA_Conversation_HBCT_GoalSetting_GoodGoals"] = (
+        "HBCT_GoalSetting_GoodGoals",
+        [
+            text_node("GSGood_01", "Instructor", "All four sound like attempts to improve health.", "GSGood_02", "VHV.Participant.Instructor"),
+            text_node("GSGood_02", "Instructor", "But are all four useful goals?", "GSGood_03", "VHV.Participant.Instructor"),
+            learning_node("GSGood_03", "VHV.Activity.HBCT.GoalSetting.UsefulGoals", "GSGood_04", goal_topic),
+            learning_node("GSGood_04", "VHV.Activity.HBCT.GoalSetting.DiagnoseVagueGoal", "GSGood_05", goal_topic),
+            learning_node("GSGood_05", "VHV.Activity.HBCT.GoalSetting.DiagnoseExtremeGoal", "GSGood_06", goal_topic),
+            learning_node("GSGood_06", "VHV.Activity.HBCT.GoalSetting.UsefulGoalCharacteristics", "GSGood_07", goal_topic),
+            learning_node("GSGood_07", "VHV.Activity.HBCT.GoalSetting.ImproveVagueGoal", topic_id=goal_topic),
+        ])
+    specs["DA_Conversation_HBCT_GoalSetting_MaliCheckIn"] = (
+        "HBCT_GoalSetting_MaliCheckIn",
+        [
+            text_node("GSMaliCheck_01", "Player", "Aunt Mali, how has reducing sugar been going?", "GSMaliCheck_02"),
+            text_node("GSMaliCheck_02", "Aunt Mali", "A little better.", "GSMaliCheck_03", "VHV.Participant.AuntMali"),
+            text_node("GSMaliCheck_03", "Aunt Mali", "I think more about what I drink now.", "GSMaliCheck_04", "VHV.Participant.AuntMali"),
+            text_node("GSMaliCheck_04", "Aunt Mali", "But when my children bring sweets or iced tea, I still have some.", "GSMaliCheck_05", "VHV.Participant.AuntMali"),
+            text_node("GSMaliCheck_05", "Player", "That sounds difficult when it is already there in front of you.", "GSMaliCheck_06"),
+            text_node("GSMaliCheck_06", "Aunt Mali", "Yes. Some days I do well. Other days I tell myself I will try again tomorrow.", "GSMaliCheck_07", "VHV.Participant.AuntMali"),
+            text_node("GSMaliCheck_07", "Player", "Change takes time.", "GSMaliCheck_08"),
+            text_node("GSMaliCheck_08", "Player", "Today I'd like to help you make the next step clearer, so you can see what you are actually trying to achieve.", "GSMaliCheck_09"),
+            text_node("GSMaliCheck_09", "Aunt Mali", "You mean setting a goal?", "GSMaliCheck_10", "VHV.Participant.AuntMali"),
+            text_node("GSMaliCheck_10", "Player", "Exactly."),
+        ])
+    specs["DA_Conversation_HBCT_GoalSetting_MaliDirection"] = (
+        "HBCT_GoalSetting_MaliDirection",
+        [
+            text_node("GSMaliDirection_01", "Player", "When you think about reducing sugar, what do you want your health to allow you to do?", "GSMaliDirection_02"),
+            text_node("GSMaliDirection_02", "Aunt Mali", "I want to stay healthy.", "GSMaliDirection_03", "VHV.Participant.AuntMali"),
+            text_node("GSMaliDirection_03", "Aunt Mali", "I want to walk easily and go wherever I need without depending on other people.", "GSMaliDirection_04", "VHV.Participant.AuntMali"),
+            text_node("GSMaliDirection_04", "Aunt Mali", "And I want to stay well enough to enjoy time with my family.", "GSMaliDirection_05", "VHV.Participant.AuntMali"),
+            text_node("GSMaliDirection_05", "Player", "That is the larger direction.", "GSMaliDirection_06"),
+            text_node("GSMaliDirection_06", "Player", "Now let's turn it into something you can actually work on this month.", "GSMaliDirection_07"),
+            learning_node("GSMaliDirection_07", "VHV.Activity.HBCT.GoalSetting.MaliBehaviors", topic_id=goal_topic),
+        ])
+    specs["DA_Conversation_HBCT_GoalSetting_MaliShortTerm"] = (
+        "HBCT_GoalSetting_MaliShortTerm",
+        [
+            text_node("GSMaliGoal_01", "Player", "Let's begin with the sweet drinks. How often are you drinking iced milk tea now?", "GSMaliGoal_02"),
+            text_node("GSMaliGoal_02", "Aunt Mali", "Almost every day.", "GSMaliGoal_03", "VHV.Participant.AuntMali"),
+            text_node("GSMaliGoal_03", "Player", "What reduction feels challenging, but possible?", "GSMaliGoal_04"),
+            text_node("GSMaliGoal_04", "Aunt Mali", "Once a week.", "GSMaliGoal_05", "VHV.Participant.AuntMali"),
+            text_node("GSMaliGoal_05", "Player", "For the next month?", "GSMaliGoal_06"),
+            text_node("GSMaliGoal_06", "Aunt Mali", "Yes. I think I can try that.", "GSMaliGoal_07", "VHV.Participant.AuntMali"),
+            text_node("GSMaliGoal_07", "Player", "What about your coffee?", "GSMaliGoal_08"),
+            text_node("GSMaliGoal_08", "Aunt Mali", "I can stop adding sugar.", "GSMaliGoal_09", "VHV.Participant.AuntMali"),
+            text_node("GSMaliGoal_09", "Player", "And for activity?", "GSMaliGoal_10"),
+            text_node("GSMaliGoal_10", "Aunt Mali", "I could walk.", "GSMaliGoal_11", "VHV.Participant.AuntMali"),
+            text_node("GSMaliGoal_11", "Player", "How much would be realistic?", "GSMaliGoal_12"),
+            text_node("GSMaliGoal_12", "Aunt Mali", "About thirty minutes.", "GSMaliGoal_13", "VHV.Participant.AuntMali"),
+            text_node("GSMaliGoal_13", "Player", "Three days a week to start?", "GSMaliGoal_14"),
+            text_node("GSMaliGoal_14", "Aunt Mali", "Maybe three to five days if I'm feeling well.", "GSMaliGoal_15", "VHV.Participant.AuntMali"),
+            learning_node("GSMaliGoal_15", "VHV.Activity.HBCT.GoalSetting.MaliGoalBoardA", topic_id=goal_topic),
+        ])
+    specs["DA_Conversation_HBCT_GoalSetting_MaliReview"] = (
+        "HBCT_GoalSetting_MaliReview",
+        [
+            text_node("GSMaliReview_01", "Aunt Mali", "Seeing it written like that makes it feel much more manageable.", "GSMaliReview_02", "VHV.Participant.AuntMali"),
+            text_node("GSMaliReview_02", "Player", "You do not have to change everything at once.", "GSMaliReview_03"),
+            text_node("GSMaliReview_03", "Player", "You know what you are working on now.", "GSMaliReview_04"),
+            text_node("GSMaliReview_04", "Aunt Mali", "And I can check whether I actually did it.", speaker_tag="VHV.Participant.AuntMali"),
+        ])
+    specs["DA_Conversation_HBCT_GoalSetting_RoadsidePractice"] = (
+        "HBCT_GoalSetting_RoadsidePractice",
+        [
+            text_node("GSRoad_01", "Villager", "You're helping people with their health goals, right?", "GSRoad_02", "VHV.Participant.GoalSetting.RoadVillager"),
+            text_node("GSRoad_02", "Player", "I'm learning how to help people make their plans clearer.", "GSRoad_03"),
+            text_node("GSRoad_03", "Villager", "I've been telling myself I should exercise more.", "GSRoad_04", "VHV.Participant.GoalSetting.RoadVillager"),
+            text_node("GSRoad_04", "Villager", "But I'm not really sure what that should look like.", "GSRoad_05", "VHV.Participant.GoalSetting.RoadVillager"),
+            learning_node("GSRoad_05", "VHV.Activity.HBCT.GoalSetting.FinalTransfer", "GSRoad_06", goal_topic),
+            text_node("GSRoad_06", "Villager", "That makes sense. I need something clearer than just saying 'exercise more.'", "GSRoad_07", "VHV.Participant.GoalSetting.RoadVillager"),
+            text_node("GSRoad_07", "Player", "Start with something specific and realistic that you can actually follow.", "GSRoad_08"),
+            text_node("GSRoad_08", "Villager", "I'll think about what would fit my week. Thanks.", speaker_tag="VHV.Participant.GoalSetting.RoadVillager"),
+        ])
+    specs["DA_Conversation_HBCT_GoalSetting_FinalDebrief"] = (
+        "HBCT_GoalSetting_FinalDebrief",
+        [
+            text_node("GSFinal_01", "Instructor", "What changed for Aunt Mali today?", "GSFinal_02", "VHV.Participant.Instructor"),
+            text_node("GSFinal_02", "Player", "She already had a reason to change.", "GSFinal_03"),
+            text_node("GSFinal_03", "Player", "What she needed was a clearer target.", "GSFinal_04"),
+            text_node("GSFinal_04", "Instructor", "And who decided that target?", "GSFinal_05", "VHV.Participant.Instructor"),
+            text_node("GSFinal_05", "Player", "We built it together.", "GSFinal_06"),
+            text_node("GSFinal_06", "Instructor", "Good.", "GSFinal_07", "VHV.Participant.Instructor"),
+            text_node("GSFinal_07", "Instructor", "Some people can set an appropriate goal themselves.", "GSFinal_08", "VHV.Participant.Instructor"),
+            text_node("GSFinal_08", "Instructor", "Others need help turning a broad intention into something realistic.", "GSFinal_09", "VHV.Participant.Instructor"),
+            text_node("GSFinal_09", "Player", "Something they can actually do and compare their behavior with.", "GSFinal_10"),
+            text_node("GSFinal_10", "Instructor", "Exactly.", "GSFinal_11", "VHV.Participant.Instructor"),
+            text_node("GSFinal_11", "Instructor", "Motivation begins change.", "GSFinal_12", "VHV.Participant.Instructor"),
+            text_node("GSFinal_12", "Instructor", "Goals make change concrete.", "GSFinal_13", "VHV.Participant.Instructor"),
+            text_node("GSFinal_13", "Instructor", "A useful goal tells the person what they are trying to do, and gives them a direction they can follow.", "GSFinal_14", "VHV.Participant.Instructor"),
+            text_node("GSFinal_14", "Instructor", "When people know why they want to change, motivation begins. When they know exactly what to do, change becomes possible.", speaker_tag="VHV.Participant.Instructor"),
         ])
 
     assets = {}
@@ -639,6 +1064,86 @@ def create_ambient_assets():
             ],
             "show_names": True,
         },
+        "DA_Ambient_HBCT_GoalSetting_InitialObservation": {
+            "id": "HBCT_GoalSetting_InitialObservation",
+            "participants": [
+                ambient_participant("VHV", "VHV"),
+                ambient_participant("Nuan", "AUNTIE NUAN"),
+            ],
+            "lines": [
+                ambient_line("VHV", "Last time you said you wanted to improve your health. What would you like to work on first?", 4.6, look_at=True),
+                ambient_line("Nuan", "I drink sweet milk tea almost every afternoon. I also want to lose some weight.", 4.2, look_at=True),
+                ambient_line("VHV", "Which change feels possible to begin with?", 3.2, look_at=True),
+                ambient_line("Nuan", "I think I can stop drinking it every day.", 3.2, look_at=True),
+                ambient_line("VHV", "How often would you like to have it instead?", 3.2, look_at=True),
+                ambient_line("Nuan", "Maybe once a week.", 2.4, look_at=True),
+                ambient_line("VHV", "Good. For how long would you like to try that?", 3.2, look_at=True),
+                ambient_line("Nuan", "For the next month.", 2.4, look_at=True),
+                ambient_line("VHV", "And what could you add that would support your health?", 3.6, look_at=True),
+                ambient_line("Nuan", "I could walk after dinner.", 2.7, look_at=True),
+                ambient_line("VHV", "How much walking feels realistic?", 2.8, look_at=True),
+                ambient_line("Nuan", "Thirty minutes, maybe three days each week.", 3.4, look_at=True),
+                ambient_line("VHV", "So for the next month: milk tea once a week, and thirty minutes of walking three days each week.", 5.0, look_at=True),
+                ambient_line("Nuan", "That sounds much clearer than just saying I want to be healthier.", 4.0, look_at=True),
+            ],
+            "show_names": True,
+            "effects": [effect("VHV.Story.Flag.HBCT.GoalSetting.InitialObservationComplete")],
+        },
+        "DA_Ambient_HBCT_GoalSetting_ClearGoal": {
+            "id": "HBCT_GoalSetting_ClearGoal",
+            "participants": [ambient_participant("Nuan", "AUNTIE NUAN")],
+            "lines": [
+                ambient_line("Nuan", "Today is Tuesday... walking day.", 2.8, thought=True),
+                ambient_line("Nuan", "I already had milk tea this week, so I'll choose water today.", 3.8, thought=True),
+                ambient_line("Nuan", "Three walking days this week. I know exactly what I'm trying to do.", 4.0, thought=True),
+            ],
+            "show_names": True,
+            "effects": [counter_effect("VHV.Story.Counter.HBCT.GoalSetting.ComparisonObserved")],
+        },
+        "DA_Ambient_HBCT_GoalSetting_NoGoal": {
+            "id": "HBCT_GoalSetting_NoGoal",
+            "participants": [ambient_participant("Chai", "UNCLE CHAI")],
+            "lines": [
+                ambient_line("Chai", "I really should get healthier.", 2.7, thought=True),
+                ambient_line("Chai", "Maybe I'll walk today... or perhaps tomorrow.", 3.2, thought=True),
+                ambient_line("Chai", "I tried eating less yesterday. Maybe I should stop rice instead?", 3.8, thought=True),
+                ambient_line("Chai", "I don't really know what I'm supposed to be doing.", 3.4, thought=True),
+            ],
+            "show_names": True,
+            "effects": [counter_effect("VHV.Story.Counter.HBCT.GoalSetting.ComparisonObserved")],
+        },
+        "DA_Ambient_HBCT_GoalSetting_SelfSet": {
+            "id": "HBCT_GoalSetting_SelfSet",
+            "participants": [
+                ambient_participant("VHV", "VHV"),
+                ambient_participant("Patient", "VILLAGER"),
+            ],
+            "lines": [
+                ambient_line("VHV", "What change would you like to begin with?", 3.0, look_at=True),
+                ambient_line("Patient", "I drink iced milk tea every day. I want to reduce it to once a week.", 4.2, look_at=True),
+                ambient_line("VHV", "Does that feel achievable to you?", 2.8, look_at=True),
+                ambient_line("Patient", "Yes. That's the goal I want to try.", 3.0, look_at=True),
+            ],
+            "show_names": True,
+            "effects": [counter_effect("VHV.Story.Counter.HBCT.GoalSetting.MethodsObserved")],
+        },
+        "DA_Ambient_HBCT_GoalSetting_Joint": {
+            "id": "HBCT_GoalSetting_Joint",
+            "participants": [
+                ambient_participant("VHV", "VHV"),
+                ambient_participant("Patient", "VILLAGER"),
+            ],
+            "lines": [
+                ambient_line("VHV", "What activity goal would you like to try this week?", 3.4, look_at=True),
+                ambient_line("Patient", "I don't know. I hardly exercise. Maybe I should walk every day?", 4.0, look_at=True),
+                ambient_line("VHV", "Starting every day may be difficult if you are not walking regularly yet.", 4.0, look_at=True),
+                ambient_line("Patient", "Then what would be a good beginning?", 2.8, look_at=True),
+                ambient_line("VHV", "How would you feel about brisk walking for thirty minutes, three days this week?", 4.4, look_at=True),
+                ambient_line("Patient", "Three days sounds possible. I can try that.", 3.2, look_at=True),
+            ],
+            "show_names": True,
+            "effects": [counter_effect("VHV.Story.Counter.HBCT.GoalSetting.MethodsObserved")],
+        },
     }
     assets = {}
     for name, data in specs.items():
@@ -648,7 +1153,7 @@ def create_ambient_assets():
             "participants": data["participants"],
             "lines": data["lines"],
             "show_speaker_name": data["show_names"],
-            "completion_effects": [],
+            "completion_effects": data.get("effects", []),
         })
         assets[name] = asset
     return assets
@@ -741,8 +1246,73 @@ def configure_arc(arc, level, conversations):
                   entry_node_id="Final_01", auto_start=False),
     ]
     goal_setting = [
-        objective("O01_BeginGoalSetting", "Meet the Instructor to begin Goal Setting", q.CUSTOM_EVENT,
-                  custom_event_tag=tag("VHV.CustomEvent.HBCT.GoalSetting.Begin")),
+        objective("O01_ReachHealthPost", "Meet the Instructor at the community health post", q.CONVERSATION,
+                  participant_tag=tag("VHV.Participant.Instructor"),
+                  conversation=conversations["DA_Conversation_HBCT_GoalSetting_Arrival"],
+                  entry_node_id="GSArrival_01", auto_start=False),
+        objective("O02_ObserveGoalConversation", "Approach the nearby VHV and observe how an intention becomes a goal", q.WORLD_ACTION,
+                  world_action_receiver_tag=tag("VHV.WorldReceiver.HBCT.GoalSetting.InitialObservation"),
+                  world_action_tag=start_action,
+                  world_action_start_policy=unreal.VHVWorldActionStartPolicy.EXPLICIT_TRIGGER),
+        objective("O03_IdentifyGoalParts", "Identify what makes the goal concrete", q.LEARNING_ACTIVITY,
+                  activity_tag=tag("VHV.Activity.HBCT.GoalSetting.GoalParts"), auto_start=True),
+        objective("O04_LearnGoalSetting", "Talk to the Instructor about what goal setting means", q.CONVERSATION,
+                  participant_tag=tag("VHV.Participant.Instructor"),
+                  conversation=conversations["DA_Conversation_HBCT_GoalSetting_Lesson"],
+                  entry_node_id="GSLesson_01", auto_start=False),
+        objective("O05_ComparePatients", "Visit both nearby villagers and compare a person with a goal and one without", q.CUSTOM_EVENT,
+                  "VHV.Story.Flag.HBCT.GoalSetting.ComparisonComplete",
+                  custom_event_tag=tag("VHV.CustomEvent.HBCT.GoalSetting.ComparisonObserved"),
+                  completion_conditions=completion_condition(
+                      "VHV.Story.Counter.HBCT.GoalSetting.ComparisonObserved", 2)),
+        objective("O06_ReflectOnDirection", "Return to the Instructor and discuss why goals matter", q.CONVERSATION,
+                  participant_tag=tag("VHV.Participant.Instructor"),
+                  conversation=conversations["DA_Conversation_HBCT_GoalSetting_ComparisonReflection"],
+                  entry_node_id="GSCompare_01", auto_start=False),
+        objective("O07_ObserveGoalMethods", "Visit both demonstration areas and observe two ways of setting goals", q.CUSTOM_EVENT,
+                  custom_event_tag=tag("VHV.CustomEvent.HBCT.GoalSetting.MethodsObserved"),
+                  completion_conditions=completion_condition(
+                      "VHV.Story.Counter.HBCT.GoalSetting.MethodsObserved", 2)),
+        objective("O08_IdentifyGoalMethods", "Talk to the Instructor and distinguish self-set and jointly set goals", q.CONVERSATION,
+                  "VHV.Story.Flag.HBCT.GoalSetting.MethodsLearned",
+                  participant_tag=tag("VHV.Participant.Instructor"),
+                  conversation=conversations["DA_Conversation_HBCT_GoalSetting_Methods"],
+                  entry_node_id="GSMethods_01", auto_start=False),
+        objective("O09_EvaluateGoals", "Meet the Instructor at the goal board and evaluate the example goals", q.CONVERSATION,
+                  "VHV.Story.Flag.HBCT.GoalSetting.GoodGoalsLearned",
+                  participant_tag=tag("VHV.Participant.Instructor"),
+                  conversation=conversations["DA_Conversation_HBCT_GoalSetting_GoodGoals"],
+                  entry_node_id="GSGood_01", auto_start=False),
+        objective("O10_ReturnToMali", "Visit Aunt Mali and check how reducing sugar is going", q.CONVERSATION,
+                  participant_tag=tag("VHV.Participant.AuntMali"),
+                  conversation=conversations["DA_Conversation_HBCT_GoalSetting_MaliCheckIn"],
+                  entry_node_id="GSMaliCheck_01", auto_start=False),
+        objective("O11_FindCurrentDifficulty", "Find what is still making change difficult", q.LEARNING_ACTIVITY,
+                  activity_tag=tag("VHV.Activity.HBCT.GoalSetting.MaliDifficulty"), auto_start=True),
+        objective("O12_DefineDesiredBehavior", "Decide what behavior Mali wants to change", q.CONVERSATION,
+                  participant_tag=tag("VHV.Participant.AuntMali"),
+                  conversation=conversations["DA_Conversation_HBCT_GoalSetting_MaliDirection"],
+                  entry_node_id="GSMaliDirection_01", auto_start=True),
+        objective("O13_BuildShortTermGoal", "Help Mali create a clear short-term goal", q.CONVERSATION,
+                  participant_tag=tag("VHV.Participant.AuntMali"),
+                  conversation=conversations["DA_Conversation_HBCT_GoalSetting_MaliShortTerm"],
+                  entry_node_id="GSMaliGoal_01", auto_start=True),
+        objective("O14_LinkLongTermGoal", "Connect the short-term plan to a longer-term health target", q.LEARNING_ACTIVITY,
+                  "VHV.Story.Flag.HBCT.GoalSetting.MaliGoalCreated",
+                  activity_tag=tag("VHV.Activity.HBCT.GoalSetting.MaliGoalBoardB"), auto_start=True),
+        objective("O15_ReviewGoalPlan", "Return to Aunt Mali and review her completed goal plan", q.CONVERSATION,
+                  participant_tag=tag("VHV.Participant.AuntMali"),
+                  conversation=conversations["DA_Conversation_HBCT_GoalSetting_MaliReview"],
+                  entry_node_id="GSMaliReview_01", auto_start=False),
+        objective("O15B_RoadsidePractice", "Talk to the villager on the road", q.CONVERSATION,
+                  participant_tag=tag("VHV.Participant.GoalSetting.RoadVillager"),
+                  conversation=conversations["DA_Conversation_HBCT_GoalSetting_RoadsidePractice"],
+                  entry_node_id="GSRoad_01", auto_start=False),
+        objective("O16_FinalDebrief", "Report back to the Instructor", q.CONVERSATION,
+                  "VHV.Story.Flag.HBCT.GoalSetting.Completed",
+                  participant_tag=tag("VHV.Participant.Instructor"),
+                  conversation=conversations["DA_Conversation_HBCT_GoalSetting_FinalDebrief"],
+                  entry_node_id="GSFinal_01", auto_start=False),
     ]
     quests = [
         struct(unreal.VHVQuestDefinition,
@@ -772,12 +1342,14 @@ def configure_arc(arc, level, conversations):
                auto_track=True,
                auto_start_next_quest=False,
                start_stinger=major_stinger(
-                   "TECHNIQUE 2", "GOAL SETTING", "HEALTH BEHAVIOR CHANGE", 1.9)),
+                   "TECHNIQUE 2", "GOAL SETTING", "HEALTH BEHAVIOR CHANGE", 1.9),
+               completion_stinger=major_stinger(
+                   "QUEST COMPLETE", "GOAL SETTING", "TECHNIQUE 2", 1.9)),
     ]
     arc.set_editor_properties({
         "quest_arc_id": "HBCT",
         "quest_arc_title": "Health Behavior Change Techniques",
-        "quest_arc_description": "Production HBCT story arc. This milestone contains the prologue and Building Motivation.",
+        "quest_arc_description": "Production HBCT story arc containing the prologue, Building Motivation, and Goal Setting.",
         "associated_level_data": level,
         "quests": quests,
         "auto_start_next_quest": True,
@@ -855,6 +1427,7 @@ def configure_location(label, location, location_tag):
         "location_tag": tag(location_tag),
         "enabled": True,
         "trigger_world_action": False,
+        "activate_current_objective": False,
     })
     box = actor.get_editor_property("box_component")
     if not existed:
@@ -863,7 +1436,8 @@ def configure_location(label, location, location_tag):
 
 
 def configure_story_trigger(label, location, extent, location_tag, quest_id,
-                            objective_id, receiver_tag, legacy_label=""):
+                            objective_id, receiver_tag, legacy_label="",
+                            track_as_objective=True):
     actor = find_actor(label)
     if not actor and legacy_label:
         actor = find_actor(legacy_label)
@@ -882,6 +1456,8 @@ def configure_story_trigger(label, location, extent, location_tag, quest_id,
         "world_action_receiver_tag": tag(receiver_tag),
         "world_action_tag": tag("VHV.WorldAction.StartConversation"),
         "trigger_world_action_once": True,
+        "track_world_action_as_objective": track_as_objective,
+        "activate_current_objective": False,
         "required_active_quest_id": quest_id,
         "required_active_objective_id": objective_id,
     })
@@ -889,6 +1465,46 @@ def configure_story_trigger(label, location, extent, location_tag, quest_id,
         actor.get_editor_property("box_component").set_box_extent(
             unreal.Vector(*extent), True)
     return actor
+
+
+def configure_objective_trigger(label, location, extent, location_tag, quest_id, objective_id):
+    existed = find_actor(label) is not None
+    actor = spawn_actor(unreal.VHVQuestLocationVolume, label, location,
+                        preserve_existing_transform=True)
+    actor.set_editor_properties({
+        "location_tag": tag(location_tag),
+        "enabled": True,
+        "trigger_world_action": False,
+        "activate_current_objective": True,
+        "activate_current_objective_once": True,
+        "required_active_quest_id": quest_id,
+        "required_active_objective_id": objective_id,
+    })
+    if not existed:
+        actor.get_editor_property("box_component").set_box_extent(
+            unreal.Vector(*extent), True)
+    return actor
+
+
+def place_trigger_with_group_if_disconnected(trigger, group_actors, offset=(0.0, 0.0, 0.0), max_distance=900.0):
+    """Keep manual placement when connected, but repair legacy triggers left far from their scene."""
+    valid_actors = [actor for actor in group_actors if actor]
+    if not trigger or not valid_actors:
+        raise RuntimeError("Cannot place a production trigger without its associated scene actors")
+    locations = [actor.get_actor_location() for actor in valid_actors]
+    center = unreal.Vector(
+        sum(value.x for value in locations) / len(locations),
+        sum(value.y for value in locations) / len(locations),
+        sum(value.z for value in locations) / len(locations))
+    desired = unreal.Vector(center.x + offset[0], center.y + offset[1], center.z + offset[2])
+    current = trigger.get_actor_location()
+    distance_squared = ((current.x - center.x) ** 2
+                        + (current.y - center.y) ** 2
+                        + (current.z - center.z) ** 2)
+    if distance_squared > max_distance ** 2:
+        trigger.modify()
+        trigger.set_actor_location(desired, False, True)
+    return desired
 
 
 def create_blockout_prop(label, location, scale):
@@ -1025,11 +1641,202 @@ def configure_map(ambient_assets):
         "VHV.WorldReceiver.HBCT.Motivation.Saeng",
         legacy_label="HBCT_Location_SaengHouse")
 
-    spawn_npc(npc_class, "HBCT_Motivation_Mali", (1450.0, 650.0, 100.0), 180.0,
-              "VHV.Participant.AuntMali", preserve_existing_transform=True)
+    mali = spawn_npc(npc_class, "HBCT_Motivation_Mali", (1450.0, 650.0, 100.0), 180.0,
+                     "VHV.Participant.AuntMali", preserve_existing_transform=True)
     configure_location("HBCT_Location_MaliHouse", (1260.0, 650.0, 100.0), "VHV.Location.HBCT.MaliHouse")
     create_blockout_prop("HBCT_Prop_Mali_IcedMilkTea", (1510.0, 600.0, 55.0), (0.08, 0.08, 0.25))
     create_blockout_prop("HBCT_Prop_Mali_Sweets", (1540.0, 635.0, 48.0), (0.28, 0.18, 0.06))
+
+    mali_location = mali.get_actor_location()
+    instructor_location = instructor.get_actor_location()
+    roadside_location = (
+        mali_location.x + (instructor_location.x - mali_location.x) * 0.30,
+        mali_location.y + (instructor_location.y - mali_location.y) * 0.30,
+        mali_location.z)
+    road_villager = spawn_npc(
+        npc_class, "HBCT_GoalSetting_RoadVillager", roadside_location, -135.0,
+        "VHV.Participant.GoalSetting.RoadVillager", preserve_existing_transform=True)
+    road_interaction = road_villager.get_npc_interaction_component()
+    road_interaction.modify()
+    road_interaction.set_editor_properties({
+        "default_interaction_prompt": "Talk",
+        "use_quest_objective_text_as_prompt": False,
+        "interaction_enabled": True,
+    })
+    road_dialogue = road_villager.get_dialogue_component()
+    road_dialogue.modify()
+    road_dialogue.set_editor_property("default_conversation", None)
+
+    # Technique 2 uses a deliberately simple linear staging strip. These transforms
+    # are production-editable defaults only; no quest logic depends on them.
+    health_post_trigger = configure_objective_trigger(
+        "HBCT_Trigger_GoalSetting_HealthPost", (3000.0, -2500.0, 100.0),
+        (300.0, 300.0, 220.0), "VHV.Location.HBCT.GoalSetting.HealthPost",
+        "Q_HBCT_02_GOAL_SETTING", "O01_ReachHealthPost")
+    place_trigger_with_group_if_disconnected(
+        health_post_trigger, [instructor], (-350.0, -260.0, 0.0))
+
+    instructor_lesson_trigger = configure_objective_trigger(
+        "HBCT_Trigger_GoalSetting_InstructorLesson", (3000.0, -2500.0, 100.0),
+        (220.0, 220.0, 200.0), "VHV.Location.HBCT.GoalSetting.HealthPost",
+        "Q_HBCT_02_GOAL_SETTING", "O04_LearnGoalSetting")
+    place_trigger_with_group_if_disconnected(
+        instructor_lesson_trigger, [instructor], (-175.0, -260.0, 0.0))
+
+    instructor_reflection_trigger = configure_objective_trigger(
+        "HBCT_Trigger_GoalSetting_InstructorReflection", (3000.0, -2500.0, 100.0),
+        (220.0, 220.0, 200.0), "VHV.Location.HBCT.GoalSetting.HealthPost",
+        "Q_HBCT_02_GOAL_SETTING", "O06_ReflectOnDirection")
+    place_trigger_with_group_if_disconnected(
+        instructor_reflection_trigger, [instructor], (0.0, -260.0, 0.0))
+
+    instructor_methods_trigger = configure_objective_trigger(
+        "HBCT_Trigger_GoalSetting_InstructorMethods", (3000.0, -2500.0, 100.0),
+        (220.0, 220.0, 200.0), "VHV.Location.HBCT.GoalSetting.HealthPost",
+        "Q_HBCT_02_GOAL_SETTING", "O08_IdentifyGoalMethods")
+    place_trigger_with_group_if_disconnected(
+        instructor_methods_trigger, [instructor], (175.0, -260.0, 0.0))
+
+    observation_vhv = spawn_npc(
+        npc_class, "HBCT_GoalSetting_ObservationVHV", (4000.0, -2580.0, 100.0), 0.0,
+        preserve_existing_transform=True)
+    auntie_nuan = spawn_npc(
+        npc_class, "HBCT_GoalSetting_AuntieNuan", (4200.0, -2580.0, 100.0), 180.0,
+        preserve_existing_transform=True)
+    configure_ambient_actor(
+        "HBCT_GoalSetting_InitialObservation", (4100.0, -2580.0, 100.0),
+        ambient_assets["DA_Ambient_HBCT_GoalSetting_InitialObservation"],
+        "VHV.WorldReceiver.HBCT.GoalSetting.InitialObservation",
+        [bind("VHV", observation_vhv), bind("Nuan", auntie_nuan)],
+        explicit_trigger=True, preserve_existing_transform=True)
+    initial_observation_trigger = configure_story_trigger(
+        "HBCT_Trigger_GoalSetting_InitialObservation", (4100.0, -2850.0, 100.0),
+        (300.0, 240.0, 220.0), "VHV.Location.HBCT.GoalSetting.InitialObservation",
+        "Q_HBCT_02_GOAL_SETTING", "O02_ObserveGoalConversation",
+        "VHV.WorldReceiver.HBCT.GoalSetting.InitialObservation")
+    place_trigger_with_group_if_disconnected(
+        initial_observation_trigger, [observation_vhv, auntie_nuan], (0.0, -270.0, 0.0))
+
+    clear_nuan = spawn_npc(
+        npc_class, "HBCT_GoalSetting_Nuan_ClearGoal", (5150.0, -2750.0, 100.0), 135.0,
+        preserve_existing_transform=True)
+    uncle_chai = spawn_npc(
+        npc_class, "HBCT_GoalSetting_UncleChai", (5150.0, -2250.0, 100.0), 225.0,
+        preserve_existing_transform=True)
+    configure_ambient_actor(
+        "HBCT_GoalSetting_ClearGoalScene", (5150.0, -2750.0, 100.0),
+        ambient_assets["DA_Ambient_HBCT_GoalSetting_ClearGoal"],
+        "VHV.WorldReceiver.HBCT.GoalSetting.ClearGoal", [bind("Nuan", clear_nuan)],
+        explicit_trigger=True, preserve_existing_transform=True)
+    configure_ambient_actor(
+        "HBCT_GoalSetting_NoGoalScene", (5150.0, -2250.0, 100.0),
+        ambient_assets["DA_Ambient_HBCT_GoalSetting_NoGoal"],
+        "VHV.WorldReceiver.HBCT.GoalSetting.NoGoal", [bind("Chai", uncle_chai)],
+        explicit_trigger=True, preserve_existing_transform=True)
+    clear_goal_trigger = configure_story_trigger(
+        "HBCT_Trigger_GoalSetting_ClearGoal", (4900.0, -2750.0, 100.0),
+        (220.0, 220.0, 220.0), "VHV.Location.HBCT.GoalSetting.ClearGoal",
+        "Q_HBCT_02_GOAL_SETTING", "O05_ComparePatients",
+        "VHV.WorldReceiver.HBCT.GoalSetting.ClearGoal", track_as_objective=False)
+    place_trigger_with_group_if_disconnected(
+        clear_goal_trigger, [clear_nuan], (-250.0, 0.0, 0.0))
+    no_goal_trigger = configure_story_trigger(
+        "HBCT_Trigger_GoalSetting_NoGoal", (4900.0, -2250.0, 100.0),
+        (220.0, 220.0, 220.0), "VHV.Location.HBCT.GoalSetting.NoGoal",
+        "Q_HBCT_02_GOAL_SETTING", "O05_ComparePatients",
+        "VHV.WorldReceiver.HBCT.GoalSetting.NoGoal", track_as_objective=False)
+    place_trigger_with_group_if_disconnected(
+        no_goal_trigger, [uncle_chai], (-250.0, 0.0, 0.0))
+
+    self_vhv = spawn_npc(
+        npc_class, "HBCT_GoalSetting_SelfSetVHV", (6250.0, -2750.0, 100.0), 0.0,
+        preserve_existing_transform=True)
+    self_patient = spawn_npc(
+        npc_class, "HBCT_GoalSetting_SelfSetPatient", (6450.0, -2750.0, 100.0), 180.0,
+        preserve_existing_transform=True)
+    joint_vhv = spawn_npc(
+        npc_class, "HBCT_GoalSetting_JointVHV", (6250.0, -2250.0, 100.0), 0.0,
+        preserve_existing_transform=True)
+    joint_patient = spawn_npc(
+        npc_class, "HBCT_GoalSetting_JointPatient", (6450.0, -2250.0, 100.0), 180.0,
+        preserve_existing_transform=True)
+    configure_ambient_actor(
+        "HBCT_GoalSetting_SelfSetScene", (6350.0, -2750.0, 100.0),
+        ambient_assets["DA_Ambient_HBCT_GoalSetting_SelfSet"],
+        "VHV.WorldReceiver.HBCT.GoalSetting.SelfSet",
+        [bind("VHV", self_vhv), bind("Patient", self_patient)],
+        explicit_trigger=True, preserve_existing_transform=True)
+    configure_ambient_actor(
+        "HBCT_GoalSetting_JointScene", (6350.0, -2250.0, 100.0),
+        ambient_assets["DA_Ambient_HBCT_GoalSetting_Joint"],
+        "VHV.WorldReceiver.HBCT.GoalSetting.Joint",
+        [bind("VHV", joint_vhv), bind("Patient", joint_patient)],
+        explicit_trigger=True, preserve_existing_transform=True)
+    self_set_trigger = configure_story_trigger(
+        "HBCT_Trigger_GoalSetting_SelfSet", (6000.0, -2750.0, 100.0),
+        (220.0, 220.0, 220.0), "VHV.Location.HBCT.GoalSetting.SelfSet",
+        "Q_HBCT_02_GOAL_SETTING", "O07_ObserveGoalMethods",
+        "VHV.WorldReceiver.HBCT.GoalSetting.SelfSet", track_as_objective=False)
+    place_trigger_with_group_if_disconnected(
+        self_set_trigger, [self_vhv, self_patient], (-350.0, 0.0, 0.0))
+    joint_trigger = configure_story_trigger(
+        "HBCT_Trigger_GoalSetting_Joint", (6000.0, -2250.0, 100.0),
+        (220.0, 220.0, 220.0), "VHV.Location.HBCT.GoalSetting.Joint",
+        "Q_HBCT_02_GOAL_SETTING", "O07_ObserveGoalMethods",
+        "VHV.WorldReceiver.HBCT.GoalSetting.Joint", track_as_objective=False)
+    place_trigger_with_group_if_disconnected(
+        joint_trigger, [joint_vhv, joint_patient], (-350.0, 0.0, 0.0))
+
+    good_goal_trigger = configure_objective_trigger(
+        "HBCT_Trigger_GoalSetting_GoodGoalBoard", (7400.0, -2500.0, 100.0),
+        (320.0, 280.0, 220.0), "VHV.Location.HBCT.GoalSetting.GoodGoalBoard",
+        "Q_HBCT_02_GOAL_SETTING", "O09_EvaluateGoals")
+    place_trigger_with_group_if_disconnected(
+        good_goal_trigger, [instructor], (350.0, -260.0, 0.0))
+
+    mali_check_in_trigger = configure_objective_trigger(
+        "HBCT_Trigger_GoalSetting_MaliCheckIn", (8500.0, -2500.0, 100.0),
+        (320.0, 280.0, 220.0), "VHV.Location.HBCT.GoalSetting.MaliCheckIn",
+        "Q_HBCT_02_GOAL_SETTING", "O10_ReturnToMali")
+    place_trigger_with_group_if_disconnected(
+        mali_check_in_trigger, [mali], (-180.0, -260.0, 0.0))
+
+    mali_plan_review_trigger = configure_objective_trigger(
+        "HBCT_Trigger_GoalSetting_MaliPlanReview", (8500.0, -2500.0, 100.0),
+        (260.0, 240.0, 220.0), "VHV.Location.HBCT.GoalSetting.MaliCheckIn",
+        "Q_HBCT_02_GOAL_SETTING", "O15_ReviewGoalPlan")
+    place_trigger_with_group_if_disconnected(
+        mali_plan_review_trigger, [mali], (180.0, -260.0, 0.0))
+
+    final_instructor_trigger = configure_objective_trigger(
+        "HBCT_Trigger_GoalSetting_FinalInstructor", (9600.0, -2500.0, 100.0),
+        (320.0, 280.0, 220.0), "VHV.Location.HBCT.GoalSetting.FinalInstructor",
+        "Q_HBCT_02_GOAL_SETTING", "O16_FinalDebrief")
+    place_trigger_with_group_if_disconnected(
+        final_instructor_trigger, [instructor], (525.0, -260.0, 0.0))
+
+    expected_goal_trigger_labels = {
+        "HBCT_Trigger_GoalSetting_HealthPost",
+        "HBCT_Trigger_GoalSetting_InstructorLesson",
+        "HBCT_Trigger_GoalSetting_InstructorReflection",
+        "HBCT_Trigger_GoalSetting_InstructorMethods",
+        "HBCT_Trigger_GoalSetting_InitialObservation",
+        "HBCT_Trigger_GoalSetting_ClearGoal",
+        "HBCT_Trigger_GoalSetting_NoGoal",
+        "HBCT_Trigger_GoalSetting_SelfSet",
+        "HBCT_Trigger_GoalSetting_Joint",
+        "HBCT_Trigger_GoalSetting_GoodGoalBoard",
+        "HBCT_Trigger_GoalSetting_MaliCheckIn",
+        "HBCT_Trigger_GoalSetting_MaliPlanReview",
+        "HBCT_Trigger_GoalSetting_FinalInstructor",
+    }
+    for actor in list(editor_actors().get_all_level_actors()):
+        label = actor.get_actor_label()
+        if (actor.get_class() == unreal.VHVQuestLocationVolume.static_class()
+                and label.startswith("HBCT_Trigger_GoalSetting_")
+                and label not in expected_goal_trigger_labels):
+            unreal.log("{} Removing obsolete Quest 2 trigger {}".format(LOG, label))
+            editor_actors().destroy_actor(actor)
 
     if not unreal.EditorLevelLibrary.save_current_level():
         raise RuntimeError("Could not save {}".format(MAP_PATH))
@@ -1068,6 +1875,29 @@ def validate_map_and_defaults(level, arc):
         "HBCT_Trigger_BadGoodDemo",
         "HBCT_Trigger_SaengAppreciation",
         "HBCT_Location_MaliHouse",
+        "HBCT_GoalSetting_ObservationVHV",
+        "HBCT_GoalSetting_AuntieNuan",
+        "HBCT_GoalSetting_InitialObservation",
+        "HBCT_GoalSetting_Nuan_ClearGoal",
+        "HBCT_GoalSetting_UncleChai",
+        "HBCT_GoalSetting_SelfSetVHV",
+        "HBCT_GoalSetting_SelfSetPatient",
+        "HBCT_GoalSetting_JointVHV",
+        "HBCT_GoalSetting_JointPatient",
+        "HBCT_GoalSetting_RoadVillager",
+        "HBCT_Trigger_GoalSetting_HealthPost",
+        "HBCT_Trigger_GoalSetting_InstructorLesson",
+        "HBCT_Trigger_GoalSetting_InstructorReflection",
+        "HBCT_Trigger_GoalSetting_InstructorMethods",
+        "HBCT_Trigger_GoalSetting_InitialObservation",
+        "HBCT_Trigger_GoalSetting_ClearGoal",
+        "HBCT_Trigger_GoalSetting_NoGoal",
+        "HBCT_Trigger_GoalSetting_SelfSet",
+        "HBCT_Trigger_GoalSetting_Joint",
+        "HBCT_Trigger_GoalSetting_GoodGoalBoard",
+        "HBCT_Trigger_GoalSetting_MaliCheckIn",
+        "HBCT_Trigger_GoalSetting_MaliPlanReview",
+        "HBCT_Trigger_GoalSetting_FinalInstructor",
     }
     actors = editor_actors().get_all_level_actors()
     labels = {actor.get_actor_label() for actor in actors}
@@ -1095,9 +1925,79 @@ def validate_map_and_defaults(level, arc):
         "VHV.Participant.UnclePrasert",
         "VHV.Participant.AuntSaeng",
         "VHV.Participant.AuntMali",
+        "VHV.Participant.GoalSetting.RoadVillager",
     }
     if set(participant_tags) != expected_participants:
         raise RuntimeError("Unexpected production quest participant set: {}".format(participant_tags))
+
+    actors_by_label = {actor.get_actor_label(): actor for actor in actors}
+    road_interaction = actors_by_label["HBCT_GoalSetting_RoadVillager"].get_npc_interaction_component()
+    if (road_interaction.get_editor_property("use_quest_objective_text_as_prompt")
+            or str(road_interaction.get_editor_property("default_interaction_prompt")) != "Talk"
+            or not road_interaction.get_editor_property("interaction_enabled")):
+        raise RuntimeError("Road villager must use the normal Talk interaction prompt")
+    if actors_by_label["HBCT_GoalSetting_RoadVillager"].get_dialogue_component().get_editor_property(
+            "default_conversation"):
+        raise RuntimeError("Road villager must not offer fallback dialogue outside its quest objective")
+    road_location = actors_by_label["HBCT_GoalSetting_RoadVillager"].get_actor_location()
+    mali_location = actors_by_label["HBCT_Motivation_Mali"].get_actor_location()
+    instructor_location = actors_by_label["HBCT_Intro_Instructor"].get_actor_location()
+    road_from_mali_squared = ((road_location.x - mali_location.x) ** 2
+                              + (road_location.y - mali_location.y) ** 2)
+    road_to_instructor_squared = ((road_location.x - instructor_location.x) ** 2
+                                  + (road_location.y - instructor_location.y) ** 2)
+    mali_to_instructor_squared = ((mali_location.x - instructor_location.x) ** 2
+                                  + (mali_location.y - instructor_location.y) ** 2)
+    if road_from_mali_squared < 500.0 ** 2 or road_to_instructor_squared >= mali_to_instructor_squared:
+        raise RuntimeError("Road villager must be outside Mali's area and farther along toward the Instructor")
+
+    expected_goal_triggers = {
+        "HBCT_Trigger_GoalSetting_HealthPost": ("O01_ReachHealthPost", True, "", ["HBCT_Intro_Instructor"]),
+        "HBCT_Trigger_GoalSetting_InstructorLesson": ("O04_LearnGoalSetting", True, "", ["HBCT_Intro_Instructor"]),
+        "HBCT_Trigger_GoalSetting_InstructorReflection": ("O06_ReflectOnDirection", True, "", ["HBCT_Intro_Instructor"]),
+        "HBCT_Trigger_GoalSetting_InstructorMethods": ("O08_IdentifyGoalMethods", True, "", ["HBCT_Intro_Instructor"]),
+        "HBCT_Trigger_GoalSetting_InitialObservation": ("O02_ObserveGoalConversation", False, "VHV.WorldReceiver.HBCT.GoalSetting.InitialObservation", ["HBCT_GoalSetting_ObservationVHV", "HBCT_GoalSetting_AuntieNuan"]),
+        "HBCT_Trigger_GoalSetting_ClearGoal": ("O05_ComparePatients", False, "VHV.WorldReceiver.HBCT.GoalSetting.ClearGoal", ["HBCT_GoalSetting_Nuan_ClearGoal"]),
+        "HBCT_Trigger_GoalSetting_NoGoal": ("O05_ComparePatients", False, "VHV.WorldReceiver.HBCT.GoalSetting.NoGoal", ["HBCT_GoalSetting_UncleChai"]),
+        "HBCT_Trigger_GoalSetting_SelfSet": ("O07_ObserveGoalMethods", False, "VHV.WorldReceiver.HBCT.GoalSetting.SelfSet", ["HBCT_GoalSetting_SelfSetVHV", "HBCT_GoalSetting_SelfSetPatient"]),
+        "HBCT_Trigger_GoalSetting_Joint": ("O07_ObserveGoalMethods", False, "VHV.WorldReceiver.HBCT.GoalSetting.Joint", ["HBCT_GoalSetting_JointVHV", "HBCT_GoalSetting_JointPatient"]),
+        "HBCT_Trigger_GoalSetting_GoodGoalBoard": ("O09_EvaluateGoals", True, "", ["HBCT_Intro_Instructor"]),
+        "HBCT_Trigger_GoalSetting_MaliCheckIn": ("O10_ReturnToMali", True, "", ["HBCT_Motivation_Mali"]),
+        "HBCT_Trigger_GoalSetting_MaliPlanReview": ("O15_ReviewGoalPlan", True, "", ["HBCT_Motivation_Mali"]),
+        "HBCT_Trigger_GoalSetting_FinalInstructor": ("O16_FinalDebrief", True, "", ["HBCT_Intro_Instructor"]),
+    }
+    actual_goal_trigger_labels = {
+        actor.get_actor_label() for actor in actors
+        if actor.get_actor_label().startswith("HBCT_Trigger_GoalSetting_")}
+    if actual_goal_trigger_labels != set(expected_goal_triggers):
+        raise RuntimeError("Unexpected/orphaned Quest 2 triggers: expected {}, found {}".format(
+            sorted(expected_goal_triggers), sorted(actual_goal_trigger_labels)))
+    for trigger_label, (objective_id, activates_objective, receiver_tag, group_labels) in expected_goal_triggers.items():
+        trigger = actors_by_label[trigger_label]
+        if (str(trigger.get_editor_property("required_active_quest_id")) != "Q_HBCT_02_GOAL_SETTING"
+                or str(trigger.get_editor_property("required_active_objective_id")) != objective_id
+                or trigger.get_editor_property("activate_current_objective") != activates_objective):
+            raise RuntimeError("Quest 2 trigger {} is not gated/routed to {}".format(
+                trigger_label, objective_id))
+        if receiver_tag:
+            actual_receiver = str(unreal.GameplayTagLibrary.get_tag_name(
+                trigger.get_editor_property("world_action_receiver_tag")))
+            if (not trigger.get_editor_property("trigger_world_action")
+                    or actual_receiver != receiver_tag):
+                raise RuntimeError("Quest 2 trigger {} has invalid WorldAction routing".format(
+                    trigger_label))
+        trigger_location = trigger.get_actor_location()
+        group_locations = [actors_by_label[label].get_actor_location() for label in group_labels]
+        center = unreal.Vector(
+            sum(value.x for value in group_locations) / len(group_locations),
+            sum(value.y for value in group_locations) / len(group_locations),
+            sum(value.z for value in group_locations) / len(group_locations))
+        distance_squared = ((trigger_location.x - center.x) ** 2
+                            + (trigger_location.y - center.y) ** 2
+                            + (trigger_location.z - center.z) ** 2)
+        if distance_squared > 900.0 ** 2:
+            raise RuntimeError("Quest 2 trigger {} is disconnected from {}".format(
+                trigger_label, group_labels))
 
     validator = unreal.get_editor_subsystem(unreal.EditorValidatorSubsystem)
     for actor in actors:
@@ -1136,13 +2036,14 @@ def validate_arc_runtime(arc):
 
 def validate_content_integrity(level, conversations, arc):
     topics = level.get_editor_property("day_data").get_editor_property("topics")
-    authored_activities = topics[0].get_editor_property("activities") if len(topics) == 1 else []
+    authored_activities = [activity_data for topic in topics
+                           for activity_data in topic.get_editor_property("activities")]
     activity_ids = {
         str(unreal.GameplayTagLibrary.get_tag_name(item.get_editor_property("activity_tag"))).split(".")[-1]
         for item in authored_activities
     }
-    if len(authored_activities) != 11 or len(activity_ids) != 11:
-        raise RuntimeError("HBCT milestone must contain 11 uniquely addressed activities")
+    if len(authored_activities) != 26 or len(activity_ids) != 26:
+        raise RuntimeError("HBCT production content must contain 26 uniquely addressed activities")
 
     placeholder = "HBCT production learning content."
     activities_by_id = {}
@@ -1168,12 +2069,100 @@ def validate_content_integrity(level, conversations, arc):
                     or not str(policy.get_editor_property("final_incorrect_explanation"))):
                 raise RuntimeError("Assessed HBCT choice {} lacks the two-attempt policy".format(activity_id))
 
+    def has_meaningful_teaching(teaching_data):
+        return bool(
+            str(teaching_data.get_editor_property("title")).strip()
+            or str(teaching_data.get_editor_property("content")).strip()
+            or any(str(value).strip() for value in teaching_data.get_editor_property("key_takeaways"))
+            or teaching_data.get_editor_property("media")
+            or teaching_data.get_editor_property("media_texture")
+            or str(teaching_data.get_editor_property("media_caption")).strip())
+
+    intentional_goal_lessons = {"WhatIsGoalSetting", "UsefulGoalCharacteristics"}
+    goal_activity_ids = {
+        activity_id for activity_id in activities_by_id
+        if activity_id in {
+            "GoalParts", "WhatIsGoalSetting", "ClearerPath", "GoalFunction",
+            "IdentifyMethods", "UsefulGoals", "DiagnoseVagueGoal", "DiagnoseExtremeGoal",
+            "UsefulGoalCharacteristics", "ImproveVagueGoal", "MaliDifficulty",
+            "MaliBehaviors", "MaliGoalBoardA", "MaliGoalBoardB", "FinalTransfer"}}
+    authored_goal_lessons = {
+        activity_id for activity_id in goal_activity_ids
+        if has_meaningful_teaching(activities_by_id[activity_id].get_editor_property("teaching"))}
+    if authored_goal_lessons != intentional_goal_lessons:
+        raise RuntimeError("Quest 2 teaching pages must be exactly {} but found {}".format(
+            sorted(intentional_goal_lessons), sorted(authored_goal_lessons)))
+
+    expected_lessons = {
+        "WhatIsGoalSetting": (
+            "WHAT IS GOAL SETTING?",
+            "Goal setting means deciding what health behavior should change and defining a clear target to work toward.",
+            [
+                "BEHAVIOR — What will change?",
+                "TARGET — What are we trying to achieve?",
+                "PATH — What practical action moves us toward it?",
+                "Motivation gives energy. Goals give direction.",
+            ]),
+        "UsefulGoalCharacteristics": (
+            "WHAT MAKES A USEFUL GOAL?",
+            "",
+            [
+                "SPECIFIC — The behavior is clear.",
+                "CHALLENGING — The goal requires meaningful effort.",
+                "CLEARLY DIRECTED — The person knows what they are working toward.",
+                "SHORT-TERM — There is an achievable target that can be worked on now.",
+                "REALISTIC — The goal is possible for this person and situation.",
+                "A useful goal should guide action, not merely sound ambitious.",
+            ]),
+    }
+    for activity_id, (expected_title, expected_body, expected_cards) in expected_lessons.items():
+        lesson_data = activities_by_id[activity_id].get_editor_property("teaching")
+        actual_cards = [str(value) for value in lesson_data.get_editor_property("key_takeaways")]
+        if (str(lesson_data.get_editor_property("title")) != expected_title
+                or str(lesson_data.get_editor_property("content")) != expected_body
+                or actual_cards != expected_cards):
+            raise RuntimeError("Quest 2 lesson {} is incomplete or split incorrectly".format(activity_id))
+
+    expected_classifications = {
+        "IdentifyMethods": (
+            "Which examples show a SELF-SET goal?",
+            [True, False, True, False]),
+        "MaliGoalBoardA": (
+            "Which statements are SHORT-TERM GOALS in Mali's plan?",
+            [True, True, False, False]),
+        "MaliGoalBoardB": (
+            "Which statements describe Mali's LONG-TERM GOALS?",
+            [True, True, False]),
+    }
+    for activity_id, (expected_question, expected_answers) in expected_classifications.items():
+        activity_data = activities_by_id[activity_id]
+        question_data = activity_data.get_editor_property("question")
+        actual_answers = [option.get_editor_property("is_correct")
+                          for option in question_data.get_editor_property("options")]
+        if (activity_data.get_editor_property("activity_type")
+                != unreal.TextbookActivityType.MULTI_CHOICE
+                or activity_data.get_editor_property("matching_pairs")
+                or str(question_data.get_editor_property("question_text")) != expected_question
+                or actual_answers != expected_answers):
+            raise RuntimeError("Quest 2 classification {} is not authored as clear MultiChoice".format(
+                activity_id))
+
+    remaining_goal_matching = [
+        activity_id for activity_id in goal_activity_ids
+        if activities_by_id[activity_id].get_editor_property("activity_type")
+        == unreal.TextbookActivityType.MATCHING]
+    if remaining_goal_matching:
+        raise RuntimeError("Quest 2 still contains Matching activities: {}".format(
+            remaining_goal_matching))
+
     expected_categories = {
         "IntroLesson": unreal.TextbookTeachingCategory.LESSON,
         "TechniqueTitle": unreal.TextbookTeachingCategory.TECHNIQUE,
         "MotivationLesson": unreal.TextbookTeachingCategory.KEY_IDEA,
         "DemoReflection": unreal.TextbookTeachingCategory.REFLECTION,
         "Methods": unreal.TextbookTeachingCategory.LESSON,
+        "WhatIsGoalSetting": unreal.TextbookTeachingCategory.LESSON,
+        "UsefulGoalCharacteristics": unreal.TextbookTeachingCategory.LESSON,
     }
     for activity_id, expected_category in expected_categories.items():
         actual = activities_by_id[activity_id].get_editor_property("teaching").get_editor_property("category")
@@ -1231,6 +2220,33 @@ def validate_content_integrity(level, conversations, arc):
             or thought_nodes[0].get_editor_property("presentation") != unreal.VHVDialoguePresentation.THOUGHT):
         raise RuntimeError("Learn_02 must be explicitly authored as a player Thought")
 
+    mali_review_nodes = conversations["DA_Conversation_HBCT_GoalSetting_MaliReview"].get_editor_property(
+        "conversation").get_editor_property("nodes")
+    if ([str(node.get_editor_property("node_id")) for node in mali_review_nodes]
+            != ["GSMaliReview_01", "GSMaliReview_02", "GSMaliReview_03", "GSMaliReview_04"]
+            or any(node.get_editor_property("node_type")
+                   == unreal.VHVDialogueNodeType.LEARNING_ACTIVITY for node in mali_review_nodes)):
+        raise RuntimeError("Mali review must end in gameplay without launching FinalTransfer")
+
+    roadside_nodes = conversations["DA_Conversation_HBCT_GoalSetting_RoadsidePractice"].get_editor_property(
+        "conversation").get_editor_property("nodes")
+    if [str(node.get_editor_property("node_id")) for node in roadside_nodes] != [
+            "GSRoad_01", "GSRoad_02", "GSRoad_03", "GSRoad_04",
+            "GSRoad_05", "GSRoad_06", "GSRoad_07", "GSRoad_08"]:
+        raise RuntimeError("Roadside practice dialogue sequence is incomplete")
+    transfer_links = []
+    for asset_name, asset in conversations.items():
+        nodes = asset.get_editor_property("conversation").get_editor_property("nodes")
+        for node in nodes:
+            if node.get_editor_property("node_type") != unreal.VHVDialogueNodeType.LEARNING_ACTIVITY:
+                continue
+            linked = node.get_editor_property("linked_activity").get_editor_property("activity_tag")
+            if str(unreal.GameplayTagLibrary.get_tag_name(linked)).endswith(".FinalTransfer"):
+                transfer_links.append((asset_name, str(node.get_editor_property("node_id"))))
+    if transfer_links != [("DA_Conversation_HBCT_GoalSetting_RoadsidePractice", "GSRoad_05")]:
+        raise RuntimeError("FinalTransfer must be linked exactly once from the roadside dialogue: {}".format(
+            transfer_links))
+
     quests = arc.get_editor_property("quests")
     expected = {
         "Q_HBCT_00_INTRO": [
@@ -1242,7 +2258,13 @@ def validate_content_integrity(level, conversations, arc):
             "O07_ObserveAppreciation", "O08_LearnMotivationMethods", "O09_ReachMaliHouse",
             "O10_FindWhatMatters", "O11_FindObstacle", "O12_OfferSupportiveInformation",
             "O13_SummarizePlan", "O14_FinalDebrief"],
-        "Q_HBCT_02_GOAL_SETTING": ["O01_BeginGoalSetting"],
+        "Q_HBCT_02_GOAL_SETTING": [
+            "O01_ReachHealthPost", "O02_ObserveGoalConversation", "O03_IdentifyGoalParts",
+            "O04_LearnGoalSetting", "O05_ComparePatients", "O06_ReflectOnDirection",
+            "O07_ObserveGoalMethods", "O08_IdentifyGoalMethods", "O09_EvaluateGoals",
+            "O10_ReturnToMali", "O11_FindCurrentDifficulty", "O12_DefineDesiredBehavior",
+            "O13_BuildShortTermGoal", "O14_LinkLongTermGoal", "O15_ReviewGoalPlan",
+            "O15B_RoadsidePractice", "O16_FinalDebrief"],
     }
     if len(quests) != 3:
         raise RuntimeError("HBCT transition shell must contain exactly three quests")
@@ -1281,6 +2303,59 @@ def validate_content_integrity(level, conversations, arc):
             or str(start_stinger.get_editor_property("title")) != "GOAL SETTING"
             or str(start_stinger.get_editor_property("subtitle")) != "HEALTH BEHAVIOR CHANGE"):
         raise RuntimeError("Goal Setting start transition is not authored correctly")
+    completion_stinger = goal_setting_quest.get_editor_property("completion_stinger")
+    if (str(completion_stinger.get_editor_property("label")) != "QUEST COMPLETE"
+            or str(completion_stinger.get_editor_property("title")) != "GOAL SETTING"
+            or str(completion_stinger.get_editor_property("subtitle")) != "TECHNIQUE 2"):
+        raise RuntimeError("Goal Setting completion transition is not authored correctly")
+
+    goal_objectives = {str(item.get_editor_property("objective_id")): item
+                       for item in goal_setting_quest.get_editor_property("objectives")}
+    roadside_objective = goal_objectives["O15B_RoadsidePractice"]
+    roadside_participant = str(unreal.GameplayTagLibrary.get_tag_name(
+        roadside_objective.get_editor_property("participant_tag")))
+    if (roadside_objective.get_editor_property("objective_type")
+            != unreal.VHVQuestObjectiveType.CONVERSATION
+            or roadside_participant != "VHV.Participant.GoalSetting.RoadVillager"
+            or str(roadside_objective.get_editor_property("entry_node_id")) != "GSRoad_01"
+            or roadside_objective.get_editor_property("auto_start")):
+        raise RuntimeError("Roadside practice objective must wait for interaction with its villager")
+    expected_goal_tracker_text = {
+        "O01_ReachHealthPost": "Meet the Instructor at the community health post",
+        "O02_ObserveGoalConversation": "Approach the nearby VHV and observe how an intention becomes a goal",
+        "O04_LearnGoalSetting": "Talk to the Instructor about what goal setting means",
+        "O05_ComparePatients": "Visit both nearby villagers and compare a person with a goal and one without",
+        "O06_ReflectOnDirection": "Return to the Instructor and discuss why goals matter",
+        "O07_ObserveGoalMethods": "Visit both demonstration areas and observe two ways of setting goals",
+        "O08_IdentifyGoalMethods": "Talk to the Instructor and distinguish self-set and jointly set goals",
+        "O09_EvaluateGoals": "Meet the Instructor at the goal board and evaluate the example goals",
+        "O10_ReturnToMali": "Visit Aunt Mali and check how reducing sugar is going",
+        "O15_ReviewGoalPlan": "Return to Aunt Mali and review her completed goal plan",
+        "O15B_RoadsidePractice": "Talk to the villager on the road",
+        "O16_FinalDebrief": "Report back to the Instructor",
+    }
+    for objective_id, expected_text in expected_goal_tracker_text.items():
+        actual_text = str(goal_objectives[objective_id].get_editor_property("objective_text"))
+        if actual_text != expected_text:
+            raise RuntimeError("Unexpected Quest 2 tracker text for {}: {}".format(
+                objective_id, actual_text))
+    if (goal_objectives["O02_ObserveGoalConversation"].get_editor_property("world_action_start_policy")
+            != unreal.VHVWorldActionStartPolicy.EXPLICIT_TRIGGER):
+        raise RuntimeError("Goal Setting initial observation must use Explicit Trigger")
+    for objective_id in (
+            "O01_ReachHealthPost", "O04_LearnGoalSetting", "O06_ReflectOnDirection",
+            "O08_IdentifyGoalMethods", "O09_EvaluateGoals", "O10_ReturnToMali",
+            "O15_ReviewGoalPlan", "O15B_RoadsidePractice", "O16_FinalDebrief"):
+        if goal_objectives[objective_id].get_editor_property("auto_start"):
+            raise RuntimeError("Location-based Quest 2 objective {} must wait for its trigger".format(
+                objective_id))
+    for objective_id, counter_name in (
+            ("O05_ComparePatients", "ComparisonObserved"),
+            ("O07_ObserveGoalMethods", "MethodsObserved")):
+        conditions = goal_objectives[objective_id].get_editor_property(
+            "completion_conditions").get_editor_property("conditions")
+        if len(conditions) != 1 or conditions[0].get_editor_property("compare_value") != 2:
+            raise RuntimeError("{} must wait for both independently triggered scenes".format(objective_id))
 
     final_nodes = conversations["DA_Conversation_HBCT_FinalDebrief"].get_editor_property(
         "conversation").get_editor_property("nodes")
@@ -1320,6 +2395,47 @@ def validate_attempt_runtime(level):
         raise RuntimeError("Correct retry did not enter normal positive Feedback")
 
 
+def validate_goal_setting_runtime(level):
+    game_instance = unreal.new_object(unreal.GameInstance)
+    subsystem = unreal.new_object(unreal.VHVTextbookSubsystem, outer=game_instance)
+    subsystem.start_journey(level)
+    subsystem.set_progression_mode(unreal.VHVTextbookProgressionMode.QUEST_MANAGED)
+
+    def assert_empty_teaching_skips(activity_id, submit):
+        if not subsystem.start_activity_by_id(activity_id):
+            raise RuntimeError("Could not start {} for Quest 2 flow validation".format(activity_id))
+        if not submit():
+            raise RuntimeError("{} did not accept its correct answer".format(activity_id))
+        if subsystem.get_current_phase() != unreal.LearningPhase.FEEDBACK:
+            raise RuntimeError("{} did not reach Feedback".format(activity_id))
+        subsystem.enter_teach_phase()
+        if subsystem.is_activity_active():
+            raise RuntimeError("{} exposed an empty Teach phase".format(activity_id))
+
+    assert_empty_teaching_skips("ClearerPath", lambda: (subsystem.submit_answer(True), True)[1])
+    assert_empty_teaching_skips("UsefulGoals", lambda: subsystem.submit_multi_choice([0, 1]))
+
+    classification_answers = {
+        "IdentifyMethods": [0, 2],
+        "MaliGoalBoardA": [0, 1],
+        "MaliGoalBoardB": [0, 1],
+    }
+    for activity_id, selected_answers in classification_answers.items():
+        assert_empty_teaching_skips(
+            activity_id,
+            lambda answers=selected_answers: subsystem.submit_multi_choice(answers))
+
+    for activity_id in ("WhatIsGoalSetting", "UsefulGoalCharacteristics"):
+        if not subsystem.start_activity_by_id(activity_id):
+            raise RuntimeError("Could not start intentional lesson {}".format(activity_id))
+        if not subsystem.submit_observation():
+            raise RuntimeError("Could not submit intentional lesson {}".format(activity_id))
+        if (not subsystem.is_activity_active()
+                or subsystem.get_current_phase() != unreal.LearningPhase.TEACH):
+            raise RuntimeError("Intentional lesson {} showed blank Feedback or was collapsed".format(
+                activity_id))
+        subsystem.advance_teach()
+
 def validate_observation_runtime(level):
     game_instance = unreal.new_object(unreal.GameInstance)
     subsystem = unreal.new_object(unreal.VHVTextbookSubsystem, outer=game_instance)
@@ -1329,9 +2445,10 @@ def validate_observation_runtime(level):
     if not subsystem.start_activity_by_id("IntroLesson") or not subsystem.submit_observation():
         raise RuntimeError("Passive Observation completion path failed")
     passive_state = subsystem.get_runtime_state()
-    if (passive_state.get_editor_property("current_phase") != unreal.LearningPhase.FEEDBACK
+    if (passive_state.get_editor_property("current_phase") != unreal.LearningPhase.TEACH
             or not passive_state.get_editor_property("activity_active")):
         raise RuntimeError("Passive Observation behavior changed")
+    subsystem.advance_teach()
 
     if not subsystem.start_activity_by_id("MarketObservation") or not subsystem.submit_observation():
         raise RuntimeError("Evidence-tagging Observation completion path failed")
@@ -1356,6 +2473,7 @@ def run():
     all_assets = [level] + list(conversations.values()) + list(ambient_assets.values()) + [arc]
     validate_content_integrity(level, conversations, arc)
     validate_attempt_runtime(level)
+    validate_goal_setting_runtime(level)
     validate_observation_runtime(level)
     validate_arc_runtime(arc)
     validate_assets(all_assets)
@@ -1365,7 +2483,8 @@ def run():
     configure_player_controller(level, arc)
     validate_map_and_defaults(level, arc)
     unreal.log("{} Authored {} activities, {} conversations, {} ambient sequences, 3 quests, and the production level bindings.".format(
-        LOG, len(build_activities()), len(conversations), len(ambient_assets)))
+        LOG, len(build_activities()) + len(build_goal_setting_activities()),
+        len(conversations), len(ambient_assets)))
 
 
 if __name__ == "__main__":

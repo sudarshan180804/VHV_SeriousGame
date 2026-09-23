@@ -83,6 +83,20 @@ void UVHVTextbookSubsystem::EnterAskPhase()
 
 void UVHVTextbookSubsystem::EnterFeedbackPhase()
 {
+    if (!RuntimeState.bActivityActive)
+    {
+        return;
+    }
+
+    if (!GetCurrentActivity().HasMeaningfulFeedbackForResult(
+        RuntimeState.bAnswerCorrect, RuntimeState.bAnswerPartial))
+    {
+        // A result with no authored explanation has nothing to present. Continue
+        // through the normal Teach/completion path without opening an empty shell.
+        EnterTeachPhase();
+        return;
+    }
+
     RuntimeState.CurrentPhase = ELearningPhase::Feedback;
 
     OnLearningPhaseChanged.Broadcast(RuntimeState.CurrentPhase);
@@ -97,6 +111,20 @@ void UVHVTextbookSubsystem::EnterHintPhase()
 
 void UVHVTextbookSubsystem::EnterTeachPhase()
 {
+    if (!RuntimeState.bActivityActive)
+    {
+        return;
+    }
+
+    if (!GetCurrentActivity().Teaching.HasMeaningfulContent())
+    {
+        // Feedback is the terminal presentation for activities without authored
+        // teaching. Complete through the normal progression path instead of
+        // exposing an empty teaching board.
+        AdvanceToNextActivity();
+        return;
+    }
+
     RuntimeState.CurrentPhase = ELearningPhase::Teach;
 
     OnLearningPhaseChanged.Broadcast(RuntimeState.CurrentPhase);
@@ -136,9 +164,12 @@ void UVHVTextbookSubsystem::SubmitAnswer(const bool bWasCorrect, const bool bWas
     // Result effects are terminal for retry-enabled questions. This prevents a
     // first-attempt miss from applying failure state before the retry is used.
     ApplyCurrentActivityResultEffects(bWasCorrect, bWasPartial);
-    UE_LOG(LogTemp, Log, TEXT("[VHVTextbook] Choice attempt=%d/%d result=%s -> Feedback"),
+    UE_LOG(LogTemp, Log, TEXT("[VHVTextbook] Choice attempt=%d/%d result=%s -> %s"),
         RuntimeState.AttemptCount, bRetryEnabled ? MaxAttempts : RuntimeState.AttemptCount,
-        bWasCorrect ? TEXT("Correct") : TEXT("Wrong"));
+        bWasCorrect ? TEXT("Correct") : TEXT("Wrong"),
+        CurrentActivity.HasMeaningfulFeedbackForResult(bWasCorrect, bWasPartial)
+            ? TEXT("Feedback")
+            : (CurrentActivity.Teaching.HasMeaningfulContent() ? TEXT("Teach") : TEXT("Complete")));
     EnterFeedbackPhase();
 }
 

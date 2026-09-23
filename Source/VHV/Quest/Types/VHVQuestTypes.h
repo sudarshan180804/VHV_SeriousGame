@@ -138,6 +138,10 @@ struct VHV_API FVHVQuestObjectiveDefinition
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|Story State")
     FVHVStoryConditionSet ActivationConditions;
 
+    /** Optional conditions that complete an active objective when Story State changes. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|Story State")
+    FVHVStoryConditionSet CompletionConditions;
+
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|Story State")
     TArray<FVHVStoryEffect> CompletionEffects;
 
