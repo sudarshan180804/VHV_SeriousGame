@@ -2,9 +2,12 @@
 
 #include "Components/BoxComponent.h"
 #include "Engine/GameInstance.h"
+#include "EngineUtils.h"
 #include "Quest/Systems/VHVQuestSubsystem.h"
+#include "Story/Systems/VHVStoryStateSubsystem.h"
 #include "VHV.h"
 #include "VHVCharacter.h"
+#include "World/Components/VHVWorldActionReceiverComponent.h"
 #include "World/Systems/VHVWorldActionSubsystem.h"
 
 #if WITH_EDITOR
@@ -40,6 +43,7 @@ void AVHVQuestLocationVolume::BeginPlay()
     if (const UGameInstance* GameInstance = GetGameInstance())
     {
         QuestSubsystem = GameInstance->GetSubsystem<UVHVQuestSubsystem>();
+        StoryStateSubsystem = GameInstance->GetSubsystem<UVHVStoryStateSubsystem>();
     }
 }
 
@@ -81,13 +85,40 @@ void AVHVQuestLocationVolume::HandleBoxBeginOverlap(
             WorldActionReceiverTag, NAME_None, TEXT("VHV.WorldReceiver"));
         const FName ActionID = VHVAuthoringReferences::ResolveID(
             WorldActionTag, NAME_None, TEXT("VHV.WorldAction"));
-        FGuid RequestID;
-        UVHVWorldActionSubsystem* WorldActions = GetWorld()
-            ? GetWorld()->GetSubsystem<UVHVWorldActionSubsystem>() : nullptr;
-        const EVHVWorldActionExecutionResult Result = WorldActions
-            ? WorldActions->RequestWorldAction(ReceiverID, ActionID, RequestID)
-            : EVHVWorldActionExecutionResult::Rejected;
-        if (Result != EVHVWorldActionExecutionResult::Rejected)
+
+        const FVHVQuestArcRuntimeState QuestRuntime = QuestSubsystem
+            ? QuestSubsystem->GetRuntimeState() : FVHVQuestArcRuntimeState();
+        FVHVQuestObjectiveDefinition CurrentObjective;
+        const bool bHasCurrentObjective = QuestSubsystem
+            && QuestSubsystem->GetCurrentObjective(CurrentObjective);
+        const bool bQuestGatePassed = RequiredActiveQuestID.IsNone()
+            || QuestRuntime.ActiveQuestID == RequiredActiveQuestID;
+        const bool bObjectiveGatePassed = RequiredActiveObjectiveID.IsNone()
+            || (bHasCurrentObjective && CurrentObjective.ObjectiveID == RequiredActiveObjectiveID);
+        const bool bStoryGatePassed = TriggerConditions.Conditions.IsEmpty()
+            || (StoryStateSubsystem && StoryStateSubsystem->EvaluateConditionSet(TriggerConditions));
+
+        if (!bQuestGatePassed || !bObjectiveGatePassed || !bStoryGatePassed)
+        {
+            return;
+        }
+
+        bool bStarted = QuestSubsystem && QuestSubsystem->RequestExplicitWorldAction(
+            ReceiverID, ActionID, RequiredActiveQuestID, RequiredActiveObjectiveID);
+
+        // Ungated volumes remain available for generic, non-quest WorldActions.
+        if (!bStarted && RequiredActiveQuestID.IsNone() && RequiredActiveObjectiveID.IsNone())
+        {
+            FGuid RequestID;
+            UVHVWorldActionSubsystem* WorldActions = GetWorld()
+                ? GetWorld()->GetSubsystem<UVHVWorldActionSubsystem>() : nullptr;
+            const EVHVWorldActionExecutionResult Result = WorldActions
+                ? WorldActions->RequestWorldAction(ReceiverID, ActionID, RequestID)
+                : EVHVWorldActionExecutionResult::Rejected;
+            bStarted = Result != EVHVWorldActionExecutionResult::Rejected;
+        }
+
+        if (bStarted)
         {
             bWorldActionTriggered = true;
         }
@@ -143,6 +174,47 @@ EDataValidationResult AVHVQuestLocationVolume::IsDataValid(FDataValidationContex
         if (!VHVAuthoringReferences::IsValidReferenceTag(WorldActionTag, TEXT("VHV.WorldAction")))
         {
             Context.AddError(FText::FromString(TEXT("Location-triggered World Action requires a concrete VHV.WorldAction tag.")));
+            Result = EDataValidationResult::Invalid;
+        }
+        if ((!RequiredActiveQuestID.IsNone() || !RequiredActiveObjectiveID.IsNone())
+            && (RequiredActiveQuestID.IsNone() || RequiredActiveObjectiveID.IsNone()))
+        {
+            Context.AddWarning(FText::FromString(TEXT("Quest-gated World Action triggers should identify both the required active quest and objective.")));
+        }
+        for (const FVHVStoryCondition& Condition : TriggerConditions.Conditions)
+        {
+            const bool bFlagCondition = Condition.ConditionType == EVHVStoryConditionType::FlagSet
+                || Condition.ConditionType == EVHVStoryConditionType::FlagNotSet;
+            const TCHAR* ExpectedCategory = bFlagCondition ? TEXT("VHV.Story.Flag") : TEXT("VHV.Story.Counter");
+            if (!VHVAuthoringReferences::IsValidReferenceTag(Condition.StateTag, ExpectedCategory))
+            {
+                Context.AddError(FText::FromString(FString::Printf(
+                    TEXT("World Action trigger condition tag '%s' must be a concrete tag beneath %s."),
+                    *Condition.StateTag.ToString(), ExpectedCategory)));
+                Result = EDataValidationResult::Invalid;
+            }
+        }
+
+        const FName ReceiverID = VHVAuthoringReferences::ResolveID(
+            WorldActionReceiverTag, NAME_None, TEXT("VHV.WorldReceiver"));
+        bool bFoundReceiver = false;
+        if (UWorld* World = GetWorld())
+        {
+            for (TActorIterator<AActor> It(World); It; ++It)
+            {
+                if (const UVHVWorldActionReceiverComponent* Receiver = It->FindComponentByClass<UVHVWorldActionReceiverComponent>();
+                    Receiver && Receiver->GetEffectiveReceiverID() == ReceiverID)
+                {
+                    bFoundReceiver = true;
+                    break;
+                }
+            }
+        }
+        if (!bFoundReceiver)
+        {
+            Context.AddError(FText::FromString(FString::Printf(
+                TEXT("World Action trigger '%s' has no matching receiver '%s' in this world."),
+                *GetNameSafe(this), *ReceiverID.ToString())));
             Result = EDataValidationResult::Invalid;
         }
     }

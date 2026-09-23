@@ -1,5 +1,6 @@
 #include "UI/VHVUIManagerComponent.h"
 #include "UI/VHVMainHUD.h"
+#include "UI/VHVUserWidgetBase.h"
 #include "UI/VHVDialogueWidget.h"
 #include "UI/Textbook/VHVQuestionWidget.h"
 #include "UI/Textbook/VHVFeedbackWidget.h"
@@ -651,6 +652,10 @@ void UVHVUIManagerComponent::FocusModalWidget(const EVHVUIState ExpectedState)
         return;
     }
 
+    if (UVHVUserWidgetBase* ModalWidget = Cast<UVHVUserWidgetBase>(FocusTarget))
+    {
+        ModalWidget->PrepareForModalFocus();
+    }
     FocusTarget->SetIsFocusable(true);
     FocusTarget->SetUserFocus(PC);
     FocusTarget->SetKeyboardFocus();
@@ -1774,10 +1779,18 @@ bool UVHVUIManagerComponent::HandleActivityInteractionInput()
         return true;
     }
 
+    if (CurrentUIState == EVHVUIState::Dialogue)
+    {
+        ConfirmChoiceInput();
+        return true;
+    }
+
     if (CurrentUIState != EVHVUIState::LearningAsk || !TextbookSubsystem ||
         TextbookSubsystem->GetCurrentPhase() != ELearningPhase::Ask || !TextbookSubsystem->IsActivityActive())
     {
-        return false;
+        // Every modal owns the interaction press even when E has no action on
+        // that presentation, so it can never leak through to a world target.
+        return CurrentUIState != EVHVUIState::Gameplay;
     }
 
     switch (TextbookSubsystem->GetCurrentActivity().ActivityType)
@@ -1814,6 +1827,76 @@ bool UVHVUIManagerComponent::HandleActivityInteractionInput()
     // LearningAsk owns interaction while modal, including activities without a
     // select operation, so this press cannot also activate a world target.
     return true;
+}
+
+bool UVHVUIManagerComponent::CanAdvanceFromBackgroundClick() const
+{
+    switch (CurrentUIState)
+    {
+    case EVHVUIState::Dialogue:
+    {
+        if (!bConversationActive)
+        {
+            return false;
+        }
+        const FDialogueNode* CurrentNode = FindNodeByID(
+            ActiveConversation.ConversationID, ActiveConversationState.CurrentNodeID);
+        return !CurrentNode || CurrentNode->NodeType != EVHVDialogueNodeType::Choice;
+    }
+    case EVHVUIState::LearningTeach:
+    case EVHVUIState::LearningFeedback:
+    case EVHVUIState::LearningHint:
+        return true;
+    case EVHVUIState::LearningAsk:
+        if (!TextbookSubsystem || !TextbookSubsystem->IsActivityActive()
+            || TextbookSubsystem->GetCurrentPhase() != ELearningPhase::Ask)
+        {
+            return false;
+        }
+        if (TextbookSubsystem->GetCurrentActivity().ActivityType != ETextbookActivityType::Observation)
+        {
+            return false;
+        }
+        return !TextbookSubsystem->GetCurrentActivity().EvidenceTagging.bUseEvidenceTagging;
+    case EVHVUIState::Gameplay:
+    case EVHVUIState::MajorStinger:
+    default:
+        return false;
+    }
+}
+
+bool UVHVUIManagerComponent::HandleModalBackgroundClick()
+{
+    if (CurrentUIState == EVHVUIState::Gameplay)
+    {
+        return false;
+    }
+
+    if (CanAdvanceFromBackgroundClick())
+    {
+        ConfirmChoiceInput();
+    }
+
+    // Interactive activities and stingers still consume the background click.
+    // Their authored controls are the only allowed route to a semantic action.
+    return true;
+}
+
+bool UVHVUIManagerComponent::PrepareForDeveloperObjectiveSkip()
+{
+#if !UE_BUILD_SHIPPING
+    // Do not tear down a queued stinger sequence mid-callback. The shortcut can
+    // be pressed again after the current cinematic transition completes.
+    if (bMajorStingerSequenceActive)
+    {
+        return false;
+    }
+
+    ExitConversation();
+    return true;
+#else
+    return false;
+#endif
 }
 
 void UVHVUIManagerComponent::SelectNextChoice()

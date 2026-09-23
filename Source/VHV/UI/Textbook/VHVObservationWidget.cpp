@@ -38,6 +38,7 @@ namespace
     constexpr float ContinueHeight = 52.0f;
     constexpr float ContinueClusterWidth = 314.0f;
     constexpr float CardMinHeight = 152.0f;
+    constexpr float EvidenceRevealStagger = 0.12f;
 
     FString CleanText(const FString& Text)
     {
@@ -125,17 +126,32 @@ public:
                         .LineHeightPercentage(1.16f)
                         .Text(InArgs._Text)
                     ]
+                    + SHorizontalBox::Slot()
+                    .AutoWidth()
+                    .VAlign(VAlign_Center)
+                    .Padding(FMargin(14.0f, 0.0f, 0.0f, 0.0f))
+                    [
+                        SNew(STextBlock)
+                        .Font(VHVActivityUIStyle::MediumFont(12))
+                        .ColorAndOpacity(this, &SVHVEvidenceTagCard::GetResultColor)
+                        .Visibility(this, &SVHVEvidenceTagCard::GetResultVisibility)
+                        .Text(this, &SVHVEvidenceTagCard::GetResultText)
+                    ]
                 ]
             ]
         ];
     }
 
-    void SetPresentationState(const bool bInFocused, const bool bInSelected, const bool bInReveal)
+    void SetPresentationState(
+        const bool bInFocused,
+        const bool bInSelected,
+        const bool bInReveal,
+        const bool bInLocked)
     {
         bFocused = bInFocused;
         bSelected = bInSelected;
         bReveal = bInReveal;
-        SetEnabled(!bReveal);
+        SetEnabled(!bInLocked);
         RefreshBrushes();
     }
 
@@ -182,12 +198,26 @@ private:
     const FSlateBrush* GetCardBrush() const { return &CardBrush; }
     const FSlateBrush* GetMarkerBrush() const { return &MarkerBrush; }
     FSlateColor GetMarkerColor() const { return MarkerColor; }
+    FSlateColor GetResultColor() const { return ResultColor; }
+    EVisibility GetResultVisibility() const
+    {
+        return bReveal && (bSelected || bCorrect) ? EVisibility::Visible : EVisibility::Collapsed;
+    }
+    FText GetResultText() const
+    {
+        if (!bReveal) return FText::GetEmpty();
+        if (bSelected && bCorrect) return FText::FromString(TEXT("CORRECT"));
+        if (bSelected) return FText::FromString(TEXT("INCORRECT"));
+        if (bCorrect) return FText::FromString(TEXT("MISSED"));
+        return FText::GetEmpty();
+    }
     FText GetMarkerText() const
     {
         if (bReveal)
         {
-            if (bCorrect) return FText::FromString(TEXT("\u2713"));
+            if (bSelected && bCorrect) return FText::FromString(TEXT("\u2713"));
             if (bSelected) return FText::FromString(TEXT("\u00D7"));
+            if (bCorrect) return FText::FromString(TEXT("!"));
             return FText::GetEmpty();
         }
         return bSelected ? FText::FromString(TEXT("\u2713")) : FText::GetEmpty();
@@ -201,14 +231,16 @@ private:
         FLinearColor MarkerFill = VHVActivityUIStyle::MatchingConnectorFill();
         FLinearColor MarkerOutline = VHVActivityUIStyle::MatchingPaperBorder();
         MarkerColor = VHVActivityUIStyle::MatchingInkMuted();
+        ResultColor = VHVActivityUIStyle::MatchingInkMuted();
 
-        if (bReveal && bCorrect)
+        if (bReveal && bSelected && bCorrect)
         {
             Fill = VHVActivityUIStyle::FromSRGB(222, 232, 215, 246);
             Outline = VHVActivityUIStyle::PositiveMuted().CopyWithNewOpacity(0.78f);
             MarkerFill = VHVActivityUIStyle::PositiveMuted().CopyWithNewOpacity(0.18f);
             MarkerOutline = VHVActivityUIStyle::PositiveMuted();
             MarkerColor = VHVActivityUIStyle::PositiveMuted();
+            ResultColor = VHVActivityUIStyle::PositiveMuted();
             OutlineWidth = 1.6f;
         }
         else if (bReveal && bSelected)
@@ -218,7 +250,24 @@ private:
             MarkerFill = VHVActivityUIStyle::NegativeMuted().CopyWithNewOpacity(0.14f);
             MarkerOutline = VHVActivityUIStyle::NegativeMuted();
             MarkerColor = VHVActivityUIStyle::NegativeMuted();
+            ResultColor = VHVActivityUIStyle::NegativeMuted();
             OutlineWidth = 1.6f;
+        }
+        else if (bReveal && bCorrect)
+        {
+            Fill = VHVActivityUIStyle::FromSRGB(247, 235, 203, 246);
+            Outline = VHVActivityUIStyle::GoldPrimary().CopyWithNewOpacity(0.88f);
+            MarkerFill = VHVActivityUIStyle::GoldPrimary().CopyWithNewOpacity(0.18f);
+            MarkerOutline = VHVActivityUIStyle::GoldPrimary();
+            MarkerColor = VHVActivityUIStyle::GoldPrimary();
+            ResultColor = VHVActivityUIStyle::GoldPrimary();
+            OutlineWidth = 1.6f;
+        }
+        else if (bReveal)
+        {
+            Fill = VHVActivityUIStyle::MatchingPaperCard().CopyWithNewOpacity(0.62f);
+            MarkerFill = VHVActivityUIStyle::MatchingConnectorFill().CopyWithNewOpacity(0.55f);
+            MarkerColor = VHVActivityUIStyle::MatchingInkMuted().CopyWithNewOpacity(0.55f);
         }
         else if (bSelected)
         {
@@ -254,6 +303,7 @@ private:
     FSlateBrush CardBrush;
     FSlateBrush MarkerBrush;
     FSlateColor MarkerColor;
+    FSlateColor ResultColor;
 };
 
 UVHVObservationWidget::UVHVObservationWidget()
@@ -516,18 +566,33 @@ void UVHVObservationWidget::NativeTick(const FGeometry& MyGeometry, const float 
     }
 
     if (CurrentActivity.EvidenceTagging.bUseEvidenceTagging
-        && EvidenceStage == EEvidenceTaggingStage::Reveal)
+        && (EvidenceStage == EEvidenceTaggingStage::Stage1Review
+            || EvidenceStage == EEvidenceTaggingStage::Stage2Review)
+        && !bReviewReady)
     {
-        RevealElapsed += InDeltaTime;
-        if (RevealPage == 0 && RevealElapsed >= 0.75f)
+        ReviewRevealElapsed += InDeltaTime;
+        const int32 CardCount = GetCurrentEvidenceCards().Num();
+        const int32 NewRevealCount = FMath::Clamp(
+            FMath::FloorToInt(ReviewRevealElapsed / EvidenceRevealStagger) + 1,
+            0,
+            CardCount);
+        if (NewRevealCount != RevealedEvidenceCardCount)
         {
-            RevealPage = 1;
-            RefreshEvidenceTaggingContent();
+            RevealedEvidenceCardCount = NewRevealCount;
+            UpdateEvidenceCardStates();
         }
-        else if (RevealElapsed >= 1.50f)
+        if (RevealedEvidenceCardCount >= CardCount)
         {
-            EvidenceStage = EEvidenceTaggingStage::Result;
-            RefreshEvidenceTaggingContent();
+            bReviewReady = true;
+            if (BoardInstructionSlate)
+            {
+                BoardInstructionSlate->SetText(FText::FromString(
+                    TEXT("Review complete. Press Enter or select Continue when ready.")));
+            }
+            if (ActionButtonTextSlate)
+            {
+                ActionButtonTextSlate->SetText(FText::FromString(TEXT("CONTINUE")));
+            }
         }
     }
 }
@@ -579,8 +644,9 @@ void UVHVObservationWidget::SetObservationData(const FTextbookActivityData& InAc
     Stage1Selections.Reset();
     Stage2Selections.Reset();
     FocusedEvidenceCard = INDEX_NONE;
-    RevealElapsed = 0.0f;
-    RevealPage = 0;
+    ReviewRevealElapsed = 0.0f;
+    RevealedEvidenceCardCount = 0;
+    bReviewReady = false;
     EntranceElapsed = 0.0f;
     if (ActivityContentSlate)
     {
@@ -640,7 +706,9 @@ bool UVHVObservationWidget::AdvanceObservation()
 
     if (!CanAdvanceObservation())
     {
-        if (BoardInstructionSlate)
+        if (BoardInstructionSlate
+            && (EvidenceStage == EEvidenceTaggingStage::Stage1
+                || EvidenceStage == EEvidenceTaggingStage::Stage2))
         {
             BoardInstructionSlate->SetText(FText::FromString(TEXT("Select at least one card before continuing.")));
             BoardInstructionSlate->SetColorAndOpacity(VHVActivityUIStyle::WarningText());
@@ -650,6 +718,16 @@ bool UVHVObservationWidget::AdvanceObservation()
 
     if (EvidenceStage == EEvidenceTaggingStage::Stage1)
     {
+        EvidenceStage = EEvidenceTaggingStage::Stage1Review;
+        ReviewRevealElapsed = 0.0f;
+        RevealedEvidenceCardCount = 0;
+        bReviewReady = false;
+        FocusedEvidenceCard = INDEX_NONE;
+        RefreshEvidenceTaggingContent();
+        return true;
+    }
+    if (EvidenceStage == EEvidenceTaggingStage::Stage1Review)
+    {
         EvidenceStage = EEvidenceTaggingStage::Stage2;
         FocusedEvidenceCard = 0;
         RefreshEvidenceTaggingContent();
@@ -657,10 +735,17 @@ bool UVHVObservationWidget::AdvanceObservation()
     }
     if (EvidenceStage == EEvidenceTaggingStage::Stage2)
     {
-        EvidenceStage = EEvidenceTaggingStage::Reveal;
-        RevealElapsed = 0.0f;
-        RevealPage = 0;
+        EvidenceStage = EEvidenceTaggingStage::Stage2Review;
+        ReviewRevealElapsed = 0.0f;
+        RevealedEvidenceCardCount = 0;
+        bReviewReady = false;
         FocusedEvidenceCard = INDEX_NONE;
+        RefreshEvidenceTaggingContent();
+        return true;
+    }
+    if (EvidenceStage == EEvidenceTaggingStage::Stage2Review)
+    {
+        EvidenceStage = EEvidenceTaggingStage::Result;
         RefreshEvidenceTaggingContent();
         return true;
     }
@@ -954,20 +1039,27 @@ void UVHVObservationWidget::RefreshEvidenceTaggingContent()
     {
     case EEvidenceTaggingStage::Stage1:
         Prompt = CurrentActivity.EvidenceTagging.Stage1Prompt;
-        Instruction = TEXT("W/A/S/D or arrows Navigate    E Toggle    Enter Continue");
-        ActionText = TEXT("CONTINUE");
+        Instruction = TEXT("W/A/S/D or arrows Navigate    E Toggle    Enter Submit");
+        ActionText = TEXT("SUBMIT");
+        break;
+    case EEvidenceTaggingStage::Stage1Review:
+        Prompt = TEXT("Review the evidence you tagged.");
+        Instruction = bReviewReady
+            ? TEXT("Review complete. Press Enter or select Continue when ready.")
+            : TEXT("Revealing your evidence results...");
+        ActionText = bReviewReady ? TEXT("CONTINUE") : TEXT("REVEALING");
         break;
     case EEvidenceTaggingStage::Stage2:
         Prompt = CurrentActivity.EvidenceTagging.Stage2Prompt;
         Instruction = TEXT("W/A/S/D or arrows Navigate    E Toggle    Enter Submit");
         ActionText = TEXT("SUBMIT");
         break;
-    case EEvidenceTaggingStage::Reveal:
-        Prompt = RevealPage == 0
-            ? TEXT("Compare the evidence you tagged.")
-            : TEXT("Compare the obstacles you tagged.");
-        Instruction = TEXT("Correct evidence is highlighted in green; selected distractors are highlighted in red.");
-        ActionText = TEXT("REVIEWING");
+    case EEvidenceTaggingStage::Stage2Review:
+        Prompt = TEXT("Review the obstacles you tagged.");
+        Instruction = bReviewReady
+            ? TEXT("Review complete. Press Enter or select Continue for the takeaways.")
+            : TEXT("Revealing your obstacle results...");
+        ActionText = bReviewReady ? TEXT("CONTINUE") : TEXT("REVEALING");
         break;
     case EEvidenceTaggingStage::Result:
         Prompt = TEXT("What the market evidence tells us");
@@ -986,6 +1078,61 @@ void UVHVObservationWidget::RefreshEvidenceTaggingContent()
             .LineHeightPercentage(1.20f)
             .Text(FText::FromString(Prompt))
         ];
+
+    const bool bShowingReview = EvidenceStage == EEvidenceTaggingStage::Stage1Review
+        || EvidenceStage == EEvidenceTaggingStage::Stage2Review;
+    if (bShowingReview)
+    {
+        const TArray<FObservationEvidenceCard>& Cards = GetCurrentEvidenceCards();
+        const TSet<int32>& Selection = GetCurrentEvidenceSelection();
+        int32 CorrectCount = 0;
+        int32 IncorrectCount = 0;
+        int32 MissedCount = 0;
+        for (int32 Index = 0; Index < Cards.Num(); ++Index)
+        {
+            if (Selection.Contains(Index))
+            {
+                Cards[Index].bCorrect ? ++CorrectCount : ++IncorrectCount;
+            }
+            else if (Cards[Index].bCorrect)
+            {
+                ++MissedCount;
+            }
+        }
+
+        SecondaryTextSlate->AddSlot()
+            .AutoHeight()
+            .Padding(FMargin(0.0f, 10.0f, 0.0f, 0.0f))
+            [
+                SNew(STextBlock)
+                .Font(VHVActivityUIStyle::MediumFont(16))
+                .ColorAndOpacity(VHVActivityUIStyle::MatchingInk())
+                .Text(FText::FromString(FString::Printf(
+                    TEXT("%d correct    %d incorrect    %d missed"),
+                    CorrectCount, IncorrectCount, MissedCount)))
+            ];
+
+        const int32 TakeawayIndex = EvidenceStage == EEvidenceTaggingStage::Stage1Review ? 0 : 1;
+        const TArray<FObservationTakeawayCard>& Takeaways = CurrentActivity.EvidenceTagging.TakeawayCards;
+        if (Takeaways.IsValidIndex(TakeawayIndex))
+        {
+            const FString Takeaway = Takeaways[TakeawayIndex].Title.IsEmpty()
+                ? Takeaways[TakeawayIndex].Text
+                : FString::Printf(TEXT("%s — %s"),
+                    *Takeaways[TakeawayIndex].Title,
+                    *Takeaways[TakeawayIndex].Text);
+            SecondaryTextSlate->AddSlot()
+                .AutoHeight()
+                .Padding(FMargin(0.0f, 7.0f, 0.0f, 0.0f))
+                [
+                    SNew(STextBlock)
+                    .Font(VHVActivityUIStyle::RegularFont(15))
+                    .ColorAndOpacity(VHVActivityUIStyle::MatchingInkMuted())
+                    .AutoWrapText(true)
+                    .Text(FText::FromString(Takeaway))
+                ];
+        }
+    }
 
     if (BoardInstructionSlate)
     {
@@ -1088,15 +1235,17 @@ void UVHVObservationWidget::RebuildEvidenceCards()
 void UVHVObservationWidget::UpdateEvidenceCardStates()
 {
     const TSet<int32>& Selection = GetCurrentEvidenceSelection();
-    const bool bReveal = EvidenceStage == EEvidenceTaggingStage::Reveal;
+    const bool bReview = EvidenceStage == EEvidenceTaggingStage::Stage1Review
+        || EvidenceStage == EEvidenceTaggingStage::Stage2Review;
     for (int32 Index = 0; Index < EvidenceCardsSlate.Num(); ++Index)
     {
         if (EvidenceCardsSlate[Index])
         {
             EvidenceCardsSlate[Index]->SetPresentationState(
-                !bReveal && Index == FocusedEvidenceCard,
+                !bReview && Index == FocusedEvidenceCard,
                 Selection.Contains(Index),
-                bReveal);
+                bReview && Index < RevealedEvidenceCardCount,
+                bReview);
         }
     }
 }
@@ -1127,9 +1276,7 @@ void UVHVObservationWidget::ToggleEvidenceCard(const int32 CardIndex)
     if (BoardInstructionSlate)
     {
         BoardInstructionSlate->SetText(FText::FromString(
-            EvidenceStage == EEvidenceTaggingStage::Stage1
-                ? TEXT("W/A/S/D or arrows Navigate    E Toggle    Enter Continue")
-                : TEXT("W/A/S/D or arrows Navigate    E Toggle    Enter Submit")));
+            TEXT("W/A/S/D or arrows Navigate    E Toggle    Enter Submit")));
         BoardInstructionSlate->SetColorAndOpacity(
             VHVActivityUIStyle::MatchingInkMuted().CopyWithNewOpacity(0.78f));
     }
@@ -1155,9 +1302,11 @@ bool UVHVObservationWidget::CanAdvanceObservation() const
         return !Stage1Selections.IsEmpty();
     case EEvidenceTaggingStage::Stage2:
         return !Stage2Selections.IsEmpty();
+    case EEvidenceTaggingStage::Stage1Review:
+    case EEvidenceTaggingStage::Stage2Review:
+        return bReviewReady;
     case EEvidenceTaggingStage::Result:
         return !bCompletionRequested;
-    case EEvidenceTaggingStage::Reveal:
     default:
         return false;
     }
@@ -1166,7 +1315,7 @@ bool UVHVObservationWidget::CanAdvanceObservation() const
 const TArray<FObservationEvidenceCard>& UVHVObservationWidget::GetCurrentEvidenceCards() const
 {
     if (EvidenceStage == EEvidenceTaggingStage::Stage1
-        || (EvidenceStage == EEvidenceTaggingStage::Reveal && RevealPage == 0))
+        || EvidenceStage == EEvidenceTaggingStage::Stage1Review)
     {
         return CurrentActivity.EvidenceTagging.EvidenceCards;
     }
@@ -1176,7 +1325,7 @@ const TArray<FObservationEvidenceCard>& UVHVObservationWidget::GetCurrentEvidenc
 const TSet<int32>& UVHVObservationWidget::GetCurrentEvidenceSelection() const
 {
     if (EvidenceStage == EEvidenceTaggingStage::Stage1
-        || (EvidenceStage == EEvidenceTaggingStage::Reveal && RevealPage == 0))
+        || EvidenceStage == EEvidenceTaggingStage::Stage1Review)
     {
         return Stage1Selections;
     }
@@ -1186,7 +1335,7 @@ const TSet<int32>& UVHVObservationWidget::GetCurrentEvidenceSelection() const
 TSet<int32>& UVHVObservationWidget::GetCurrentEvidenceSelection()
 {
     if (EvidenceStage == EEvidenceTaggingStage::Stage1
-        || (EvidenceStage == EEvidenceTaggingStage::Reveal && RevealPage == 0))
+        || EvidenceStage == EEvidenceTaggingStage::Stage1Review)
     {
         return Stage1Selections;
     }

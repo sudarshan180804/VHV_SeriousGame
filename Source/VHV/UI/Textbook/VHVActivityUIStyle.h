@@ -39,6 +39,7 @@ namespace VHVActivityUIStyle
     inline constexpr float OrderingConfirmWidth = 230.0f;
     inline constexpr float OrderingConfirmHeight = 56.0f;
     inline constexpr float MatchingCardHeight = 92.0f;
+    inline constexpr float MatchingCardWidth = 448.0f;
     inline constexpr float MatchingCardRadius = 18.0f;
     inline constexpr float MatchingCardGap = 16.0f;
     inline constexpr float MatchingCardPadding = 22.0f;

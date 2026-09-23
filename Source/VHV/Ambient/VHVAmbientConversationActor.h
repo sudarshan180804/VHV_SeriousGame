@@ -44,6 +44,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|Ambient Conversation|Playback")
     bool bAutoStartOnBeginPlay = false;
 
+    /** Production story scenes set this to require a routed, editor-visible trigger volume. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|Ambient Conversation|Authoring")
+    bool bRequiresExplicitTrigger = false;
+
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|Ambient Conversation|Playback")
     bool bPlayOnce = true;
 

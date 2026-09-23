@@ -98,6 +98,14 @@ public:
     UFUNCTION(BlueprintCallable, Category = "VHV|Quest")
     void NotifyCustomEvent(FName EventID);
 
+    /** Dispatches the active Explicit Trigger WorldAction objective when the authored route and gate match. */
+    UFUNCTION(BlueprintCallable, Category = "VHV|Quest|World Action")
+    bool RequestExplicitWorldAction(
+        FName ReceiverID,
+        FName ActionID,
+        FName RequiredQuestID = NAME_None,
+        FName RequiredObjectiveID = NAME_None);
+
     UFUNCTION(BlueprintCallable, Category = "VHV|Quest|NPC Commands")
     bool RequestNPCMove(FName ParticipantID, FName TargetID);
 
@@ -170,7 +178,7 @@ private:
     void EnsureStoryStateDelegateBindings();
     void ExecuteActiveNPCAction();
     void ClearActiveNPCActionTracking();
-    void ExecuteActiveWorldAction();
+    bool ExecuteActiveWorldAction();
     void ClearActiveWorldActionTracking();
 #if !UE_BUILD_SHIPPING
     void DebugCancelActiveObjectiveExecution();

@@ -371,30 +371,6 @@ void UVHVDialogueWidget::SetOwningUIManager(UVHVUIManagerComponent* InUIManager)
     OwningUIManager = InUIManager;
 }
 
-FReply UVHVDialogueWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
-{
-    if (CurrentConversation.Nodes.Num() == 0 && CurrentDialogue.Lines.Num() > 0)
-    {
-        if (OwningUIManager)
-        {
-            OwningUIManager->AdvanceConversation();
-        }
-        return FReply::Handled();
-    }
-
-    const FDialogueNode* CurrentNode = FindNodeByID(CurrentNodeID);
-    if (!CurrentNode || CurrentNode->NodeType != EVHVDialogueNodeType::Choice)
-    {
-        if (OwningUIManager)
-        {
-            OwningUIManager->AdvanceConversation();
-        }
-        return FReply::Handled();
-    }
-
-    return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
-}
-
 void UVHVDialogueWidget::ShowDialogue(const FDialogueData& InDialogue)
 {
     SetActivityChoicePresentation(false);

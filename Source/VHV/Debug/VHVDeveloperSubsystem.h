@@ -7,6 +7,7 @@
 class UVHVQuestSubsystem;
 class UVHVSaveSubsystem;
 class UVHVStoryStateSubsystem;
+class UInputComponent;
 
 UCLASS()
 class VHV_API UVHVDeveloperSubsystem : public UGameInstanceSubsystem
@@ -51,7 +52,13 @@ public:
     UFUNCTION(BlueprintCallable, Category = "VHV|Developer")
     bool LoadProgress();
 
+    /** Registers development-only keyboard shortcuts on the local player input stack. */
+    void BindDeveloperInput(UInputComponent* InputComponent);
+
 private:
+    /** Developer shortcut: N completes exactly one active quest objective. */
+    void HandleCompleteCurrentObjectiveShortcut();
+
     UPROPERTY()
     TObjectPtr<UVHVQuestSubsystem> QuestSubsystem;
 

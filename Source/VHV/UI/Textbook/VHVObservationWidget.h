@@ -69,8 +69,9 @@ private:
     enum class EEvidenceTaggingStage : uint8
     {
         Stage1,
+        Stage1Review,
         Stage2,
-        Reveal,
+        Stage2Review,
         Result
     };
 
@@ -78,8 +79,9 @@ private:
     bool bHasObservationData = false;
     bool bCompletionRequested = false;
     float EntranceElapsed = 0.0f;
-    float RevealElapsed = 0.0f;
-    int32 RevealPage = 0;
+    float ReviewRevealElapsed = 0.0f;
+    int32 RevealedEvidenceCardCount = 0;
+    bool bReviewReady = false;
     int32 FocusedEvidenceCard = INDEX_NONE;
     int32 EvidenceColumnCount = 3;
     EEvidenceTaggingStage EvidenceStage = EEvidenceTaggingStage::Stage1;

@@ -466,29 +466,33 @@ void UVHVTeachWidget::RefreshSlateContent()
     if (LoadedLargeMediaTexture)
     {
         ContentTextSlate.Reset();
+        LargeMediaBrush = FSlateBrush();
         LargeMediaBrush.DrawAs = ESlateBrushDrawType::Image;
         LargeMediaBrush.SetResourceObject(LoadedLargeMediaTexture);
-        LargeMediaBrush.SetImageSize(FVector2D(
-            LoadedLargeMediaTexture->GetSizeX(), LoadedLargeMediaTexture->GetSizeY()));
-
         const FVector2D NaturalSize(
             FMath::Max(1, LoadedLargeMediaTexture->GetSizeX()),
             FMath::Max(1, LoadedLargeMediaTexture->GetSizeY()));
-        const float UniformScale = FMath::Min(
-            LargeMediaMaxWidth / NaturalSize.X,
-            LargeMediaMaxHeight / NaturalSize.Y);
-        const FVector2D DisplaySize = NaturalSize * UniformScale;
+        LargeMediaBrush.SetImageSize(NaturalSize);
 
         ReadingAreaSlate->AddSlot()
             .AutoHeight()
             .HAlign(HAlign_Center)
             [
                 SNew(SBox)
-                .WidthOverride(DisplaySize.X)
-                .HeightOverride(DisplaySize.Y)
+                .WidthOverride(LargeMediaMaxWidth)
+                .HeightOverride(LargeMediaMaxHeight)
+                .HAlign(HAlign_Fill)
+                .VAlign(VAlign_Fill)
                 [
-                    SNew(SImage)
-                    .Image(&LargeMediaBrush)
+                    SNew(SScaleBox)
+                    .Stretch(EStretch::ScaleToFit)
+                    .StretchDirection(EStretchDirection::Both)
+                    .HAlign(HAlign_Center)
+                    .VAlign(VAlign_Center)
+                    [
+                        SNew(SImage)
+                        .Image(&LargeMediaBrush)
+                    ]
                 ]
             ];
         return;

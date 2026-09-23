@@ -1,16 +1,41 @@
 #include "Debug/VHVDeveloperSubsystem.h"
 
+#include "Components/InputComponent.h"
 #include "Engine/GameInstance.h"
+#include "Framework/Application/SlateApplication.h"
+#include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
+#include "InputCoreTypes.h"
 #include "Quest/Systems/VHVQuestSubsystem.h"
 #include "Save/VHVSaveSubsystem.h"
 #include "Story/Systems/VHVStoryStateSubsystem.h"
+#include "UI/VHVUIManagerComponent.h"
 #include "VHV.h"
 #include "World/Systems/VHVWorldActionSubsystem.h"
 
 #if !UE_BUILD_SHIPPING
 namespace
 {
+    bool IsEditableTextFocused()
+    {
+        if (!FSlateApplication::IsInitialized())
+        {
+            return false;
+        }
+
+        TSharedPtr<SWidget> FocusedWidget = FSlateApplication::Get().GetKeyboardFocusedWidget();
+        while (FocusedWidget)
+        {
+            const FString WidgetType = FocusedWidget->GetTypeAsString();
+            if (WidgetType.Contains(TEXT("EditableText")) || WidgetType == TEXT("SSearchBox"))
+            {
+                return true;
+            }
+            FocusedWidget = FocusedWidget->GetParentWidget();
+        }
+        return false;
+    }
+
     UVHVDeveloperSubsystem* ResolveDeveloperSubsystem(UWorld* World)
     {
         UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
@@ -206,9 +231,47 @@ void UVHVDeveloperSubsystem::PrintStatus() const
 bool UVHVDeveloperSubsystem::CompleteCurrentObjective()
 {
 #if !UE_BUILD_SHIPPING
+    if (UWorld* World = GetWorld())
+    {
+        if (APlayerController* PlayerController = World->GetFirstPlayerController())
+        {
+            if (UVHVUIManagerComponent* UIManager =
+                PlayerController->FindComponentByClass<UVHVUIManagerComponent>())
+            {
+                if (!UIManager->PrepareForDeveloperObjectiveSkip())
+                {
+                    return false;
+                }
+            }
+        }
+    }
     return QuestSubsystem && QuestSubsystem->DebugCompleteCurrentObjective();
 #else
     return false;
+#endif
+}
+
+void UVHVDeveloperSubsystem::BindDeveloperInput(UInputComponent* InputComponent)
+{
+#if !UE_BUILD_SHIPPING
+    if (InputComponent)
+    {
+        InputComponent->BindKey(
+            EKeys::N,
+            IE_Pressed,
+            this,
+            &UVHVDeveloperSubsystem::HandleCompleteCurrentObjectiveShortcut);
+    }
+#endif
+}
+
+void UVHVDeveloperSubsystem::HandleCompleteCurrentObjectiveShortcut()
+{
+#if !UE_BUILD_SHIPPING
+    if (!IsEditableTextFocused())
+    {
+        CompleteCurrentObjective();
+    }
 #endif
 }
 

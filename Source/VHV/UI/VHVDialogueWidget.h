@@ -23,7 +23,6 @@ public:
     UVHVDialogueWidget();
 
     virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
-    virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 
     UFUNCTION(BlueprintCallable, Category = "VHV|UI")
     void ShowDialogue(const FDialogueData& InDialogue);

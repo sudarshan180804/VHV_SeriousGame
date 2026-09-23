@@ -14,7 +14,12 @@
 #include "TimerManager.h"
 #include "UI/Ambient/VHVAmbientSpeechStyle.h"
 #include "World/Components/VHVWorldActionReceiverComponent.h"
+#include "World/Location/VHVQuestLocationVolume.h"
 #include "World/Systems/VHVWorldActionSubsystem.h"
+
+#if WITH_EDITOR
+#include "EngineUtils.h"
+#endif
 
 #if WITH_EDITOR
 #include "Misc/DataValidation.h"
@@ -561,6 +566,40 @@ EDataValidationResult AVHVAmbientConversationActor::IsDataValid(FDataValidationC
         if (!BoundSlots.Contains(Required.SlotID))
         {
             Context.AddError(FText::FromString(FString::Printf(TEXT("Participant slot '%s' is not bound."), *Required.SlotID.ToString())));
+            Result = EDataValidationResult::Invalid;
+        }
+    }
+    if (bRequiresExplicitTrigger)
+    {
+        if (bAutoStartOnBeginPlay)
+        {
+            Context.AddError(FText::FromString(TEXT("An Explicit Trigger ambient conversation cannot auto-start on BeginPlay.")));
+            Result = EDataValidationResult::Invalid;
+        }
+
+        const FName ReceiverID = WorldActionReceiver
+            ? WorldActionReceiver->GetEffectiveReceiverID() : NAME_None;
+        bool bFoundTrigger = false;
+        if (UWorld* World = GetWorld())
+        {
+            for (TActorIterator<AVHVQuestLocationVolume> It(World); It; ++It)
+            {
+                if (It->bTriggerWorldAction
+                    && VHVAuthoringReferences::ResolveID(
+                        It->WorldActionReceiverTag, NAME_None, TEXT("VHV.WorldReceiver")) == ReceiverID
+                    && VHVAuthoringReferences::ResolveID(
+                        It->WorldActionTag, NAME_None, TEXT("VHV.WorldAction")) == StartConversationAction)
+                {
+                    bFoundTrigger = true;
+                    break;
+                }
+            }
+        }
+        if (!bFoundTrigger)
+        {
+            Context.AddError(FText::FromString(FString::Printf(
+                TEXT("Explicit ambient conversation '%s' has no location trigger routed to receiver '%s' with StartConversation."),
+                *GetNameSafe(this), *ReceiverID.ToString())));
             Result = EDataValidationResult::Invalid;
         }
     }

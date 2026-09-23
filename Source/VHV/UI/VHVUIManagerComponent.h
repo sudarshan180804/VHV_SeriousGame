@@ -237,6 +237,19 @@ public:
     /** Routes the existing IA_Interact action to the active modal activity. */
     bool HandleActivityInteractionInput();
 
+    /** True when an unused/background left click has the same meaning as Enter. */
+    UFUNCTION(BlueprintPure, Category = "VHV|UI|Input")
+    bool CanAdvanceFromBackgroundClick() const;
+
+    /**
+     * Consumes an unhandled modal background click and advances only when the
+     * active presentation is semantically passive.
+     */
+    bool HandleModalBackgroundClick();
+
+    /** Development-only teardown used before skipping the current quest objective. */
+    bool PrepareForDeveloperObjectiveSkip();
+
 protected:
     UPROPERTY()
     TObjectPtr<UVHVPlayerInteractionComponent> PlayerInteractionComponent;

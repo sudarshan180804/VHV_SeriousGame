@@ -23,7 +23,7 @@ struct FVHVMajorQuestStingerData
     TSoftObjectPtr<USoundBase> IntroSound;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Major Stinger", meta = (ClampMin = "0.5", UIMin = "0.5", UIMax = "4.0"))
-    float HoldDuration = 1.8f;
+    float HoldDuration = 2.1f;
 
     bool IsConfigured() const { return !Title.TrimStartAndEnd().IsEmpty(); }
 };

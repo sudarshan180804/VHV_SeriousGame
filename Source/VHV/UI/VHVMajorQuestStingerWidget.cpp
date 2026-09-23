@@ -10,12 +10,13 @@
 
 namespace
 {
-    constexpr float DimFadeInDuration = 0.20f;
-    constexpr float LabelStartTime = 0.20f;
-    constexpr float LabelFadeDuration = 0.18f;
-    constexpr float TitleStartTime = 0.35f;
-    constexpr float TitleFadeDuration = 0.24f;
-    constexpr float FadeOutDuration = 0.38f;
+    constexpr float DimFadeInDuration = 0.35f;
+    constexpr float LabelStartTime = 0.25f;
+    constexpr float LabelFadeDuration = 0.35f;
+    constexpr float TitleStartTime = 0.65f;
+    constexpr float TitleFadeDuration = 0.65f;
+    constexpr float MinimumHoldDuration = 2.10f;
+    constexpr float FadeOutDuration = 0.60f;
     constexpr float TitleSettleOffset = 8.0f;
 }
 
@@ -163,7 +164,7 @@ void UVHVMajorQuestStingerWidget::NativeTick(
 
     ElapsedTime += InDeltaTime;
     const float HoldEndTime = TitleStartTime + TitleFadeDuration
-        + FMath::Max(0.5f, StingerData.HoldDuration);
+        + FMath::Max(MinimumHoldDuration, StingerData.HoldDuration);
     const float EndTime = HoldEndTime + FadeOutDuration;
     const float FadeOutAlpha = FMath::Clamp(
         (ElapsedTime - HoldEndTime) / FadeOutDuration, 0.0f, 1.0f);

@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Styling/SlateTypes.h"
 #include "UI/VHVUserWidgetBase.h"
 #include "VHV/Textbook/Types/VHVTextbookTypes.h"
 #include "VHVQuestionWidget.generated.h"
@@ -24,6 +25,7 @@ public:
     UVHVQuestionWidget();
 
     virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
+    virtual void PrepareForModalFocus() override;
 
     UFUNCTION(BlueprintCallable, Category = "VHV|Textbook")
     void SetQuestionData(const FQuestionData& InQuestion);
@@ -68,6 +70,7 @@ private:
     void ToggleSelectedOption(int32 OptionIndex);
     void ClearInputFeedback();
     void HandleChoiceCardChosen(int32 OptionIndex);
+    FReply HandleSubmitClicked();
     FText GetDefaultInstruction() const;
 
     FQuestionData CurrentQuestion;
@@ -92,6 +95,7 @@ private:
     FSlateBrush KeycapBrush;
     FSlateBrush ActivityEmblemBrush;
     FSlateBrush DividerBrush;
+    FButtonStyle SubmitButtonStyle;
 
     // Kept so the existing WBP bindings remain load-compatible. The native
     // Slate layout is the runtime presentation for this widget.

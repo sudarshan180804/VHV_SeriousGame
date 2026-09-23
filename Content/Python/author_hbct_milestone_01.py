@@ -695,14 +695,16 @@ def configure_arc(arc, level, conversations):
         objective("O02_ObservePrasert", "Observe Uncle Prasert's habits and readiness", q.WORLD_ACTION,
                   "VHV.Story.Flag.HBCT.Motivation.PrasertObserved",
                   world_action_receiver_tag=tag("VHV.WorldReceiver.HBCT.Motivation.Prasert"),
-                  world_action_tag=start_action),
+                  world_action_tag=start_action,
+                  world_action_start_policy=unreal.VHVWorldActionStartPolicy.EXPLICIT_TRIGGER),
         objective("O03_LearnMotivation", "Learn what motivation building means", q.CONVERSATION,
                   participant_tag=tag("VHV.Participant.Instructor"),
                   conversation=conversations["DA_Conversation_HBCT_LearnMotivation"],
                   entry_node_id="Learn_01", auto_start=True),
         objective("O04_ObserveBadGoodDemo", "Observe directive and motivational conversations", q.WORLD_ACTION,
                   world_action_receiver_tag=tag("VHV.WorldReceiver.HBCT.Motivation.BadGoodDemo"),
-                  world_action_tag=start_action),
+                  world_action_tag=start_action,
+                  world_action_start_policy=unreal.VHVWorldActionStartPolicy.EXPLICIT_TRIGGER),
         objective("O05_ReflectOnDemo", "Reflect on which conversation builds readiness", q.LEARNING_ACTIVITY,
                   activity_tag=tag("VHV.Activity.HBCT.Motivation.DemoReflection"), auto_start=True),
         objective("O06_VisitSaeng", "Visit Aunt Saeng", q.REACH_LOCATION,
@@ -710,7 +712,8 @@ def configure_arc(arc, level, conversations):
         objective("O07_ObserveAppreciation", "Observe appreciation and reflective questions", q.WORLD_ACTION,
                   "VHV.Story.Flag.HBCT.Motivation.SaengObserved",
                   world_action_receiver_tag=tag("VHV.WorldReceiver.HBCT.Motivation.Saeng"),
-                  world_action_tag=start_action),
+                  world_action_tag=start_action,
+                  world_action_start_policy=unreal.VHVWorldActionStartPolicy.EXPLICIT_TRIGGER),
         objective("O08_LearnMotivationMethods", "Practice appreciation, choices, and small plans", q.LEARNING_ACTIVITY,
                   activity_tag=tag("VHV.Activity.HBCT.Motivation.Methods"), auto_start=True),
         objective("O09_ReachMaliHouse", "Go to Aunt Mali's house", q.REACH_LOCATION,
@@ -792,8 +795,9 @@ def find_actor(label):
     return None
 
 
-def spawn_actor(actor_class, label, location, rotation=None):
+def spawn_actor(actor_class, label, location, rotation=None, preserve_existing_transform=False):
     actor = find_actor(label)
+    existed = actor is not None
     if not actor:
         actor = editor_actors().spawn_actor_from_class(
             actor_class, unreal.Vector(*location), rotation or unreal.Rotator())
@@ -801,13 +805,15 @@ def spawn_actor(actor_class, label, location, rotation=None):
             raise RuntimeError("Could not spawn {}".format(label))
         actor.set_actor_label(label)
     actor.modify()
-    actor.set_actor_location(unreal.Vector(*location), False, True)
-    actor.set_actor_rotation(rotation or unreal.Rotator(), False)
+    if not existed or not preserve_existing_transform:
+        actor.set_actor_location(unreal.Vector(*location), False, True)
+        actor.set_actor_rotation(rotation or unreal.Rotator(), False)
     return actor
 
 
-def spawn_npc(npc_class, label, location, yaw, participant_tag=""):
-    actor = spawn_actor(npc_class, label, location, unreal.Rotator(0.0, yaw, 0.0))
+def spawn_npc(npc_class, label, location, yaw, participant_tag="", preserve_existing_transform=False):
+    actor = spawn_actor(npc_class, label, location, unreal.Rotator(0.0, yaw, 0.0),
+                        preserve_existing_transform)
     component = actor.get_quest_participant_component()
     component.modify()
     component.set_editor_property("quest_participation_enabled", bool(participant_tag))
@@ -819,12 +825,15 @@ def bind(slot_id, npc):
     return struct(unreal.VHVAmbientParticipantBinding, slot_id=slot_id, npc=npc)
 
 
-def configure_ambient_actor(label, location, asset, receiver_tag, bindings):
-    actor = spawn_actor(unreal.VHVAmbientConversationActor, label, location)
+def configure_ambient_actor(label, location, asset, receiver_tag, bindings,
+                            explicit_trigger=False, preserve_existing_transform=False):
+    actor = spawn_actor(unreal.VHVAmbientConversationActor, label, location,
+                        preserve_existing_transform=preserve_existing_transform)
     actor.set_editor_properties({
         "conversation_data": asset,
         "participants": bindings,
         "auto_start_on_begin_play": False,
+        "requires_explicit_trigger": explicit_trigger,
         "play_once": True,
         "player_leave_policy": unreal.VHVAmbientConversationLeavePolicy.CANCEL,
         "observation_radius": 1800.0,
@@ -839,14 +848,46 @@ def configure_ambient_actor(label, location, asset, receiver_tag, bindings):
 
 
 def configure_location(label, location, location_tag):
-    actor = spawn_actor(unreal.VHVQuestLocationVolume, label, location)
+    existed = find_actor(label) is not None
+    actor = spawn_actor(unreal.VHVQuestLocationVolume, label, location,
+                        preserve_existing_transform=True)
     actor.set_editor_properties({
         "location_tag": tag(location_tag),
         "enabled": True,
         "trigger_world_action": False,
     })
     box = actor.get_editor_property("box_component")
-    box.set_box_extent(unreal.Vector(260.0, 260.0, 220.0), True)
+    if not existed:
+        box.set_box_extent(unreal.Vector(260.0, 260.0, 220.0), True)
+    return actor
+
+
+def configure_story_trigger(label, location, extent, location_tag, quest_id,
+                            objective_id, receiver_tag, legacy_label=""):
+    actor = find_actor(label)
+    if not actor and legacy_label:
+        actor = find_actor(legacy_label)
+        if actor:
+            actor.modify()
+            actor.set_actor_label(label)
+    existed = actor is not None
+    if not actor:
+        actor = spawn_actor(unreal.VHVQuestLocationVolume, label, location,
+                            preserve_existing_transform=True)
+    actor.modify()
+    actor.set_editor_properties({
+        "location_tag": tag(location_tag),
+        "enabled": True,
+        "trigger_world_action": True,
+        "world_action_receiver_tag": tag(receiver_tag),
+        "world_action_tag": tag("VHV.WorldAction.StartConversation"),
+        "trigger_world_action_once": True,
+        "required_active_quest_id": quest_id,
+        "required_active_objective_id": objective_id,
+    })
+    if not existed:
+        actor.get_editor_property("box_component").set_box_extent(
+            unreal.Vector(*extent), True)
     return actor
 
 
@@ -918,40 +959,74 @@ def configure_map(ambient_assets):
         "VHV.WorldReceiver.HBCT.MarketObservation",
         [bind(slot, market_npcs[slot]) for slot in ("Buyer", "Vendor", "Smoker", "SweetTea", "Rider", "JunkFood")])
 
-    prasert = spawn_npc(npc_class, "HBCT_Motivation_Prasert", (0.0, -1120.0, 100.0), 150.0, "VHV.Participant.UnclePrasert")
-    configure_location("HBCT_Location_PrasertHouse", (-80.0, -1300.0, 100.0), "VHV.Location.HBCT.PrasertHouse")
+    prasert = spawn_npc(npc_class, "HBCT_Motivation_Prasert", (0.0, -1120.0, 100.0), 150.0,
+                        "VHV.Participant.UnclePrasert", preserve_existing_transform=True)
+    legacy_prasert_duplicate = find_actor("HBCT_Motivation_Prasert2")
+    if legacy_prasert_duplicate:
+        duplicate_participant = legacy_prasert_duplicate.get_quest_participant_component()
+        duplicate_participant.modify()
+        duplicate_participant.set_editor_properties({
+            "quest_participation_enabled": False,
+            "participant_tag": unreal.GameplayTag(),
+        })
     configure_ambient_actor(
         "HBCT_Motivation_PrasertScene", (0.0, -1120.0, 100.0),
         ambient_assets["DA_Ambient_HBCT_PrasertObservation"],
         "VHV.WorldReceiver.HBCT.Motivation.Prasert",
-        [bind("Prasert", prasert)])
+        [bind("Prasert", prasert)], explicit_trigger=True,
+        preserve_existing_transform=True)
+    configure_story_trigger(
+        "HBCT_Trigger_PrasertObservation", (-80.0, -1300.0, 100.0),
+        (260.0, 260.0, 220.0), "VHV.Location.HBCT.PrasertHouse",
+        "Q_HBCT_01_MOTIVATION", "O02_ObservePrasert",
+        "VHV.WorldReceiver.HBCT.Motivation.Prasert",
+        legacy_label="HBCT_Location_PrasertHouse")
     create_blockout_prop("HBCT_Prop_Prasert_TV", (110.0, -1030.0, 70.0), (0.65, 0.12, 0.45))
     create_blockout_prop("HBCT_Prop_Prasert_SweetDrink", (-50.0, -1060.0, 55.0), (0.08, 0.08, 0.25))
     create_blockout_prop("HBCT_Prop_Prasert_SnackPackets", (-15.0, -1035.0, 48.0), (0.25, 0.16, 0.06))
 
-    directive_vhv = spawn_npc(npc_class, "HBCT_Motivation_DirectiveVHV", (390.0, -760.0, 100.0), 0.0)
-    directive_patient = spawn_npc(npc_class, "HBCT_Motivation_DirectivePatient", (560.0, -760.0, 100.0), 180.0)
-    motivational_vhv = spawn_npc(npc_class, "HBCT_Motivation_MotivationalVHV", (390.0, -480.0, 100.0), 0.0)
-    motivational_patient = spawn_npc(npc_class, "HBCT_Motivation_MotivationalPatient", (560.0, -480.0, 100.0), 180.0)
+    directive_vhv = spawn_npc(npc_class, "HBCT_Motivation_DirectiveVHV", (390.0, -760.0, 100.0), 0.0,
+                              preserve_existing_transform=True)
+    directive_patient = spawn_npc(npc_class, "HBCT_Motivation_DirectivePatient", (560.0, -760.0, 100.0), 180.0,
+                                  preserve_existing_transform=True)
+    motivational_vhv = spawn_npc(npc_class, "HBCT_Motivation_MotivationalVHV", (390.0, -480.0, 100.0), 0.0,
+                                 preserve_existing_transform=True)
+    motivational_patient = spawn_npc(npc_class, "HBCT_Motivation_MotivationalPatient", (560.0, -480.0, 100.0), 180.0,
+                                     preserve_existing_transform=True)
     configure_ambient_actor(
         "HBCT_Motivation_BadGoodDemo", (475.0, -620.0, 100.0),
         ambient_assets["DA_Ambient_HBCT_BadGoodDemo"],
         "VHV.WorldReceiver.HBCT.Motivation.BadGoodDemo",
         [bind("DirectiveVHV", directive_vhv), bind("DirectivePatient", directive_patient),
-         bind("MotivationalVHV", motivational_vhv), bind("MotivationalPatient", motivational_patient)])
+         bind("MotivationalVHV", motivational_vhv), bind("MotivationalPatient", motivational_patient)],
+        explicit_trigger=True, preserve_existing_transform=True)
+    configure_story_trigger(
+        "HBCT_Trigger_BadGoodDemo", (245.0, -620.0, 100.0),
+        (110.0, 300.0, 220.0), "VHV.Location.HBCT.BadGoodDemo",
+        "Q_HBCT_01_MOTIVATION", "O04_ObserveBadGoodDemo",
+        "VHV.WorldReceiver.HBCT.Motivation.BadGoodDemo")
     create_blockout_prop("HBCT_Motivation_BadDemo", (475.0, -850.0, 20.0), (0.9, 0.06, 0.2))
     create_blockout_prop("HBCT_Motivation_GoodDemo", (475.0, -390.0, 20.0), (0.9, 0.06, 0.2))
 
-    saeng = spawn_npc(npc_class, "HBCT_Motivation_Saeng", (1010.0, -120.0, 100.0), 180.0, "VHV.Participant.AuntSaeng")
-    saeng_vhv = spawn_npc(npc_class, "HBCT_Motivation_SaengVHV", (820.0, -120.0, 100.0), 0.0)
-    configure_location("HBCT_Location_SaengHouse", (910.0, -300.0, 100.0), "VHV.Location.HBCT.SaengHouse")
+    saeng = spawn_npc(npc_class, "HBCT_Motivation_Saeng", (1010.0, -120.0, 100.0), 180.0,
+                      "VHV.Participant.AuntSaeng", preserve_existing_transform=True)
+    saeng_vhv = spawn_npc(npc_class, "HBCT_Motivation_SaengVHV", (820.0, -120.0, 100.0), 0.0,
+                          preserve_existing_transform=True)
     configure_ambient_actor(
         "HBCT_Motivation_SaengConversation", (910.0, -120.0, 100.0),
         ambient_assets["DA_Ambient_HBCT_SaengAppreciation"],
         "VHV.WorldReceiver.HBCT.Motivation.Saeng",
-        [bind("Saeng", saeng), bind("VHV", saeng_vhv)])
+        [bind("Saeng", saeng), bind("VHV", saeng_vhv)],
+        explicit_trigger=True, preserve_existing_transform=True)
+    configure_story_trigger(
+        "HBCT_Trigger_SaengAppreciation", (910.0, -300.0, 100.0),
+        (260.0, 260.0, 220.0), "VHV.Location.HBCT.SaengHouse",
+        "Q_HBCT_01_MOTIVATION", "O07_ObserveAppreciation",
+        "VHV.WorldReceiver.HBCT.Motivation.Saeng",
+        legacy_label="HBCT_Location_SaengHouse")
 
-    spawn_npc(npc_class, "HBCT_Motivation_Mali", (1450.0, 650.0, 100.0), 180.0, "VHV.Participant.AuntMali")
+    spawn_npc(npc_class, "HBCT_Motivation_Mali", (1450.0, 650.0, 100.0), 180.0,
+              "VHV.Participant.AuntMali", preserve_existing_transform=True)
     configure_location("HBCT_Location_MaliHouse", (1260.0, 650.0, 100.0), "VHV.Location.HBCT.MaliHouse")
     create_blockout_prop("HBCT_Prop_Mali_IcedMilkTea", (1510.0, 600.0, 55.0), (0.08, 0.08, 0.25))
     create_blockout_prop("HBCT_Prop_Mali_Sweets", (1540.0, 635.0, 48.0), (0.28, 0.18, 0.06))
@@ -989,8 +1064,9 @@ def validate_map_and_defaults(level, arc):
         "HBCT_Motivation_Saeng",
         "HBCT_Motivation_Mali",
         "HBCT_Location_Market",
-        "HBCT_Location_PrasertHouse",
-        "HBCT_Location_SaengHouse",
+        "HBCT_Trigger_PrasertObservation",
+        "HBCT_Trigger_BadGoodDemo",
+        "HBCT_Trigger_SaengAppreciation",
         "HBCT_Location_MaliHouse",
     }
     actors = editor_actors().get_all_level_actors()
@@ -1179,6 +1255,18 @@ def validate_content_integrity(level, conversations, arc):
 
     motivation_quest = next(quest for quest in quests
                             if str(quest.get_editor_property("quest_id")) == "Q_HBCT_01_MOTIVATION")
+    explicit_objectives = {
+        "O02_ObservePrasert",
+        "O04_ObserveBadGoodDemo",
+        "O07_ObserveAppreciation",
+    }
+    for item in motivation_quest.get_editor_property("objectives"):
+        objective_id = str(item.get_editor_property("objective_id"))
+        if (objective_id in explicit_objectives
+                and item.get_editor_property("world_action_start_policy")
+                != unreal.VHVWorldActionStartPolicy.EXPLICIT_TRIGGER):
+            raise RuntimeError("Production WorldAction objective {} must use Explicit Trigger".format(
+                objective_id))
     completion_stinger = motivation_quest.get_editor_property("completion_stinger")
     if (str(completion_stinger.get_editor_property("label")) != "QUEST COMPLETE"
             or str(completion_stinger.get_editor_property("title")) != "BUILDING MOTIVATION"

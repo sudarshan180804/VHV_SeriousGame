@@ -2,6 +2,8 @@
 
 
 #include "VHVPlayerController.h"
+
+#include "Debug/VHVDeveloperSubsystem.h"
 #include "EnhancedInputSubsystems.h"
 #include "EnhancedInputComponent.h"
 #include "Engine/LocalPlayer.h"
@@ -93,6 +95,16 @@ void AVHVPlayerController::BeginPlay()
 void AVHVPlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
+
+#if !UE_BUILD_SHIPPING
+	// Developer-only shortcut ownership lives in UVHVDeveloperSubsystem.
+	if (UVHVDeveloperSubsystem* DeveloperSubsystem = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UVHVDeveloperSubsystem>()
+		: nullptr)
+	{
+		DeveloperSubsystem->BindDeveloperInput(InputComponent);
+	}
+#endif
 
 	// only add IMCs for local player controllers
 	if (IsLocalPlayerController())

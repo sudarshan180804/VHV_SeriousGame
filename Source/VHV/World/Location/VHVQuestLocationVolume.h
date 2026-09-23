@@ -3,12 +3,14 @@
 #include "CoreMinimal.h"
 #include "Core/VHVAuthoringReferences.h"
 #include "GameFramework/Actor.h"
+#include "Story/Types/VHVStoryStateTypes.h"
 #include "VHVQuestLocationVolume.generated.h"
 
 class AVHVCharacter;
 class UBoxComponent;
 class UPrimitiveComponent;
 class UVHVQuestSubsystem;
+class UVHVStoryStateSubsystem;
 struct FHitResult;
 
 UCLASS()
@@ -72,9 +74,24 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|Location|World Action", meta = (EditCondition = "bTriggerWorldAction", EditConditionHides))
     bool bTriggerWorldActionOnce = true;
 
+    /** Optional quest gate. When set, only this active quest may dispatch the WorldAction. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|Location|World Action|Gating", meta = (EditCondition = "bTriggerWorldAction", EditConditionHides))
+    FName RequiredActiveQuestID;
+
+    /** Optional objective gate. When set, only this active objective may dispatch the WorldAction. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|Location|World Action|Gating", meta = (EditCondition = "bTriggerWorldAction", EditConditionHides))
+    FName RequiredActiveObjectiveID;
+
+    /** Optional Story State conditions evaluated when the player enters. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|Location|World Action|Gating", meta = (EditCondition = "bTriggerWorldAction", EditConditionHides))
+    FVHVStoryConditionSet TriggerConditions;
+
 private:
     UPROPERTY(Transient)
     TObjectPtr<UVHVQuestSubsystem> QuestSubsystem;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UVHVStoryStateSubsystem> StoryStateSubsystem;
 
     TSet<TWeakObjectPtr<AVHVCharacter>> PlayersInside;
     bool bWorldActionTriggered = false;

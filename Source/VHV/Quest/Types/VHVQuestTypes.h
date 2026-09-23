@@ -38,6 +38,16 @@ enum class EVHVQuestObjectiveType : uint8
     WorldAction
 };
 
+UENUM(BlueprintType)
+enum class EVHVWorldActionStartPolicy : uint8
+{
+    /** Dispatch as soon as the objective activates. */
+    Immediate,
+
+    /** Wait for a matching authored world trigger to request dispatch. */
+    ExplicitTrigger UMETA(DisplayName = "Explicit Trigger")
+};
+
 USTRUCT(BlueprintType)
 struct VHV_API FVHVQuestObjectiveDefinition
 {
@@ -117,6 +127,9 @@ struct VHV_API FVHVQuestObjectiveDefinition
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|World Action", meta = (DisplayName = "World Action", Categories = "VHV.WorldAction", EditCondition = "ObjectiveType == EVHVQuestObjectiveType::WorldAction", EditConditionHides))
     FGameplayTag WorldActionTag;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|World Action", meta = (DisplayName = "Start Policy", EditCondition = "ObjectiveType == EVHVQuestObjectiveType::WorldAction", EditConditionHides))
+    EVHVWorldActionStartPolicy WorldActionStartPolicy = EVHVWorldActionStartPolicy::Immediate;
 
     // Legacy serialized fallback. Hidden from authoring; do not remove until old assets are fully migrated.
     UPROPERTY(BlueprintReadOnly, Category = "Objective|World Action", meta = (DisplayName = "World Action ID (Legacy)"))

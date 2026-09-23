@@ -1190,7 +1190,10 @@ void UVHVQuestSubsystem::TryActivateCurrentObjective()
     }
     if (Objective->ObjectiveType == EVHVQuestObjectiveType::WorldAction)
     {
-        ExecuteActiveWorldAction();
+        if (Objective->WorldActionStartPolicy == EVHVWorldActionStartPolicy::Immediate)
+        {
+            ExecuteActiveWorldAction();
+        }
         return;
     }
     if ((Objective->ObjectiveType == EVHVQuestObjectiveType::Conversation || Objective->ObjectiveType == EVHVQuestObjectiveType::LearningActivity) && Objective->bAutoStart)
@@ -1342,7 +1345,34 @@ void UVHVQuestSubsystem::ClearActiveNPCActionTracking()
     ActiveNPCObjectiveCommandType = EVHVNPCQuestCommandType::None;
 }
 
-void UVHVQuestSubsystem::ExecuteActiveWorldAction()
+bool UVHVQuestSubsystem::RequestExplicitWorldAction(
+    const FName ReceiverID,
+    const FName ActionID,
+    const FName RequiredQuestID,
+    const FName RequiredObjectiveID)
+{
+    const FVHVQuestObjectiveDefinition* Objective = GetActiveObjective();
+    if (!Objective
+        || !bCurrentObjectiveActivated
+        || Objective->ObjectiveType != EVHVQuestObjectiveType::WorldAction
+        || Objective->WorldActionStartPolicy != EVHVWorldActionStartPolicy::ExplicitTrigger
+        || ActiveWorldActionRequestID.IsValid())
+    {
+        return false;
+    }
+
+    if ((!RequiredQuestID.IsNone() && RuntimeState.ActiveQuestID != RequiredQuestID)
+        || (!RequiredObjectiveID.IsNone() && Objective->ObjectiveID != RequiredObjectiveID)
+        || Objective->GetEffectiveWorldActionReceiverID() != ReceiverID
+        || Objective->GetEffectiveWorldActionID() != ActionID)
+    {
+        return false;
+    }
+
+    return ExecuteActiveWorldAction();
+}
+
+bool UVHVQuestSubsystem::ExecuteActiveWorldAction()
 {
     const FVHVQuestObjectiveDefinition* Objective = GetActiveObjective();
     UWorld* World = GetWorld();
@@ -1354,7 +1384,7 @@ void UVHVQuestSubsystem::ExecuteActiveWorldAction()
             UE_LOG(LogVHV, Error, TEXT("[VHVQuest] Quest '%s' WorldAction objective '%s' could not access the World Action subsystem; objective remains active."),
                 *RuntimeState.ActiveQuestID.ToString(), *Objective->ObjectiveID.ToString());
         }
-        return;
+        return false;
     }
 
     ActiveWorldActionSubsystem = WorldActionSubsystem;
@@ -1382,6 +1412,7 @@ void UVHVQuestSubsystem::ExecuteActiveWorldAction()
             *ExpectedQuestID.ToString(), *ExpectedObjectiveID.ToString(), *ActionID.ToString(), *ReceiverID.ToString());
         ClearActiveWorldActionTracking();
     }
+    return Result != EVHVWorldActionExecutionResult::Rejected;
 }
 
 void UVHVQuestSubsystem::HandleWorldActionCompleted(

@@ -9,6 +9,7 @@
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SConstraintCanvas.h"
+#include "Widgets/Input/SButton.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/SOverlay.h"
 #include "Widgets/Text/STextBlock.h"
@@ -32,6 +33,20 @@ TSharedRef<SWidget> UVHVQuestionWidget::RebuildWidget()
         VHVActivityUIStyle::FromSRGB(28, 26, 20, 128), 10.0f,
         VHVActivityUIStyle::HeaderGold(), VHVActivityUIStyle::BorderNormalWidth);
     DividerBrush = VHVActivityUIStyle::RoundedBrush(VHVActivityUIStyle::DividerGold(), 1.0f);
+    SubmitButtonStyle = FButtonStyle()
+        .SetNormal(VHVActivityUIStyle::RoundedBrush(
+            VHVActivityUIStyle::GoldPrimary().CopyWithNewOpacity(0.92f), 22.0f,
+            VHVActivityUIStyle::GoldSelected(), VHVActivityUIStyle::BorderNormalWidth))
+        .SetHovered(VHVActivityUIStyle::RoundedBrush(
+            VHVActivityUIStyle::GoldSelected(), 22.0f,
+            VHVActivityUIStyle::TextPrimary().CopyWithNewOpacity(0.28f),
+            VHVActivityUIStyle::BorderNormalWidth))
+        .SetPressed(VHVActivityUIStyle::RoundedBrush(
+            VHVActivityUIStyle::FromSRGB(202, 161, 79), 22.0f,
+            VHVActivityUIStyle::TextPrimary().CopyWithNewOpacity(0.36f),
+            VHVActivityUIStyle::BorderNormalWidth))
+        .SetNormalPadding(FMargin(0.0f))
+        .SetPressedPadding(FMargin(1.0f, 2.0f, 0.0f, 0.0f));
 
     TSharedRef<SWidget> Result =
         SAssignNew(RootCanvas, SConstraintCanvas)
@@ -122,20 +137,23 @@ TSharedRef<SWidget> UVHVQuestionWidget::RebuildWidget()
             ]
         ]
         + SConstraintCanvas::Slot()
-        .Anchors(FAnchors(0.6625f, 0.42f, 0.975f, 0.95f))
+        .Anchors(FAnchors(0.6625f, 0.38f, 0.975f, 0.86f))
         .Offset(FMargin(0.0f))
         [
-            SAssignNew(AnswerPanel, SVerticalBox)
-            + SVerticalBox::Slot()
-            .FillHeight(1.0f)
+            SAssignNew(AnswerPanel, SBox)
             .VAlign(VAlign_Center)
             [
                 SAssignNew(OptionsSlateContainer, SVerticalBox)
             ]
-            + SVerticalBox::Slot()
-            .AutoHeight()
+        ]
+        + SConstraintCanvas::Slot()
+        .Anchors(FAnchors(0.87f, 0.93f))
+        .Alignment(FVector2D(0.5f, 0.5f))
+        .Offset(FMargin(0.0f, 0.0f, 320.0f, 44.0f))
+        [
+            SNew(SBox)
             .HAlign(HAlign_Right)
-            .Padding(FMargin(0.0f, VHVActivityUIStyle::LegendGap, 8.0f, 0.0f))
+            .VAlign(VAlign_Center)
             [
                 SNew(SHorizontalBox)
                 + SHorizontalBox::Slot()
@@ -155,7 +173,7 @@ TSharedRef<SWidget> UVHVQuestionWidget::RebuildWidget()
                 + SHorizontalBox::Slot()
                 .AutoWidth()
                 .VAlign(VAlign_Center)
-                .Padding(FMargin(7.0f, 0.0f, 20.0f, 0.0f))
+                .Padding(FMargin(7.0f, 0.0f, 16.0f, 0.0f))
                 [
                     SAssignNew(InteractionLegendText, STextBlock)
                     .Font(VHVActivityUIStyle::RegularFont(14))
@@ -165,25 +183,27 @@ TSharedRef<SWidget> UVHVQuestionWidget::RebuildWidget()
                 .AutoWidth()
                 .VAlign(VAlign_Center)
                 [
-                    SNew(SBorder)
-                    .BorderImage(&KeycapBrush)
-                    .Padding(FMargin(8.0f, 3.0f))
+                    SNew(SBox)
+                    .WidthOverride(126.0f)
+                    .HeightOverride(44.0f)
                     [
-                        SNew(STextBlock)
-                        .Font(VHVActivityUIStyle::MediumFont(13))
-                        .ColorAndOpacity(VHVActivityUIStyle::PrimaryText())
-                        .Text(FText::FromString(TEXT("ENTER")))
+                        SNew(SButton)
+                        .ButtonStyle(&SubmitButtonStyle)
+                        .IsEnabled(TAttribute<bool>::Create(
+                            TAttribute<bool>::FGetter::CreateUObject(
+                                this, &UVHVQuestionWidget::HasSelection)))
+                        .HAlign(HAlign_Center)
+                        .VAlign(VAlign_Center)
+                        .ContentPadding(FMargin(18.0f, 8.0f))
+                        .OnClicked(FOnClicked::CreateUObject(
+                            this, &UVHVQuestionWidget::HandleSubmitClicked))
+                        [
+                            SNew(STextBlock)
+                            .Font(VHVActivityUIStyle::MediumFont(14))
+                            .ColorAndOpacity(VHVActivityUIStyle::MatchingInk())
+                            .Text(FText::FromString(TEXT("SUBMIT")))
+                        ]
                     ]
-                ]
-                + SHorizontalBox::Slot()
-                .AutoWidth()
-                .VAlign(VAlign_Center)
-                .Padding(FMargin(7.0f, 0.0f, 0.0f, 0.0f))
-                [
-                    SNew(STextBlock)
-                    .Font(VHVActivityUIStyle::RegularFont(14))
-                    .ColorAndOpacity(VHVActivityUIStyle::SecondaryText())
-                    .Text(FText::FromString(TEXT("Confirm")))
                 ]
             ]
         ];
@@ -219,6 +239,16 @@ void UVHVQuestionWidget::NativeConstruct()
     {
         AnswerPanel->SetRenderOpacity(0.0f);
     }
+}
+
+void UVHVQuestionWidget::PrepareForModalFocus()
+{
+    if (!CurrentQuestion.Options.IsValidIndex(FocusedOptionIndex)
+        && !CurrentQuestion.Options.IsEmpty())
+    {
+        FocusedOptionIndex = 0;
+    }
+    UpdatePresentation();
 }
 
 void UVHVQuestionWidget::NativeTick(const FGeometry& MyGeometry, const float InDeltaTime)
@@ -359,11 +389,26 @@ bool UVHVQuestionWidget::ActivateFocusedOption()
 {
     if (!CurrentQuestion.Options.IsValidIndex(FocusedOptionIndex))
     {
-        return false;
+        if (CurrentQuestion.Options.IsEmpty())
+        {
+            return false;
+        }
+        FocusedOptionIndex = 0;
+        UpdatePresentation();
     }
 
     HandleOptionSelected(FocusedOptionIndex);
     return true;
+}
+
+FReply UVHVQuestionWidget::HandleSubmitClicked()
+{
+    if (OwningUIManager)
+    {
+        OwningUIManager->TrySubmitCurrentQuestionAnswer();
+    }
+    SetKeyboardFocus();
+    return FReply::Handled();
 }
 
 void UVHVQuestionWidget::HandleOptionSelected(const int32 OptionIndex)

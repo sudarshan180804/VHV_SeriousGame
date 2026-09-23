@@ -98,6 +98,7 @@ TSharedRef<SWidget> UVHVMatchingCardWidget::RebuildWidget()
 
     TSharedRef<SWidget> Result =
         SNew(SBox)
+        .WidthOverride(VHVActivityUIStyle::MatchingCardWidth)
         .HeightOverride(VHVActivityUIStyle::MatchingCardHeight)
         [
             SNew(SOverlay)
