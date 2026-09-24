@@ -9,6 +9,7 @@ class UVHVQuestArcData;
 class UVHVStoryStateSubsystem;
 class UVHVTextbookSubsystem;
 class UVHVWorldActionSubsystem;
+class AActor;
 class AVHVNPCBehaviorTarget;
 class UVHVNPCQuestCommandComponent;
 class UWorld;
@@ -127,6 +128,8 @@ public:
     bool RegisterNPCBehaviorTarget(AVHVNPCBehaviorTarget* Target);
     void UnregisterNPCBehaviorTarget(AVHVNPCBehaviorTarget* Target);
     AVHVNPCBehaviorTarget* FindNPCBehaviorTarget(const UWorld* World, FName TargetID) const;
+    /** Resolves either a legacy behavior target or an editor-visible semantic location volume. */
+    AActor* FindNPCMovementTarget(const UWorld* World, FName TargetID) const;
     bool RegisterNPCCommandComponent(UVHVNPCQuestCommandComponent* CommandComponent);
     void UnregisterNPCCommandComponent(UVHVNPCQuestCommandComponent* CommandComponent);
 
@@ -181,6 +184,9 @@ private:
     void ClearActiveNPCActionTracking();
     bool ExecuteActiveWorldAction();
     void ClearActiveWorldActionTracking();
+    void DispatchNPCMoves(const TArray<FVHVQuestNPCMoveRequest>& Moves);
+    void RestorePersistentNPCMoves();
+    void RestorePersistentNPCMoveForParticipant(FName ParticipantID);
 #if !UE_BUILD_SHIPPING
     void DebugCancelActiveObjectiveExecution();
 #endif

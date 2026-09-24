@@ -7,6 +7,7 @@
 #include "NPC/Quest/VHVNPCBehaviorTarget.h"
 #include "Quest/Components/VHVQuestParticipantComponent.h"
 #include "Quest/Systems/VHVQuestSubsystem.h"
+#include "World/Location/VHVQuestLocationVolume.h"
 #include "VHV.h"
 
 UVHVNPCQuestCommandComponent::UVHVNPCQuestCommandComponent()
@@ -199,9 +200,13 @@ bool UVHVNPCQuestCommandComponent::ExecuteActiveCommand()
 			{
 				if (UVHVQuestSubsystem* QuestSubsystem = GameInstance->GetSubsystem<UVHVQuestSubsystem>())
 				{
-					if (AVHVNPCBehaviorTarget* Target = QuestSubsystem->FindNPCBehaviorTarget(World, ActiveTargetID))
+					if (AActor* Target = QuestSubsystem->FindNPCMovementTarget(World, ActiveTargetID))
 					{
-						bStarted = BehaviorComponent->StartMoveToActor(Target);
+						// Semantic location volumes define an area for designers, but the
+						// authored wait point is their transform rather than the box edge.
+						bStarted = Target->IsA<AVHVQuestLocationVolume>()
+							? BehaviorComponent->StartMoveToLocation(Target->GetActorLocation())
+							: BehaviorComponent->StartMoveToActor(Target);
 					}
 					else
 					{

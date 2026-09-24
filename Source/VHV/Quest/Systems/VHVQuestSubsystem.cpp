@@ -10,7 +10,9 @@
 #include "Textbook/Data/VHVLevelData.h"
 #include "Textbook/Systems/VHVTextbookSubsystem.h"
 #include "World/Systems/VHVWorldActionSubsystem.h"
+#include "World/Location/VHVQuestLocationVolume.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "TimerManager.h"
 #include "VHV.h"
 
@@ -97,6 +99,8 @@ bool UVHVQuestSubsystem::StartQuestArc(UVHVQuestArcData* QuestArc)
     {
         TextbookSubsystem->SetProgressionMode(EVHVTextbookProgressionMode::QuestManaged);
     }
+
+    RestorePersistentNPCMoves();
 
     UE_LOG(LogVHV, Log, TEXT("[VHVQuest] Started arc '%s'."), *QuestArc->QuestArcID.ToString());
     return StartQuest(QuestArc->Quests[0].QuestID);
@@ -217,6 +221,10 @@ bool UVHVQuestSubsystem::CompleteCurrentObjective()
         UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Quest '%s' objective '%s' had one or more invalid Story State completion effects."),
             *QuestID.ToString(), *ObjectiveID.ToString());
     }
+
+    // Story movement is fire-and-forget. A command issued while the participant is
+    // still Talking queues in its existing command component and starts on Idle.
+    DispatchNPCMoves(Objective.CompletionNPCMoves);
 
     OnObjectiveCompleted.Broadcast(QuestID, ObjectiveID);
 
@@ -566,6 +574,7 @@ bool UVHVQuestSubsystem::ImportSaveState(const FVHVQuestSaveState& SaveState)
     {
         OnQuestUpdated.Broadcast(QuestState.QuestID);
     }
+    RestorePersistentNPCMoves();
     if (!RuntimeState.ActiveQuestID.IsNone())
     {
         ActivateCurrentObjective();
@@ -740,6 +749,34 @@ AVHVNPCBehaviorTarget* UVHVQuestSubsystem::FindNPCBehaviorTarget(const UWorld* W
     return Target ? Target->Get() : nullptr;
 }
 
+AActor* UVHVQuestSubsystem::FindNPCMovementTarget(const UWorld* World, const FName TargetID) const
+{
+    if (!World || TargetID.IsNone())
+    {
+        return nullptr;
+    }
+    if (AVHVNPCBehaviorTarget* BehaviorTarget = FindNPCBehaviorTarget(World, TargetID))
+    {
+        return BehaviorTarget;
+    }
+
+    AVHVQuestLocationVolume* FoundLocation = nullptr;
+    for (TActorIterator<AVHVQuestLocationVolume> It(World); It; ++It)
+    {
+        if (It->GetEffectiveLocationID() != TargetID)
+        {
+            continue;
+        }
+        if (FoundLocation)
+        {
+            UE_LOG(LogVHV, Error, TEXT("[VHVQuest] Multiple semantic location actors resolve movement destination '%s'."), *TargetID.ToString());
+            return nullptr;
+        }
+        FoundLocation = *It;
+    }
+    return FoundLocation;
+}
+
 bool UVHVQuestSubsystem::RegisterNPCCommandComponent(UVHVNPCQuestCommandComponent* CommandComponent)
 {
     if (!IsValid(CommandComponent) || !CommandComponent->GetWorld())
@@ -774,7 +811,100 @@ bool UVHVQuestSubsystem::RegisterNPCCommandComponent(UVHVNPCQuestCommandComponen
         }
     }
     Registry.Add(ParticipantID, CommandComponent);
+    RestorePersistentNPCMoveForParticipant(ParticipantID);
     return true;
+}
+
+void UVHVQuestSubsystem::DispatchNPCMoves(const TArray<FVHVQuestNPCMoveRequest>& Moves)
+{
+    for (const FVHVQuestNPCMoveRequest& Move : Moves)
+    {
+        const FName ParticipantID = Move.GetEffectiveParticipantID();
+        const FName DestinationID = Move.GetEffectiveDestinationID();
+        if (!RequestNPCMove(ParticipantID, DestinationID))
+        {
+            UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Could not move participant '%s' to semantic location '%s'."),
+                *ParticipantID.ToString(), *DestinationID.ToString());
+        }
+    }
+}
+
+void UVHVQuestSubsystem::RestorePersistentNPCMoves()
+{
+    if (!ActiveQuestArc)
+    {
+        return;
+    }
+
+    TMap<FName, FVHVQuestNPCMoveRequest> LatestMoves;
+    for (const FVHVQuestNPCMoveRequest& Move : ActiveQuestArc->InitialNPCMoves)
+    {
+        LatestMoves.Add(Move.GetEffectiveParticipantID(), Move);
+    }
+    for (const FVHVQuestDefinition& Quest : ActiveQuestArc->Quests)
+    {
+        const FVHVQuestRuntimeState* QuestState = FindQuestState(Quest.QuestID);
+        if (!QuestState)
+        {
+            continue;
+        }
+        for (const FVHVQuestObjectiveDefinition& Objective : Quest.Objectives)
+        {
+            if (!QuestState->CompletedObjectiveIDs.Contains(Objective.ObjectiveID))
+            {
+                continue;
+            }
+            for (const FVHVQuestNPCMoveRequest& Move : Objective.CompletionNPCMoves)
+            {
+                LatestMoves.Add(Move.GetEffectiveParticipantID(), Move);
+            }
+        }
+    }
+
+    TArray<FVHVQuestNPCMoveRequest> Moves;
+    LatestMoves.GenerateValueArray(Moves);
+    DispatchNPCMoves(Moves);
+}
+
+void UVHVQuestSubsystem::RestorePersistentNPCMoveForParticipant(const FName ParticipantID)
+{
+    if (!ActiveQuestArc || ParticipantID.IsNone())
+    {
+        return;
+    }
+
+    const FVHVQuestNPCMoveRequest* LatestMove = ActiveQuestArc->InitialNPCMoves.FindByPredicate(
+        [ParticipantID](const FVHVQuestNPCMoveRequest& Move)
+        {
+            return Move.GetEffectiveParticipantID() == ParticipantID;
+        });
+    for (const FVHVQuestDefinition& Quest : ActiveQuestArc->Quests)
+    {
+        const FVHVQuestRuntimeState* QuestState = FindQuestState(Quest.QuestID);
+        if (!QuestState)
+        {
+            continue;
+        }
+        for (const FVHVQuestObjectiveDefinition& Objective : Quest.Objectives)
+        {
+            if (!QuestState->CompletedObjectiveIDs.Contains(Objective.ObjectiveID))
+            {
+                continue;
+            }
+            if (const FVHVQuestNPCMoveRequest* Move = Objective.CompletionNPCMoves.FindByPredicate(
+                [ParticipantID](const FVHVQuestNPCMoveRequest& Candidate)
+                {
+                    return Candidate.GetEffectiveParticipantID() == ParticipantID;
+                }))
+            {
+                LatestMove = Move;
+            }
+        }
+    }
+    if (LatestMove)
+    {
+        RequestNPCMove(ParticipantID, LatestMove->GetEffectiveDestinationID());
+    }
 }
 
 void UVHVQuestSubsystem::UnregisterNPCCommandComponent(UVHVNPCQuestCommandComponent* CommandComponent)
@@ -856,6 +986,27 @@ bool UVHVQuestSubsystem::ValidateQuestArc(const UVHVQuestArcData* QuestArc) cons
     {
         UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Quest arc '%s' has no quests."), *QuestArc->QuestArcID.ToString());
         bValid = false;
+    }
+
+    TSet<FName> InitialMoveParticipants;
+    for (const FVHVQuestNPCMoveRequest& Move : QuestArc->InitialNPCMoves)
+    {
+        const FName ParticipantID = Move.GetEffectiveParticipantID();
+        const FName DestinationID = Move.GetEffectiveDestinationID();
+        if (!VHVAuthoringReferences::IsValidReferenceTag(Move.ParticipantTag, TEXT("VHV.Participant"))
+            || !VHVAuthoringReferences::IsValidReferenceTag(Move.DestinationLocationTag, TEXT("VHV.Location"))
+            || ParticipantID.IsNone() || DestinationID.IsNone())
+        {
+            UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Arc '%s' has an invalid initial NPC semantic-location move."), *QuestArc->QuestArcID.ToString());
+            bValid = false;
+        }
+        else if (InitialMoveParticipants.Contains(ParticipantID))
+        {
+            UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Arc '%s' has multiple initial moves for participant '%s'."),
+                *QuestArc->QuestArcID.ToString(), *ParticipantID.ToString());
+            bValid = false;
+        }
+        InitialMoveParticipants.Add(ParticipantID);
     }
 
     TSet<FName> QuestIDs;
@@ -1032,6 +1183,27 @@ bool UVHVQuestSubsystem::ValidateQuestArc(const UVHVQuestArcData* QuestArc) cons
                         *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString());
                     bValid = false;
                 }
+            }
+            TSet<FName> CompletionMoveParticipants;
+            for (const FVHVQuestNPCMoveRequest& Move : Objective.CompletionNPCMoves)
+            {
+                const FName ParticipantID = Move.GetEffectiveParticipantID();
+                const FName DestinationID = Move.GetEffectiveDestinationID();
+                if (!VHVAuthoringReferences::IsValidReferenceTag(Move.ParticipantTag, TEXT("VHV.Participant"))
+                    || !VHVAuthoringReferences::IsValidReferenceTag(Move.DestinationLocationTag, TEXT("VHV.Location"))
+                    || ParticipantID.IsNone() || DestinationID.IsNone())
+                {
+                    UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Quest '%s' objective '%s' has an invalid completion NPC semantic-location move."),
+                        *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString());
+                    bValid = false;
+                }
+                else if (CompletionMoveParticipants.Contains(ParticipantID))
+                {
+                    UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Quest '%s' objective '%s' has multiple completion moves for participant '%s'."),
+                        *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString(), *ParticipantID.ToString());
+                    bValid = false;
+                }
+                CompletionMoveParticipants.Add(ParticipantID);
             }
             for (const FVHVStoryCondition& Condition : Objective.ActivationConditions.Conditions)
             {

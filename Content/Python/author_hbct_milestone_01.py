@@ -91,6 +91,34 @@ def completion_condition(counter_name, compare_value):
             compare_value=compare_value)])
 
 
+def flag_not_set_condition(flag_name):
+    return struct(
+        unreal.VHVStoryConditionSet,
+        match_mode=unreal.VHVStoryConditionMatch.ALL,
+        conditions=[struct(
+            unreal.VHVStoryCondition,
+            condition_type=unreal.VHVStoryConditionType.FLAG_NOT_SET,
+            state_tag=tag(flag_name))])
+
+
+def counter_at_least_condition(counter_name, compare_value):
+    return struct(
+        unreal.VHVStoryConditionSet,
+        match_mode=unreal.VHVStoryConditionMatch.ALL,
+        conditions=[struct(
+            unreal.VHVStoryCondition,
+            condition_type=unreal.VHVStoryConditionType.COUNTER_GREATER_OR_EQUAL,
+            state_tag=tag(counter_name),
+            compare_value=compare_value)])
+
+
+def ordering_items(items):
+    return [
+        struct(unreal.OrderingItem, item_id=str(index), item_text=text)
+        for index, text in enumerate(items, 1)
+    ]
+
+
 def teaching(title, content, takeaways, category=None, media_texture=None, media_caption=""):
     if category is None:
         category = unreal.TextbookTeachingCategory.LESSON
@@ -678,6 +706,157 @@ def build_goal_setting_activities():
     ]
 
 
+def build_role_model_activities():
+    observation = unreal.TextbookActivityType.OBSERVATION
+    single = unreal.TextbookActivityType.SINGLE_CHOICE
+    multi = unreal.TextbookActivityType.MULTI_CHOICE
+    ordering = unreal.TextbookActivityType.ORDERING
+    dialogue = unreal.TextbookActivityType.DIALOGUE_CHOICE
+    topic = "HBCT_M03_ROLE_MODEL"
+
+    live_symbolic = [
+        ("LiveSymbolic01", "Aunt Saeng talking directly to a neighbor.", 0, ""),
+        ("LiveSymbolic02", "A person demonstrating walking in the park.", 0, ""),
+        ("LiveSymbolic03", "A health video showing a successful patient.", 1, ""),
+        ("LiveSymbolic04", "A success story described in a health booklet.", 1,
+         "Live models can be observed directly. Symbolic models demonstrate behavior through media or representation."),
+    ]
+    activities = [
+        activity(
+            "VHV.Activity.HBCT.RoleModel.DiscoveryReview", "Discovery Review", observation,
+            "What did these scenes have in common?", None,
+            evidence_tagging=evidence_tagging(
+                "What did these scenes have in common?",
+                [
+                    evidence_card("Someone observed another person's behavior.", True),
+                    evidence_card("The example made a behavior easier to imagine.", True),
+                    evidence_card("Some observers tried or considered adapting what they saw.", True),
+                    evidence_card("The example could be a real person or something shown through media.", True),
+                    evidence_card("Everyone was directly ordered what to do.", False),
+                    evidence_card("Every observer copied the behavior perfectly.", False),
+                    evidence_card("Only trained health professionals could be models.", False),
+                ],
+                "Which statement best summarizes the observations?",
+                [
+                    evidence_card("People can learn health behavior by observing examples around them.", True),
+                    evidence_card("Role modeling requires perfect copying.", False),
+                ],
+                [takeaway_card("REVIEW", "People can learn health behavior by observing examples around them.")]),
+            correct_feedback="People can learn health behavior by observing examples around them."),
+        activity(
+            "VHV.Activity.HBCT.RoleModel.SomchaiProfile", "Build Somchai's Model Profile", observation,
+            "What should we look for in a useful role model for Somchai?", None,
+            evidence_tagging=evidence_tagging(
+                "What should we look for in a useful role model for Somchai?",
+                [
+                    evidence_card("Similar age or life situation.", True),
+                    evidence_card("Similar health challenge.", True),
+                    evidence_card("Change that looks achievable.", True),
+                    evidence_card("Someone approachable.", True),
+                    evidence_card("Someone Somchai can respect.", True),
+                    evidence_card("The most athletic person available.", False),
+                    evidence_card("Someone who performs the hardest exercise.", False),
+                    evidence_card("Someone completely different from Somchai.", False),
+                ],
+                "Which principle should guide the search?",
+                [
+                    evidence_card("The model should make change feel relatable and possible.", True),
+                    evidence_card("The model should be the most impressive person available.", False),
+                ],
+                [takeaway_card("MODEL FIT", "A useful model should make the target think: someone like me can do this.")]),
+            correct_feedback="A useful model should make the target think: someone like me can do this."),
+        activity(
+            "VHV.Activity.HBCT.RoleModel.SelectModel", "Select a Role Model", single,
+            "Who would you recommend as Somchai's main role model?", None,
+            question=question("HBCT_ROLE_MODEL_SELECT", "Who would you recommend as Somchai's main role model?",
+                              ["Aunt Saeng", "The young athlete", "The fitness celebrity"], 0),
+            attempt_policy=attempt_policy(
+                "Think about who Somchai could realistically relate to and learn from.",
+                "Aunt Saeng's change is closer to Somchai's age, health concerns, lifestyle, and starting ability."),
+            correct_feedback="Aunt Saeng's change is closer to Somchai's age, health concerns, lifestyle, and starting ability."),
+        activity(
+            "VHV.Activity.HBCT.RoleModel.ExplainModelFit", "Why Does She Fit?", multi,
+            "Why is Aunt Saeng a strong match for Somchai?", None,
+            question=multi_question("HBCT_ROLE_MODEL_FIT", "Why is Aunt Saeng a strong match for Somchai?", [
+                ("Similar life stage.", True), ("Similar health risk.", True),
+                ("Her changes are realistic.", True), ("She is approachable.", True),
+                ("She is respected locally.", True), ("Somchai can imagine doing what she did.", True),
+                ("She exercises harder than everyone else.", False), ("She is famous.", False),
+                ("Her lifestyle is completely different from his.", False),
+            ]),
+            correct_feedback="The strongest model is not necessarily the most impressive person. The model should make successful change feel believable and achievable."),
+        activity(
+            "VHV.Activity.HBCT.RoleModel.ReconstructProgression", "Reconstruct the Progression", ordering,
+            "Reconstruct how modeled behavior becomes a habit.", None,
+            ordering_items=ordering_items([
+                "Observe achievable behavior", "Try part of the behavior",
+                "Receive encouragement / feedback", "Repeat the behavior",
+                "Make it part of daily life"]),
+            correct_order=["1", "2", "3", "4", "5"],
+            correct_feedback="Role modeling can help someone begin a behavior, strengthen it through repeated practice, and make it easier to use in everyday life."),
+        activity(
+            "VHV.Activity.HBCT.RoleModel.PlanSession", "Plan the Modeling Session", ordering,
+            "Prepare Somchai's role-model session.", None,
+            ordering_items=ordering_items([
+                "Identify the behavior to learn", "Choose a suitable model", "Prepare the model",
+                "Demonstrate the behavior", "Recognize successful demonstration",
+                "Let the target person try", "Give feedback if needed"]),
+            correct_order=["1", "2", "3", "4", "5", "6", "7"],
+            correct_feedback="A role-model session should move from a clear behavior and suitable model to demonstration, practice, reinforcement, and feedback."),
+        activity(
+            "VHV.Activity.HBCT.RoleModel.SaengRealisticChange", "What Matters in Her Example?", single,
+            "Which part of Aunt Saeng's story is most useful for Somchai right now?", None,
+            question=question("HBCT_ROLE_MODEL_SAENG_CHANGE",
+                              "Which part of Aunt Saeng's story is most useful for Somchai right now?", [
+                                  "She found realistic substitutions rather than demanding perfection.",
+                                  "She followed the hardest diet possible.",
+                                  "She immediately eliminated every sweet food.",
+                                  "She copied someone else's diet exactly."], 0),
+            correct_feedback="Her example shows a realistic change Somchai can adapt rather than an extreme rule he must copy."),
+        activity(
+            "VHV.Activity.HBCT.RoleModel.SweetsResponse", "Respond to Somchai", dialogue,
+            "How should you respond to Somchai's concern about sweets?", None,
+            dialogue_choice=struct(unreal.DialogueChoiceActivityReference,
+                                   conversation_id="HBCT_RoleModel_SaengDemo",
+                                   choice_node_id="RMSaeng_Choice",
+                                   required_for_progress=True)),
+        activity(
+            "VHV.Activity.HBCT.RoleModel.ImitationFeedback", "Support Imitation", single,
+            "What feedback would help Somchai imitate the behavior successfully?", None,
+            question=question("HBCT_ROLE_MODEL_FEEDBACK",
+                              "What feedback would help Somchai imitate the behavior successfully?", [
+                                  "You're doing it wrong.",
+                                  "Forget it. Walking isn't for you.",
+                                  "Good start. Let's reduce the pace and make it something you can repeat regularly."], 2),
+            correct_feedback="Feedback should help the person adapt the demonstrated behavior into something safe, realistic, and repeatable."),
+        activity(
+            "VHV.Activity.HBCT.RoleModel.FinalApplication", "Choose a Useful Model", single,
+            "Which model would probably be more useful?", None,
+            question=question("HBCT_ROLE_MODEL_FINAL",
+                              "Which model would probably be more useful?", [
+                                  "A similarly aged person with comparable limitations who gradually became active.",
+                                  "The competitive runner because they are more impressive.",
+                                  "Whoever exercises the hardest.",
+                                  "It doesn't matter who the model is."], 0),
+            correct_feedback="The strongest model is often someone the target can realistically relate to and learn from."),
+    ]
+    for suffix, prompt, correct_index, feedback in live_symbolic:
+        activities.insert(1 + len([a for a in activities if str(unreal.GameplayTagLibrary.get_tag_name(
+            a.get_editor_property("activity_tag"))).split(".")[-1].startswith("LiveSymbolic")]), activity(
+                "VHV.Activity.HBCT.RoleModel." + suffix, "Live or Symbolic", single, prompt, None,
+                question=question("HBCT_ROLE_MODEL_" + suffix.upper(), prompt,
+                                  ["LIVE MODEL", "SYMBOLIC MODEL"], correct_index),
+                correct_feedback=feedback))
+    for role_activity in activities:
+        role_activity.set_editor_property(
+            "incorrect_feedback",
+            "Review the model's similarity, achievability, and how the target can adapt the behavior.")
+        role_activity.set_editor_property(
+            "partial_feedback",
+            "You identified part of what makes a role model useful.")
+    return activities
+
+
 def configure_level(level):
     motivation_topic = struct(
         unreal.TopicData,
@@ -691,19 +870,26 @@ def configure_level(level):
         topic_title="Technique 2 — Goal Setting",
         narrative_introduction="Turn a broad health intention into a clear short-term goal and a longer-term direction.",
         activities=build_goal_setting_activities())
+    role_model_topic = struct(
+        unreal.TopicData,
+        topic_id="HBCT_M03_ROLE_MODEL",
+        topic_title="Technique 3 — Role Model",
+        narrative_introduction="Observe, select, and use a relatable model to support achievable behavior change.",
+        activities=build_role_model_activities())
     day = struct(
         unreal.DayData,
         day_number=1,
         day_title="First Day in the Village",
         narrative_role="Production HBCT prologue, Technique 1, and Technique 2",
         introduction_text="Meet the Instructor and begin by observing real life.",
-        topics=[motivation_topic, goal_setting_topic],
-        completion_summary="Building Motivation and Goal Setting complete.",
+        topics=[motivation_topic, goal_setting_topic, role_model_topic],
+        completion_summary="Building Motivation, Goal Setting, and Role Model complete.",
         completion_takeaways=[
             "Motivation comes from what matters personally.",
             "A VHV guides rather than commands.",
             "A small feasible plan turns readiness toward action.",
             "A useful goal turns intention into a clear behavior, target, and time frame.",
+            "A useful role model makes change feel relatable, achievable, and adaptable.",
         ])
     level.set_editor_properties({
         "level_number": 1,
@@ -713,7 +899,8 @@ def configure_level(level):
     })
 
 
-def text_node(node_id, speaker_name, line, next_id="", speaker_tag="", checkpoint="", presentation=None):
+def text_node(node_id, speaker_name, line, next_id="", speaker_tag="", checkpoint="", presentation=None,
+              completion_effects=None, activation_conditions=None):
     values = {
         "node_id": node_id,
         "node_type": unreal.VHVDialogueNodeType.TEXT,
@@ -722,7 +909,7 @@ def text_node(node_id, speaker_name, line, next_id="", speaker_tag="", checkpoin
         "choices": [],
         "next_node_id": next_id,
         "is_checkpoint": bool(checkpoint),
-        "completion_effects": [],
+        "completion_effects": completion_effects or [],
     }
     if presentation is not None:
         values["presentation"] = presentation
@@ -730,6 +917,8 @@ def text_node(node_id, speaker_name, line, next_id="", speaker_tag="", checkpoin
         values["speaker_tag"] = tag(speaker_tag)
     if checkpoint:
         values["checkpoint_tag"] = tag(checkpoint)
+    if activation_conditions is not None:
+        values["activation_conditions"] = activation_conditions
     return struct(unreal.DialogueNode, **values)
 
 
@@ -749,6 +938,51 @@ def learning_node(node_id, activity_tag, next_id="", topic_id="HBCT_M01_BUILDING
             topic_id=topic_id,
             required_for_progress=True),
         completion_effects=[])
+
+
+def dialogue_choice(option_id, text, next_node_id, is_default=False):
+    return struct(
+        unreal.DialogueChoiceOption,
+        option_id=option_id,
+        option_text=text,
+        next_node_id=next_node_id,
+        is_default=is_default,
+        selection_effects=[])
+
+
+def choice_node(node_id, speaker_name, prompt, choices, speaker_tag=""):
+    values = {
+        "node_id": node_id,
+        "node_type": unreal.VHVDialogueNodeType.CHOICE,
+        "speaker_name": speaker_name,
+        "text": prompt,
+        "choices": choices,
+        "next_node_id": "",
+        "is_checkpoint": False,
+        "completion_effects": [],
+    }
+    if speaker_tag:
+        values["speaker_tag"] = tag(speaker_tag)
+    return struct(unreal.DialogueNode, **values)
+
+
+def one_shot_dialogue(nodes, flag_name, required_flag_name=""):
+    conditions = [struct(
+        unreal.VHVStoryCondition,
+        condition_type=unreal.VHVStoryConditionType.FLAG_NOT_SET,
+        state_tag=tag(flag_name))]
+    if required_flag_name:
+        conditions.append(struct(
+            unreal.VHVStoryCondition,
+            condition_type=unreal.VHVStoryConditionType.FLAG_SET,
+            state_tag=tag(required_flag_name)))
+    condition = struct(
+        unreal.VHVStoryConditionSet,
+        match_mode=unreal.VHVStoryConditionMatch.ALL,
+        conditions=conditions)
+    for node in nodes:
+        node.set_editor_property("activation_conditions", condition)
+    return nodes
 
 
 def set_conversation(asset, conversation_id, nodes):
@@ -976,6 +1210,163 @@ def create_conversations():
             text_node("GSFinal_14", "Instructor", "When people know why they want to change, motivation begins. When they know exactly what to do, change becomes possible.", speaker_tag="VHV.Participant.Instructor"),
         ])
 
+    role_topic = "HBCT_M03_ROLE_MODEL"
+    specs["DA_Conversation_HBCT_RoleModel_Reveal"] = (
+        "HBCT_RoleModel_Reveal",
+        [
+            text_node("RMReveal_Thought", "Player", "So the example doesn't even have to be standing here.", "RMReveal_Review",
+                      presentation=unreal.VHVDialoguePresentation.THOUGHT),
+            learning_node("RMReveal_Review", "VHV.Activity.HBCT.RoleModel.DiscoveryReview", "RMReveal_01", role_topic),
+            text_node("RMReveal_01", "Instructor", "You saw four different scenes. What connected them?", "RMReveal_02", "VHV.Participant.Instructor"),
+            text_node("RMReveal_02", "Player", "Someone was learning from somebody else's example.", "RMReveal_03"),
+            text_node("RMReveal_03", "Instructor", "Exactly.", "RMReveal_04", "VHV.Participant.Instructor"),
+            text_node("RMReveal_04", "Instructor", "That is role modeling.", "RMReveal_05", "VHV.Participant.Instructor"),
+            text_node("RMReveal_05", "Player", "So they just copy what the other person does?", "RMReveal_06"),
+            text_node("RMReveal_06", "Instructor", "Not exactly.", "RMReveal_07", "VHV.Participant.Instructor"),
+            text_node("RMReveal_07", "Instructor", "They observe.", "RMReveal_08", "VHV.Participant.Instructor"),
+            text_node("RMReveal_08", "Instructor", "They think about whether the behavior fits their own situation.", "RMReveal_09", "VHV.Participant.Instructor"),
+            text_node("RMReveal_09", "Instructor", "Then they adapt what is useful.", "RMReveal_10", "VHV.Participant.Instructor"),
+            text_node("RMReveal_10", "Instructor", "Role modeling is not simply copying. It is observing, relating, and adapting.", "RMReveal_Class1", "VHV.Participant.Instructor"),
+            learning_node("RMReveal_Class1", "VHV.Activity.HBCT.RoleModel.LiveSymbolic01", "RMReveal_Class2", role_topic),
+            learning_node("RMReveal_Class2", "VHV.Activity.HBCT.RoleModel.LiveSymbolic02", "RMReveal_Class3", role_topic),
+            learning_node("RMReveal_Class3", "VHV.Activity.HBCT.RoleModel.LiveSymbolic03", "RMReveal_Class4", role_topic),
+            learning_node("RMReveal_Class4", "VHV.Activity.HBCT.RoleModel.LiveSymbolic04", topic_id=role_topic),
+        ])
+    specs["DA_Conversation_HBCT_RoleModel_Somchai"] = (
+        "HBCT_RoleModel_Somchai",
+        [
+            text_node("RMSomchai_01", "Player", "Uncle Somchai, have you thought about becoming more active?", "RMSomchai_02"),
+            text_node("RMSomchai_02", "Uncle Somchai", "Of course.", "RMSomchai_03", "VHV.Participant.UncleSomchai"),
+            text_node("RMSomchai_03", "Uncle Somchai", "But look at those young people exercising.", "RMSomchai_04", "VHV.Participant.UncleSomchai"),
+            text_node("RMSomchai_04", "Uncle Somchai", "That's for them.", "RMSomchai_05", "VHV.Participant.UncleSomchai"),
+            text_node("RMSomchai_05", "Uncle Somchai", "I'm not going to run around like a twenty-year-old.", "RMSomchai_06", "VHV.Participant.UncleSomchai"),
+            text_node("RMSomchai_06", "Player", "Would it help to see someone closer to your situation?", "RMSomchai_07"),
+            text_node("RMSomchai_07", "Uncle Somchai", "Maybe.", "RMSomchai_08", "VHV.Participant.UncleSomchai"),
+            text_node("RMSomchai_08", "Uncle Somchai", "If someone like me really managed it, I'd listen.", speaker_tag="VHV.Participant.UncleSomchai"),
+        ])
+
+    athlete_nodes = [
+        text_node("RMAthlete_01", "Player", "What does your exercise routine look like?", "RMAthlete_02"),
+        text_node("RMAthlete_02", "Young Athlete", "I train almost every day.", "RMAthlete_03", "VHV.Participant.RoleModel.YoungAthlete"),
+        text_node("RMAthlete_03", "Young Athlete", "Running, strength work, sometimes two sessions.", "RMAthlete_04", "VHV.Participant.RoleModel.YoungAthlete"),
+        text_node("RMAthlete_04", "Young Athlete", "I've been training for years.", "RMAthlete_05", "VHV.Participant.RoleModel.YoungAthlete"),
+        text_node("RMAthlete_05", "Player", "Impressive... but very different from Somchai's situation.",
+                  presentation=unreal.VHVDialoguePresentation.THOUGHT,
+                  completion_effects=[effect("VHV.Story.Flag.HBCT.RoleModel.CandidateAthleteInspected"),
+                                      counter_effect("VHV.Story.Counter.HBCT.RoleModel.CandidatesInspected")]),
+    ]
+    specs["DA_Conversation_HBCT_RoleModel_YoungAthlete"] = (
+        "HBCT_RoleModel_YoungAthlete",
+        one_shot_dialogue(
+            athlete_nodes, "VHV.Story.Flag.HBCT.RoleModel.CandidateAthleteInspected",
+            "VHV.Story.Flag.HBCT.RoleModel.SomchaiProfileComplete"))
+
+    saeng_candidate_nodes = [
+        text_node("RMSaengCandidate_01", "Player", "Aunt Saeng, how did you start changing your health habits?", "RMSaengCandidate_02"),
+        text_node("RMSaengCandidate_02", "Aunt Saeng", "Slowly.", "RMSaengCandidate_03", "VHV.Participant.AuntSaeng"),
+        text_node("RMSaengCandidate_03", "Aunt Saeng", "I used to eat a lot of sweet food.", "RMSaengCandidate_04", "VHV.Participant.AuntSaeng"),
+        text_node("RMSaengCandidate_04", "Aunt Saeng", "I didn't suddenly become an athlete.", "RMSaengCandidate_05", "VHV.Participant.AuntSaeng"),
+        text_node("RMSaengCandidate_05", "Aunt Saeng", "I changed what I ate, chose less-sweet drinks, and started walking every morning.", "RMSaengCandidate_06", "VHV.Participant.AuntSaeng"),
+        text_node("RMSaengCandidate_06", "Player", "How long do you walk?", "RMSaengCandidate_07"),
+        text_node("RMSaengCandidate_07", "Aunt Saeng", "Usually around thirty minutes.", "RMSaengCandidate_08", "VHV.Participant.AuntSaeng"),
+        text_node("RMSaengCandidate_08", "Aunt Saeng", "At first I did less.", speaker_tag="VHV.Participant.AuntSaeng",
+                  completion_effects=[effect("VHV.Story.Flag.HBCT.RoleModel.CandidateSaengInspected"),
+                                      counter_effect("VHV.Story.Counter.HBCT.RoleModel.CandidatesInspected")]),
+    ]
+    specs["DA_Conversation_HBCT_RoleModel_SaengCandidate"] = (
+        "HBCT_RoleModel_SaengCandidate",
+        one_shot_dialogue(
+            saeng_candidate_nodes, "VHV.Story.Flag.HBCT.RoleModel.CandidateSaengInspected",
+            "VHV.Story.Flag.HBCT.RoleModel.SomchaiProfileComplete"))
+
+    specs["DA_Conversation_HBCT_RoleModel_Prepare"] = (
+        "HBCT_RoleModel_Prepare",
+        [
+            text_node("RMPrepare_01", "Instructor", "Choosing the model is only part of the job.", "RMPrepare_02", "VHV.Participant.Instructor"),
+            text_node("RMPrepare_02", "Instructor", "Now you're going to help run the demonstration.", "RMPrepare_03", "VHV.Participant.Instructor"),
+            learning_node("RMPrepare_03", "VHV.Activity.HBCT.RoleModel.PlanSession", topic_id=role_topic),
+        ])
+
+    specs["DA_Conversation_HBCT_RoleModel_SaengDemo"] = (
+        "HBCT_RoleModel_SaengDemo",
+        [
+            text_node("RMSaeng_01", "Player", "Uncle Somchai, I'd like you to hear how Aunt Saeng started.", "RMSaeng_02"),
+            text_node("RMSaeng_02", "Player", "She also had to make changes because of her diabetes risk.", "RMSaeng_03"),
+            text_node("RMSaeng_03", "Uncle Somchai", "Really?", "RMSaeng_04", "VHV.Participant.UncleSomchai"),
+            text_node("RMSaeng_04", "Uncle Somchai", "What did you change?", "RMSaeng_05", "VHV.Participant.UncleSomchai"),
+            text_node("RMSaeng_05", "Aunt Saeng", "I used to eat many sweet foods.", "RMSaeng_06", "VHV.Participant.AuntSaeng"),
+            text_node("RMSaeng_06", "Aunt Saeng", "I began reducing the very sweet ones instead of trying to change everything overnight.", "RMSaeng_07", "VHV.Participant.AuntSaeng"),
+            text_node("RMSaeng_07", "Aunt Saeng", "I chose lower-sugar fruit more often.", "RMSaeng_08", "VHV.Participant.AuntSaeng"),
+            text_node("RMSaeng_08", "Aunt Saeng", "I drank unsweetened herbal drinks.", "RMSaeng_09", "VHV.Participant.AuntSaeng"),
+            text_node("RMSaeng_09", "Aunt Saeng", "I also started choosing more vegetables and higher-fiber foods.", "RMSaeng_10", "VHV.Participant.AuntSaeng"),
+            text_node("RMSaeng_10", "Aunt Saeng", "And less oily food and refined flour.", "RMSaeng_11", "VHV.Participant.AuntSaeng"),
+            text_node("RMSaeng_11", "Uncle Somchai", "So you didn't just stop eating everything you liked?", "RMSaeng_12", "VHV.Participant.UncleSomchai"),
+            text_node("RMSaeng_12", "Aunt Saeng", "No.", "RMSaeng_Activity", "VHV.Participant.AuntSaeng"),
+            learning_node("RMSaeng_Activity", "VHV.Activity.HBCT.RoleModel.SaengRealisticChange", "RMSaeng_13", role_topic),
+            text_node("RMSaeng_13", "Uncle Somchai", "I still don't think I could completely give up sweets.", "RMSaeng_ChoiceActivity", "VHV.Participant.UncleSomchai"),
+            learning_node("RMSaeng_ChoiceActivity", "VHV.Activity.HBCT.RoleModel.SweetsResponse", "RMSaeng_Choice", role_topic),
+            choice_node("RMSaeng_Choice", "Player", "How should you respond?", [
+                dialogue_choice("A", "Then you aren't ready.", "RMSaeng_WrongA"),
+                dialogue_choice("B", "You must stop eating them completely.", "RMSaeng_WrongB"),
+                dialogue_choice("C", "Listen to what Aunt Saeng replaced them with.", "RMSaeng_Reinforce", True),
+            ]),
+            text_node("RMSaeng_WrongA", "Aunt Saeng", "Readiness can grow when a change feels possible. Let me explain the substitutions that helped me.", "RMSaeng_Reinforce", "VHV.Participant.AuntSaeng"),
+            text_node("RMSaeng_WrongB", "Aunt Saeng", "An extreme rule would not have worked for me. I began with realistic substitutions.", "RMSaeng_Reinforce", "VHV.Participant.AuntSaeng"),
+            text_node("RMSaeng_Reinforce", "Aunt Saeng", "I replaced some sweet foods and drinks with choices I could realistically keep using.", "RMSaeng_14", "VHV.Participant.AuntSaeng"),
+            text_node("RMSaeng_14", "Aunt Saeng", "The other big change was walking.", "RMSaeng_15", "VHV.Participant.AuntSaeng"),
+            text_node("RMSaeng_15", "Aunt Saeng", "I started with what I could manage.", "RMSaeng_16", "VHV.Participant.AuntSaeng"),
+            text_node("RMSaeng_16", "Aunt Saeng", "Now I usually brisk-walk around thirty minutes in the morning.", "RMSaeng_17", "VHV.Participant.AuntSaeng"),
+            text_node("RMSaeng_17", "Uncle Somchai", "Only thirty minutes?", "RMSaeng_18", "VHV.Participant.UncleSomchai"),
+            text_node("RMSaeng_18", "Uncle Somchai", "Can that really make a difference?", "RMSaeng_19", "VHV.Participant.UncleSomchai"),
+            text_node("RMSaeng_19", "Aunt Saeng", "The important part for me was doing it consistently.", speaker_tag="VHV.Participant.AuntSaeng"),
+        ])
+
+    specs["DA_Conversation_HBCT_RoleModel_MidWalk"] = (
+        "HBCT_RoleModel_MidWalk",
+        [
+            text_node("RMMid_01", "Uncle Somchai", "If I'm doing this, shouldn't I walk as fast as possible?", "RMMid_Activity", "VHV.Participant.UncleSomchai"),
+            learning_node("RMMid_Activity", "VHV.Activity.HBCT.RoleModel.ImitationFeedback", "RMMid_02", role_topic),
+            text_node("RMMid_02", "Uncle Somchai", "This pace feels much better.", "RMMid_03", "VHV.Participant.UncleSomchai"),
+            text_node("RMMid_03", "Aunt Saeng", "Exactly.", "RMMid_04", "VHV.Participant.AuntSaeng"),
+            text_node("RMMid_04", "Aunt Saeng", "You don't have to walk like me.", "RMMid_05", "VHV.Participant.AuntSaeng"),
+            text_node("RMMid_05", "Aunt Saeng", "You have to find the version you can keep doing.", "RMMid_06", "VHV.Participant.AuntSaeng"),
+            text_node("RMMid_06", "Aunt Saeng", "You lead this part.", speaker_tag="VHV.Participant.AuntSaeng"),
+        ])
+    specs["DA_Conversation_HBCT_RoleModel_WalkEnd"] = (
+        "HBCT_RoleModel_WalkEnd",
+        [
+            text_node("RMEnd_01", "Uncle Somchai", "That wasn't as bad as I expected.", "RMEnd_02", "VHV.Participant.UncleSomchai"),
+            text_node("RMEnd_02", "Player", "He isn't copying her anymore. He's adapting what he learned.",
+                      presentation=unreal.VHVDialoguePresentation.THOUGHT),
+        ])
+    specs["DA_Conversation_HBCT_RoleModel_Roadside"] = (
+        "HBCT_RoleModel_Roadside",
+        [
+            text_node("RMRoad_01", "Villager", "My mother wants to become more active once her knee feels better.", "RMRoad_02", "VHV.Participant.RoleModel.RoadVillager"),
+            text_node("RMRoad_02", "Villager", "I found a video of a competitive runner.", "RMRoad_03", "VHV.Participant.RoleModel.RoadVillager"),
+            text_node("RMRoad_03", "Villager", "Would that be a good example for her?", "RMRoad_Activity", "VHV.Participant.RoleModel.RoadVillager"),
+            learning_node("RMRoad_Activity", "VHV.Activity.HBCT.RoleModel.FinalApplication", "RMRoad_04", role_topic),
+            text_node("RMRoad_04", "Villager", "That makes sense. She needs an example that feels possible for her.", speaker_tag="VHV.Participant.RoleModel.RoadVillager"),
+        ])
+    specs["DA_Conversation_HBCT_RoleModel_FinalDebrief"] = (
+        "HBCT_RoleModel_FinalDebrief",
+        [
+            text_node("RMFinal_01", "Instructor", "What made Aunt Saeng useful to Somchai?", "RMFinal_02", "VHV.Participant.Instructor"),
+            text_node("RMFinal_02", "Player", "He could see himself doing what she had done.", "RMFinal_03"),
+            text_node("RMFinal_03", "Instructor", "Exactly.", "RMFinal_04", "VHV.Participant.Instructor"),
+            text_node("RMFinal_04", "Instructor", "A role model does more than inspire.", "RMFinal_05", "VHV.Participant.Instructor"),
+            text_node("RMFinal_05", "Instructor", "They make a behavior visible.", "RMFinal_06", "VHV.Participant.Instructor"),
+            text_node("RMFinal_06", "Instructor", "They make change feel possible.", "RMFinal_07", "VHV.Participant.Instructor"),
+            text_node("RMFinal_07", "Instructor", "And the target still has to adapt that example to their own life.", "RMFinal_08", "VHV.Participant.Instructor"),
+            text_node("RMFinal_08", "Instructor", "Observe.", "RMFinal_09", "VHV.Participant.Instructor"),
+            text_node("RMFinal_09", "Instructor", "Relate.", "RMFinal_10", "VHV.Participant.Instructor"),
+            text_node("RMFinal_10", "Instructor", "Adapt.", "RMFinal_11", "VHV.Participant.Instructor"),
+            text_node("RMFinal_11", "Instructor", "Try.", "RMFinal_12", "VHV.Participant.Instructor"),
+            text_node("RMFinal_12", "Instructor", "Receive feedback.", "RMFinal_13", "VHV.Participant.Instructor"),
+            text_node("RMFinal_13", "Instructor", "Repeat.", "RMFinal_14", "VHV.Participant.Instructor"),
+            text_node("RMFinal_14", "Instructor", "The best role model is not always the most impressive person. It is often the person someone can realistically see themselves becoming.", speaker_tag="VHV.Participant.Instructor"),
+        ])
+
     assets = {}
     for name, (conversation_id, nodes) in specs.items():
         asset = load_or_create(CONVERSATION_DIR, name, unreal.VHVConversationDataAsset)
@@ -1144,6 +1535,96 @@ def create_ambient_assets():
             "show_names": True,
             "effects": [counter_effect("VHV.Story.Counter.HBCT.GoalSetting.MethodsObserved")],
         },
+        "DA_Ambient_HBCT_RoleModel_Exercise": {
+            "id": "HBCT_RoleModel_Exercise",
+            "participants": [ambient_participant("Observer", "YOUNG OBSERVER"),
+                             ambient_participant("Model", "FIT VILLAGER")],
+            "lines": [
+                ambient_line("Observer", "That doesn't look as difficult as I thought.", 3.0, look_at=True),
+                ambient_line("Model", "Good start. Don't worry about doing everything at once.", 3.8, look_at=True),
+                ambient_line("Model", "Try this part first.", 2.5, look_at=True),
+                ambient_line("Observer", "All right. I can start with that.", 2.8, look_at=True),
+            ], "show_names": True,
+            "effects": [counter_effect("VHV.Story.Counter.HBCT.RoleModel.Observations")],
+        },
+        "DA_Ambient_HBCT_RoleModel_SimilarExperience": {
+            "id": "HBCT_RoleModel_SimilarExperience",
+            "participants": [ambient_participant("Experience", "EXPERIENCED WOMAN"),
+                             ambient_participant("Listener", "LISTENING WOMAN")],
+            "lines": [
+                ambient_line("Experience", "My sugar readings used to worry me too.", 3.0, look_at=True),
+                ambient_line("Experience", "I didn't change everything overnight.", 3.0, look_at=True),
+                ambient_line("Experience", "I started using less sugar, eating more vegetables, and walking regularly.", 4.5, look_at=True),
+                ambient_line("Listener", "You had the same problem I have?", 2.8, look_at=True),
+                ambient_line("Experience", "Very similar.", 2.0, look_at=True),
+                ambient_line("Listener", "Then maybe I could try what you did.", 3.0, look_at=True),
+            ], "show_names": True,
+            "effects": [counter_effect("VHV.Story.Counter.HBCT.RoleModel.Observations")],
+        },
+        "DA_Ambient_HBCT_RoleModel_Family": {
+            "id": "HBCT_RoleModel_Family",
+            "participants": [ambient_participant("Parent", "PARENT"),
+                             ambient_participant("Younger", "YOUNGER FAMILY MEMBER")],
+            "lines": [
+                ambient_line("Parent", "I'll choose water instead of a sugary drink.", 3.0, look_at=True),
+                ambient_line("Younger", "I'll have water too.", 2.4, look_at=True),
+            ], "show_names": True,
+            "effects": [counter_effect("VHV.Story.Counter.HBCT.RoleModel.Observations")],
+        },
+        "DA_Ambient_HBCT_RoleModel_Symbolic": {
+            "id": "HBCT_RoleModel_Symbolic",
+            "participants": [ambient_participant("Observer", "YOUNG VILLAGER")],
+            "lines": [
+                ambient_line("Observer", "That looks amazing. I want to become strong too.", 3.4),
+            ], "show_names": True,
+            "effects": [counter_effect("VHV.Story.Counter.HBCT.RoleModel.Observations")],
+        },
+        "DA_Ambient_HBCT_RoleModel_SymbolicCandidate": {
+            "id": "HBCT_RoleModel_SymbolicCandidate",
+            "participants": [ambient_participant("Observer", "PLAYER")],
+            "lines": [
+                ambient_line("Observer", "Fitness celebrity — intensive daily training program.", 3.4),
+                ambient_line("Observer", "Healthy and successful... but would Somchai see this as something he could realistically do?", 4.8, thought=True),
+            ], "show_names": False,
+            "effects": [counter_effect("VHV.Story.Counter.HBCT.RoleModel.CandidatesInspected")],
+        },
+        "DA_Ambient_HBCT_RoleModel_TimelineBefore": {
+            "id": "HBCT_RoleModel_TimelineBefore",
+            "participants": [ambient_participant("Target", "TARGET VILLAGER")],
+            "lines": [ambient_line("Target", "I'd probably fail if I tried.", 2.8, thought=True)],
+            "show_names": True,
+            "effects": [counter_effect("VHV.Story.Counter.HBCT.RoleModel.TimelineStationsObserved")],
+        },
+        "DA_Ambient_HBCT_RoleModel_TimelineFindsModel": {
+            "id": "HBCT_RoleModel_TimelineFindsModel",
+            "participants": [ambient_participant("Target", "TARGET VILLAGER"),
+                             ambient_participant("Model", "SIMILAR MODEL")],
+            "lines": [ambient_line("Target", "She started from where I am.", 2.8, thought=True)],
+            "show_names": True,
+            "effects": [counter_effect("VHV.Story.Counter.HBCT.RoleModel.TimelineStationsObserved")],
+        },
+        "DA_Ambient_HBCT_RoleModel_TimelineFirstAttempt": {
+            "id": "HBCT_RoleModel_TimelineFirstAttempt",
+            "participants": [ambient_participant("Target", "TARGET VILLAGER")],
+            "lines": [ambient_line("Target", "Ten minutes is enough for today.", 2.8)],
+            "show_names": True,
+            "effects": [counter_effect("VHV.Story.Counter.HBCT.RoleModel.TimelineStationsObserved")],
+        },
+        "DA_Ambient_HBCT_RoleModel_TimelineRepetition": {
+            "id": "HBCT_RoleModel_TimelineRepetition",
+            "participants": [ambient_participant("Target", "TARGET VILLAGER"),
+                             ambient_participant("Model", "SIMILAR MODEL")],
+            "lines": [ambient_line("Target", "I'll walk this part again today.", 2.8)],
+            "show_names": True,
+            "effects": [counter_effect("VHV.Story.Counter.HBCT.RoleModel.TimelineStationsObserved")],
+        },
+        "DA_Ambient_HBCT_RoleModel_TimelineNewRoutine": {
+            "id": "HBCT_RoleModel_TimelineNewRoutine",
+            "participants": [ambient_participant("Target", "TARGET VILLAGER")],
+            "lines": [ambient_line("Target", "This is becoming part of my morning.", 3.0)],
+            "show_names": True,
+            "effects": [counter_effect("VHV.Story.Counter.HBCT.RoleModel.TimelineStationsObserved")],
+        },
     }
     assets = {}
     for name, data in specs.items():
@@ -1168,6 +1649,13 @@ def objective(objective_id, text, objective_type, flag="", **properties):
     }
     values.update(properties)
     return struct(unreal.VHVQuestObjectiveDefinition, **values)
+
+
+def npc_move(participant_tag, destination_location_tag):
+    return struct(
+        unreal.VHVQuestNPCMoveRequest,
+        participant_tag=tag(participant_tag),
+        destination_location_tag=tag(destination_location_tag))
 
 
 def configure_arc(arc, level, conversations):
@@ -1243,7 +1731,9 @@ def configure_arc(arc, level, conversations):
                   "VHV.Story.Flag.HBCT.Motivation.Completed",
                   participant_tag=tag("VHV.Participant.Instructor"),
                   conversation=conversations["DA_Conversation_HBCT_FinalDebrief"],
-                  entry_node_id="Final_01", auto_start=False),
+                  entry_node_id="Final_01", auto_start=False,
+                  completion_npc_moves=[npc_move(
+                      "VHV.Participant.Instructor", "VHV.Location.HBCT.HealthPost")]),
     ]
     goal_setting = [
         objective("O01_ReachHealthPost", "Meet the Instructor at the community health post", q.CONVERSATION,
@@ -1265,7 +1755,7 @@ def configure_arc(arc, level, conversations):
                   custom_event_tag=tag("VHV.CustomEvent.HBCT.GoalSetting.ComparisonObserved"),
                   completion_conditions=completion_condition(
                       "VHV.Story.Counter.HBCT.GoalSetting.ComparisonObserved", 2)),
-        objective("O06_ReflectOnDirection", "Return to the Instructor and discuss why goals matter", q.CONVERSATION,
+        objective("O06_ReflectOnDirection", "Talk to the Instructor about why goals matter", q.CONVERSATION,
                   participant_tag=tag("VHV.Participant.Instructor"),
                   conversation=conversations["DA_Conversation_HBCT_GoalSetting_ComparisonReflection"],
                   entry_node_id="GSCompare_01", auto_start=False),
@@ -1273,7 +1763,7 @@ def configure_arc(arc, level, conversations):
                   custom_event_tag=tag("VHV.CustomEvent.HBCT.GoalSetting.MethodsObserved"),
                   completion_conditions=completion_condition(
                       "VHV.Story.Counter.HBCT.GoalSetting.MethodsObserved", 2)),
-        objective("O08_IdentifyGoalMethods", "Talk to the Instructor and distinguish self-set and jointly set goals", q.CONVERSATION,
+        objective("O08_IdentifyGoalMethods", "Talk to the Instructor about the two goal-setting methods", q.CONVERSATION,
                   "VHV.Story.Flag.HBCT.GoalSetting.MethodsLearned",
                   participant_tag=tag("VHV.Participant.Instructor"),
                   conversation=conversations["DA_Conversation_HBCT_GoalSetting_Methods"],
@@ -1312,7 +1802,86 @@ def configure_arc(arc, level, conversations):
                   "VHV.Story.Flag.HBCT.GoalSetting.Completed",
                   participant_tag=tag("VHV.Participant.Instructor"),
                   conversation=conversations["DA_Conversation_HBCT_GoalSetting_FinalDebrief"],
-                  entry_node_id="GSFinal_01", auto_start=False),
+                  entry_node_id="GSFinal_01", auto_start=False,
+                  completion_npc_moves=[
+                      npc_move("VHV.Participant.Instructor", "VHV.Location.HBCT.ExercisePark"),
+                      npc_move("VHV.Participant.AuntSaeng", "VHV.Location.HBCT.RoleModel.SaengCandidate"),
+                  ]),
+    ]
+    role_model = [
+        objective("O01_ReachExercisePark", "Explore the exercise park", q.REACH_LOCATION,
+                  location_tag=tag("VHV.Location.HBCT.RoleModel.Entry")),
+        objective("O02_DiscoverRoleModels", "Find examples of people learning from others", q.CUSTOM_EVENT,
+                  "VHV.Story.Flag.HBCT.RoleModel.ObservationsComplete",
+                  custom_event_tag=tag("VHV.CustomEvent.HBCT.RoleModel.ObservationsComplete"),
+                  completion_conditions=completion_condition(
+                      "VHV.Story.Counter.HBCT.RoleModel.Observations", 4)),
+        objective("O03_ClassifyModels", "Talk to the Instructor about what you observed", q.CONVERSATION,
+                  "VHV.Story.Flag.HBCT.RoleModel.ModelsClassified",
+                  participant_tag=tag("VHV.Participant.Instructor"),
+                  conversation=conversations["DA_Conversation_HBCT_RoleModel_Reveal"],
+                  entry_node_id="RMReveal_Thought", auto_start=False),
+        objective("O04_MeetSomchai", "Talk to Uncle Somchai", q.CONVERSATION,
+                  participant_tag=tag("VHV.Participant.UncleSomchai"),
+                  conversation=conversations["DA_Conversation_HBCT_RoleModel_Somchai"],
+                  entry_node_id="RMSomchai_01", auto_start=False),
+        objective("O05_UnderstandSomchai", "Find out what kind of role model could help Somchai", q.LEARNING_ACTIVITY,
+                  "VHV.Story.Flag.HBCT.RoleModel.SomchaiProfileComplete",
+                  activity_tag=tag("VHV.Activity.HBCT.RoleModel.SomchaiProfile"), auto_start=True),
+        objective("O06_InspectCandidates", "Meet the possible role models", q.CUSTOM_EVENT,
+                  custom_event_tag=tag("VHV.CustomEvent.HBCT.RoleModel.CandidatesInspected"),
+                  completion_conditions=completion_condition(
+                      "VHV.Story.Counter.HBCT.RoleModel.CandidatesInspected", 3)),
+        objective("O07_SelectRoleModel", "Recommend a role model for Somchai", q.LEARNING_ACTIVITY,
+                  "VHV.Story.Flag.HBCT.RoleModel.ModelSelected",
+                  activity_tag=tag("VHV.Activity.HBCT.RoleModel.SelectModel"), auto_start=True),
+        objective("O08_ExplainModelFit", "Identify why the model is suitable", q.LEARNING_ACTIVITY,
+                  activity_tag=tag("VHV.Activity.HBCT.RoleModel.ExplainModelFit"), auto_start=True,
+                  completion_npc_moves=[
+                      npc_move("VHV.Participant.AuntSaeng", "VHV.Location.HBCT.RoleModel.Demo.Saeng"),
+                      npc_move("VHV.Participant.UncleSomchai", "VHV.Location.HBCT.RoleModel.Demo.Somchai"),
+                  ]),
+        objective("O09_SeeChangeOverTime", "Follow how role modeling can influence behavior over time", q.CUSTOM_EVENT,
+                  custom_event_tag=tag("VHV.CustomEvent.HBCT.RoleModel.TimelineComplete"),
+                  completion_conditions=completion_condition(
+                      "VHV.Story.Counter.HBCT.RoleModel.TimelineStationsObserved", 5)),
+        objective("O10_ReconstructModeling", "Reconstruct how modeled behavior becomes a habit", q.LEARNING_ACTIVITY,
+                  activity_tag=tag("VHV.Activity.HBCT.RoleModel.ReconstructProgression"), auto_start=True),
+        objective("O11_PrepareDemonstration", "Prepare Somchai's role-model session", q.CONVERSATION,
+                  participant_tag=tag("VHV.Participant.Instructor"),
+                  conversation=conversations["DA_Conversation_HBCT_RoleModel_Prepare"],
+                  entry_node_id="RMPrepare_01", auto_start=False),
+        objective("O12_ObserveSaeng", "Listen to Aunt Saeng's experience", q.CONVERSATION,
+                  "VHV.Story.Flag.HBCT.RoleModel.DemonstrationComplete",
+                  participant_tag=tag("VHV.Participant.AuntSaeng"),
+                  conversation=conversations["DA_Conversation_HBCT_RoleModel_SaengDemo"],
+                  entry_node_id="RMSaeng_01", auto_start=False,
+                  completion_npc_moves=[
+                      npc_move("VHV.Participant.AuntSaeng", "VHV.Location.HBCT.RoleModel.WalkMid.Saeng"),
+                      npc_move("VHV.Participant.UncleSomchai", "VHV.Location.HBCT.RoleModel.WalkMid.Somchai"),
+                  ]),
+        objective("O13_SupportImitation", "Help Somchai try the behavior", q.CONVERSATION,
+                  participant_tag=tag("VHV.Participant.UncleSomchai"),
+                  conversation=conversations["DA_Conversation_HBCT_RoleModel_MidWalk"],
+                  entry_node_id="RMMid_01", auto_start=False,
+                  completion_npc_moves=[
+                      npc_move("VHV.Participant.UncleSomchai", "VHV.Location.HBCT.RoleModel.WalkEnd.Somchai"),
+                      npc_move("VHV.Participant.AuntSaeng", "VHV.Location.HBCT.RoleModel.WalkEnd.Saeng"),
+                  ]),
+        objective("O14_PracticeTogether", "Walk with Aunt Saeng and Somchai", q.CONVERSATION,
+                  "VHV.Story.Flag.HBCT.RoleModel.ImitationComplete",
+                  participant_tag=tag("VHV.Participant.UncleSomchai"),
+                  conversation=conversations["DA_Conversation_HBCT_RoleModel_WalkEnd"],
+                  entry_node_id="RMEnd_01", auto_start=False),
+        objective("O15_FinalApplication", "Help another villager choose a useful model", q.CONVERSATION,
+                  participant_tag=tag("VHV.Participant.RoleModel.RoadVillager"),
+                  conversation=conversations["DA_Conversation_HBCT_RoleModel_Roadside"],
+                  entry_node_id="RMRoad_01", auto_start=False),
+        objective("O16_FinalDebrief", "Talk to the Instructor", q.CONVERSATION,
+                  "VHV.Story.Flag.HBCT.RoleModel.Completed",
+                  participant_tag=tag("VHV.Participant.Instructor"),
+                  conversation=conversations["DA_Conversation_HBCT_RoleModel_FinalDebrief"],
+                  entry_node_id="RMFinal_01", auto_start=False),
     ]
     quests = [
         struct(unreal.VHVQuestDefinition,
@@ -1340,18 +1909,32 @@ def configure_arc(arc, level, conversations):
                category=unreal.VHVQuestCategory.MAIN_STORY,
                objectives=goal_setting,
                auto_track=True,
-               auto_start_next_quest=False,
+               auto_start_next_quest=True,
                start_stinger=major_stinger(
                    "TECHNIQUE 2", "GOAL SETTING", "HEALTH BEHAVIOR CHANGE", 1.9),
                completion_stinger=major_stinger(
                    "QUEST COMPLETE", "GOAL SETTING", "TECHNIQUE 2", 1.9)),
+        struct(unreal.VHVQuestDefinition,
+               quest_id="Q_HBCT_03_ROLE_MODEL",
+               quest_title="Technique 3 — Role Model",
+               quest_description="Use relatable live and symbolic examples to make healthy behavior visible and achievable.",
+               category=unreal.VHVQuestCategory.MAIN_STORY,
+               objectives=role_model,
+               auto_track=True,
+               auto_start_next_quest=False,
+               start_stinger=major_stinger(
+                   "TECHNIQUE 3", "ROLE MODEL", "HEALTH BEHAVIOR CHANGE", 1.9),
+               completion_stinger=major_stinger(
+                   "QUEST COMPLETE", "ROLE MODEL", "TECHNIQUE 3", 1.9)),
     ]
     arc.set_editor_properties({
         "quest_arc_id": "HBCT",
         "quest_arc_title": "Health Behavior Change Techniques",
-        "quest_arc_description": "Production HBCT story arc containing the prologue, Building Motivation, and Goal Setting.",
+        "quest_arc_description": "Production HBCT story arc containing the prologue and Techniques 1–3.",
         "associated_level_data": level,
         "quests": quests,
+        "initial_npc_moves": [npc_move(
+            "VHV.Participant.Instructor", "VHV.Location.HBCT.VillageEntrance")],
         "auto_start_next_quest": True,
     })
 
@@ -1365,6 +1948,12 @@ def find_actor(label):
         if actor.get_actor_label() == label:
             return actor
     return None
+
+
+def set_actor_folder(actor, folder):
+    if actor and hasattr(actor, "set_folder_path"):
+        actor.set_folder_path(folder)
+    return actor
 
 
 def spawn_actor(actor_class, label, location, rotation=None, preserve_existing_transform=False):
@@ -1432,6 +2021,24 @@ def configure_location(label, location, location_tag):
     box = actor.get_editor_property("box_component")
     if not existed:
         box.set_box_extent(unreal.Vector(260.0, 260.0, 220.0), True)
+    return actor
+
+
+def configure_semantic_npc_location(label, location, location_tag):
+    existed = find_actor(label) is not None
+    actor = spawn_actor(unreal.VHVQuestLocationVolume, label, location,
+                        preserve_existing_transform=True)
+    actor.set_editor_properties({
+        "location_tag": tag(location_tag),
+        "enabled": False,
+        "trigger_world_action": False,
+        "activate_current_objective": False,
+        "required_active_quest_id": "",
+        "required_active_objective_id": "",
+    })
+    if not existed:
+        actor.get_editor_property("box_component").set_box_extent(
+            unreal.Vector(300.0, 300.0, 220.0), True)
     return actor
 
 
@@ -1508,12 +2115,27 @@ def place_trigger_with_group_if_disconnected(trigger, group_actors, offset=(0.0,
 
 
 def create_blockout_prop(label, location, scale):
-    actor = spawn_actor(unreal.StaticMeshActor, label, location)
+    existed = find_actor(label) is not None
+    actor = spawn_actor(unreal.StaticMeshActor, label, location,
+                        preserve_existing_transform=True)
     component = actor.get_editor_property("static_mesh_component")
     component.set_static_mesh(unreal.load_asset("/Engine/BasicShapes/Cube"))
-    actor.set_actor_scale3d(unreal.Vector(*scale))
+    if not existed:
+        actor.set_actor_scale3d(unreal.Vector(*scale))
     component.set_collision_enabled(unreal.CollisionEnabled.NO_COLLISION)
     return actor
+
+
+def create_role_model_prop(label, location, scale, folder):
+    existed = find_actor(label) is not None
+    actor = spawn_actor(unreal.StaticMeshActor, label, location,
+                        preserve_existing_transform=True)
+    component = actor.get_editor_property("static_mesh_component")
+    component.set_static_mesh(unreal.load_asset("/Engine/BasicShapes/Cube"))
+    if not existed:
+        actor.set_actor_scale3d(unreal.Vector(*scale))
+    component.set_collision_enabled(unreal.CollisionEnabled.NO_COLLISION)
+    return set_actor_folder(actor, folder)
 
 
 def remove_development_ambient_actor():
@@ -1528,7 +2150,7 @@ def remove_development_ambient_actor():
             editor_actors().destroy_actor(actor)
 
 
-def configure_map(ambient_assets):
+def configure_map(ambient_assets, conversations):
     if not unreal.EditorLoadingAndSavingUtils.load_map(MAP_PATH):
         raise RuntimeError("Could not load {}".format(MAP_PATH))
     remove_development_ambient_actor()
@@ -1546,8 +2168,6 @@ def configure_map(ambient_assets):
             instructor = candidates[0]
             instructor.set_actor_label("HBCT_Intro_Instructor")
     if instructor:
-        instructor.set_actor_location(unreal.Vector(-1710.0, -1800.0, 100.0), False, True)
-        instructor.set_actor_rotation(unreal.Rotator(0.0, -90.0, 0.0), False)
         participant = instructor.get_quest_participant_component()
         participant.set_editor_properties({
             "quest_participation_enabled": True,
@@ -1555,7 +2175,27 @@ def configure_map(ambient_assets):
         })
     else:
         instructor = spawn_npc(npc_class, "HBCT_Intro_Instructor", (-1710.0, -1800.0, 100.0), -90.0, "VHV.Participant.Instructor")
-    spawn_actor(unreal.TargetPoint, "HBCT_OpeningCameraHook", (-1750.0, -2000.0, 180.0), unreal.Rotator(-8.0, 90.0, 0.0))
+    instructor_interaction = instructor.get_npc_interaction_component()
+    instructor_interaction.modify()
+    instructor_interaction.set_editor_properties({
+        "default_interaction_prompt": "Talk",
+        "use_quest_objective_text_as_prompt": False,
+        "interaction_enabled": True,
+    })
+    instructor_dialogue = instructor.get_dialogue_component()
+    instructor_dialogue.modify()
+    instructor_dialogue.set_editor_property("default_conversation", None)
+
+    instructor_start = instructor.get_actor_location()
+    configure_semantic_npc_location(
+        "HBCT_Location_VillageEntrance",
+        (instructor_start.x, instructor_start.y, instructor_start.z),
+        "VHV.Location.HBCT.VillageEntrance")
+    configure_semantic_npc_location(
+        "HBCT_Location_HealthPost", (3000.0, -2500.0, 100.0),
+        "VHV.Location.HBCT.HealthPost")
+    spawn_actor(unreal.TargetPoint, "HBCT_OpeningCameraHook", (-1750.0, -2000.0, 180.0),
+                unreal.Rotator(-8.0, 90.0, 0.0), preserve_existing_transform=True)
 
     market_positions = {
         "Buyer": (-950.0, -1650.0, 100.0, 0.0, "HBCT_Market_SugarDrinkShopper"),
@@ -1567,13 +2207,15 @@ def configure_map(ambient_assets):
     }
     market_npcs = {}
     for slot, (x, y, z, yaw, label) in market_positions.items():
-        market_npcs[slot] = spawn_npc(npc_class, label, (x, y, z), yaw)
+        market_npcs[slot] = spawn_npc(
+            npc_class, label, (x, y, z), yaw, preserve_existing_transform=True)
     configure_location("HBCT_Location_Market", (-780.0, -1470.0, 100.0), "VHV.Location.HBCT.Market")
     configure_ambient_actor(
         "HBCT_Market_SugarDrinkScene", (-780.0, -1470.0, 100.0),
         ambient_assets["DA_Ambient_HBCT_MarketObservation"],
         "VHV.WorldReceiver.HBCT.MarketObservation",
-        [bind(slot, market_npcs[slot]) for slot in ("Buyer", "Vendor", "Smoker", "SweetTea", "Rider", "JunkFood")])
+        [bind(slot, market_npcs[slot]) for slot in ("Buyer", "Vendor", "Smoker", "SweetTea", "Rider", "JunkFood")],
+        preserve_existing_transform=True)
 
     prasert = spawn_npc(npc_class, "HBCT_Motivation_Prasert", (0.0, -1120.0, 100.0), 150.0,
                         "VHV.Participant.UnclePrasert", preserve_existing_transform=True)
@@ -1669,34 +2311,6 @@ def configure_map(ambient_assets):
 
     # Technique 2 uses a deliberately simple linear staging strip. These transforms
     # are production-editable defaults only; no quest logic depends on them.
-    health_post_trigger = configure_objective_trigger(
-        "HBCT_Trigger_GoalSetting_HealthPost", (3000.0, -2500.0, 100.0),
-        (300.0, 300.0, 220.0), "VHV.Location.HBCT.GoalSetting.HealthPost",
-        "Q_HBCT_02_GOAL_SETTING", "O01_ReachHealthPost")
-    place_trigger_with_group_if_disconnected(
-        health_post_trigger, [instructor], (-350.0, -260.0, 0.0))
-
-    instructor_lesson_trigger = configure_objective_trigger(
-        "HBCT_Trigger_GoalSetting_InstructorLesson", (3000.0, -2500.0, 100.0),
-        (220.0, 220.0, 200.0), "VHV.Location.HBCT.GoalSetting.HealthPost",
-        "Q_HBCT_02_GOAL_SETTING", "O04_LearnGoalSetting")
-    place_trigger_with_group_if_disconnected(
-        instructor_lesson_trigger, [instructor], (-175.0, -260.0, 0.0))
-
-    instructor_reflection_trigger = configure_objective_trigger(
-        "HBCT_Trigger_GoalSetting_InstructorReflection", (3000.0, -2500.0, 100.0),
-        (220.0, 220.0, 200.0), "VHV.Location.HBCT.GoalSetting.HealthPost",
-        "Q_HBCT_02_GOAL_SETTING", "O06_ReflectOnDirection")
-    place_trigger_with_group_if_disconnected(
-        instructor_reflection_trigger, [instructor], (0.0, -260.0, 0.0))
-
-    instructor_methods_trigger = configure_objective_trigger(
-        "HBCT_Trigger_GoalSetting_InstructorMethods", (3000.0, -2500.0, 100.0),
-        (220.0, 220.0, 200.0), "VHV.Location.HBCT.GoalSetting.HealthPost",
-        "Q_HBCT_02_GOAL_SETTING", "O08_IdentifyGoalMethods")
-    place_trigger_with_group_if_disconnected(
-        instructor_methods_trigger, [instructor], (175.0, -260.0, 0.0))
-
     observation_vhv = spawn_npc(
         npc_class, "HBCT_GoalSetting_ObservationVHV", (4000.0, -2580.0, 100.0), 0.0,
         preserve_existing_transform=True)
@@ -1787,13 +2401,6 @@ def configure_map(ambient_assets):
     place_trigger_with_group_if_disconnected(
         joint_trigger, [joint_vhv, joint_patient], (-350.0, 0.0, 0.0))
 
-    good_goal_trigger = configure_objective_trigger(
-        "HBCT_Trigger_GoalSetting_GoodGoalBoard", (7400.0, -2500.0, 100.0),
-        (320.0, 280.0, 220.0), "VHV.Location.HBCT.GoalSetting.GoodGoalBoard",
-        "Q_HBCT_02_GOAL_SETTING", "O09_EvaluateGoals")
-    place_trigger_with_group_if_disconnected(
-        good_goal_trigger, [instructor], (350.0, -260.0, 0.0))
-
     mali_check_in_trigger = configure_objective_trigger(
         "HBCT_Trigger_GoalSetting_MaliCheckIn", (8500.0, -2500.0, 100.0),
         (320.0, 280.0, 220.0), "VHV.Location.HBCT.GoalSetting.MaliCheckIn",
@@ -1808,27 +2415,14 @@ def configure_map(ambient_assets):
     place_trigger_with_group_if_disconnected(
         mali_plan_review_trigger, [mali], (180.0, -260.0, 0.0))
 
-    final_instructor_trigger = configure_objective_trigger(
-        "HBCT_Trigger_GoalSetting_FinalInstructor", (9600.0, -2500.0, 100.0),
-        (320.0, 280.0, 220.0), "VHV.Location.HBCT.GoalSetting.FinalInstructor",
-        "Q_HBCT_02_GOAL_SETTING", "O16_FinalDebrief")
-    place_trigger_with_group_if_disconnected(
-        final_instructor_trigger, [instructor], (525.0, -260.0, 0.0))
-
     expected_goal_trigger_labels = {
-        "HBCT_Trigger_GoalSetting_HealthPost",
-        "HBCT_Trigger_GoalSetting_InstructorLesson",
-        "HBCT_Trigger_GoalSetting_InstructorReflection",
-        "HBCT_Trigger_GoalSetting_InstructorMethods",
         "HBCT_Trigger_GoalSetting_InitialObservation",
         "HBCT_Trigger_GoalSetting_ClearGoal",
         "HBCT_Trigger_GoalSetting_NoGoal",
         "HBCT_Trigger_GoalSetting_SelfSet",
         "HBCT_Trigger_GoalSetting_Joint",
-        "HBCT_Trigger_GoalSetting_GoodGoalBoard",
         "HBCT_Trigger_GoalSetting_MaliCheckIn",
         "HBCT_Trigger_GoalSetting_MaliPlanReview",
-        "HBCT_Trigger_GoalSetting_FinalInstructor",
     }
     for actor in list(editor_actors().get_all_level_actors()):
         label = actor.get_actor_label()
@@ -1837,6 +2431,275 @@ def configure_map(ambient_assets):
                 and label not in expected_goal_trigger_labels):
             unreal.log("{} Removing obsolete Quest 2 trigger {}".format(LOG, label))
             editor_actors().destroy_actor(actor)
+
+    # Technique 3 is staged in a compact strip immediately beyond the Quest 2
+    # greybox. New NPC capsule centers use the established floor height (Z=100).
+    role_root = "04_RoleModel"
+    configure_semantic_npc_location(
+        "HBCT_Location_ExercisePark", (7350.0, -1500.0, 100.0),
+        "VHV.Location.HBCT.ExercisePark")
+    set_actor_folder(find_actor("HBCT_Location_ExercisePark"), role_root + "/Instructor")
+    entry = configure_location(
+        "HBCT_RoleModel_ExerciseParkEntry", (7000.0, -1500.0, 100.0),
+        "VHV.Location.HBCT.RoleModel.Entry")
+    set_actor_folder(entry, role_root + "/Observations")
+
+    fit = set_actor_folder(spawn_npc(
+        npc_class, "HBCT_RoleModel_FitVillager", (7350.0, -1850.0, 100.0), 0.0,
+        preserve_existing_transform=True), role_root + "/Observations")
+    young_observer = set_actor_folder(spawn_npc(
+        npc_class, "HBCT_RoleModel_YoungObserver", (7550.0, -1850.0, 100.0), 180.0,
+        preserve_existing_transform=True), role_root + "/Observations")
+    configure_ambient_actor(
+        "HBCT_RoleModel_ExerciseScene", (7450.0, -1850.0, 100.0),
+        ambient_assets["DA_Ambient_HBCT_RoleModel_Exercise"],
+        "VHV.WorldReceiver.HBCT.RoleModel.ExerciseObservation",
+        [bind("Observer", young_observer), bind("Model", fit)], True, True)
+    set_actor_folder(find_actor("HBCT_RoleModel_ExerciseScene"), role_root + "/Observations")
+    trigger = configure_story_trigger(
+        "HBCT_Trigger_RoleModel_ExerciseObservation", (7450.0, -2110.0, 100.0),
+        (260.0, 220.0, 220.0), "VHV.Location.HBCT.RoleModel.ExerciseObservation",
+        "Q_HBCT_03_ROLE_MODEL", "O02_DiscoverRoleModels",
+        "VHV.WorldReceiver.HBCT.RoleModel.ExerciseObservation", track_as_objective=False)
+    set_actor_folder(trigger, role_root + "/Observations")
+
+    experience = set_actor_folder(spawn_npc(
+        npc_class, "HBCT_RoleModel_ExperienceWoman", (7800.0, -1850.0, 100.0), 0.0,
+        preserve_existing_transform=True), role_root + "/Observations")
+    listener = set_actor_folder(spawn_npc(
+        npc_class, "HBCT_RoleModel_ListeningWoman", (8000.0, -1850.0, 100.0), 180.0,
+        preserve_existing_transform=True), role_root + "/Observations")
+    configure_ambient_actor(
+        "HBCT_RoleModel_SimilarExperienceScene", (7900.0, -1850.0, 100.0),
+        ambient_assets["DA_Ambient_HBCT_RoleModel_SimilarExperience"],
+        "VHV.WorldReceiver.HBCT.RoleModel.SimilarExperience",
+        [bind("Experience", experience), bind("Listener", listener)], True, True)
+    set_actor_folder(find_actor("HBCT_RoleModel_SimilarExperienceScene"), role_root + "/Observations")
+    trigger = configure_story_trigger(
+        "HBCT_Trigger_RoleModel_SimilarExperience", (7900.0, -2110.0, 100.0),
+        (260.0, 220.0, 220.0), "VHV.Location.HBCT.RoleModel.SimilarExperience",
+        "Q_HBCT_03_ROLE_MODEL", "O02_DiscoverRoleModels",
+        "VHV.WorldReceiver.HBCT.RoleModel.SimilarExperience", track_as_objective=False)
+    set_actor_folder(trigger, role_root + "/Observations")
+
+    parent = set_actor_folder(spawn_npc(
+        npc_class, "HBCT_RoleModel_Parent", (7350.0, -1350.0, 100.0), 0.0,
+        preserve_existing_transform=True), role_root + "/Observations")
+    younger = set_actor_folder(spawn_npc(
+        npc_class, "HBCT_RoleModel_YoungerFamilyMember", (7550.0, -1350.0, 100.0), 180.0,
+        preserve_existing_transform=True), role_root + "/Observations")
+    configure_ambient_actor(
+        "HBCT_RoleModel_FamilyScene", (7450.0, -1350.0, 100.0),
+        ambient_assets["DA_Ambient_HBCT_RoleModel_Family"],
+        "VHV.WorldReceiver.HBCT.RoleModel.Family",
+        [bind("Parent", parent), bind("Younger", younger)], True, True)
+    set_actor_folder(find_actor("HBCT_RoleModel_FamilyScene"), role_root + "/Observations")
+    trigger = configure_story_trigger(
+        "HBCT_Trigger_RoleModel_Family", (7450.0, -1090.0, 100.0),
+        (260.0, 220.0, 220.0), "VHV.Location.HBCT.RoleModel.Family",
+        "Q_HBCT_03_ROLE_MODEL", "O02_DiscoverRoleModels",
+        "VHV.WorldReceiver.HBCT.RoleModel.Family", track_as_objective=False)
+    set_actor_folder(trigger, role_root + "/Observations")
+
+    symbolic_observer = set_actor_folder(spawn_npc(
+        npc_class, "HBCT_RoleModel_SymbolicObserver", (8000.0, -1350.0, 100.0), 180.0,
+        preserve_existing_transform=True), role_root + "/Observations")
+    create_role_model_prop("HBCT_RoleModel_SymbolicPoster", (7800.0, -1350.0, 110.0),
+                           (0.08, 1.0, 1.2), role_root + "/Observations")
+    configure_ambient_actor(
+        "HBCT_RoleModel_SymbolicScene", (7900.0, -1350.0, 100.0),
+        ambient_assets["DA_Ambient_HBCT_RoleModel_Symbolic"],
+        "VHV.WorldReceiver.HBCT.RoleModel.Symbolic", [bind("Observer", symbolic_observer)], True, True)
+    set_actor_folder(find_actor("HBCT_RoleModel_SymbolicScene"), role_root + "/Observations")
+    trigger = configure_story_trigger(
+        "HBCT_Trigger_RoleModel_Symbolic", (7900.0, -1090.0, 100.0),
+        (260.0, 220.0, 220.0), "VHV.Location.HBCT.RoleModel.Symbolic",
+        "Q_HBCT_03_ROLE_MODEL", "O02_DiscoverRoleModels",
+        "VHV.WorldReceiver.HBCT.RoleModel.Symbolic", track_as_objective=False)
+    set_actor_folder(trigger, role_root + "/Observations")
+
+    somchai = set_actor_folder(spawn_npc(
+        npc_class, "HBCT_RoleModel_UncleSomchai", (8450.0, -1500.0, 100.0), 180.0,
+        "VHV.Participant.UncleSomchai", preserve_existing_transform=True), role_root + "/Somchai")
+    athlete = set_actor_folder(spawn_npc(
+        npc_class, "HBCT_RoleModel_YoungAthlete", (8750.0, -1800.0, 100.0), 180.0,
+        "VHV.Participant.RoleModel.YoungAthlete", preserve_existing_transform=True), role_root + "/Candidates")
+    for npc, conversation_name in (
+            (athlete, "DA_Conversation_HBCT_RoleModel_YoungAthlete"),
+            (saeng, "DA_Conversation_HBCT_RoleModel_SaengCandidate")):
+        interaction = npc.get_npc_interaction_component()
+        interaction.modify()
+        interaction.set_editor_properties({
+            "default_interaction_prompt": "Talk",
+            "use_quest_objective_text_as_prompt": False,
+            "interaction_enabled": True,
+        })
+        dialogue_component = npc.get_dialogue_component()
+        dialogue_component.modify()
+        dialogue_component.set_editor_property("default_conversation", conversations[conversation_name])
+    configure_semantic_npc_location(
+        "HBCT_Location_RoleModel_SaengCandidate", (9050.0, -1800.0, 100.0),
+        "VHV.Location.HBCT.RoleModel.SaengCandidate")
+    set_actor_folder(find_actor("HBCT_Location_RoleModel_SaengCandidate"), role_root + "/Candidates")
+    symbolic_candidate_observer = set_actor_folder(spawn_npc(
+        npc_class, "HBCT_RoleModel_SymbolicCandidateObserver", (9250.0, -1350.0, 100.0), 180.0,
+        preserve_existing_transform=True), role_root + "/Candidates")
+    create_role_model_prop("HBCT_RoleModel_SymbolicCandidateDisplay", (9050.0, -1350.0, 110.0),
+                           (0.08, 1.0, 1.2), role_root + "/Candidates")
+    configure_ambient_actor(
+        "HBCT_RoleModel_SymbolicCandidateScene", (9150.0, -1350.0, 100.0),
+        ambient_assets["DA_Ambient_HBCT_RoleModel_SymbolicCandidate"],
+        "VHV.WorldReceiver.HBCT.RoleModel.SymbolicCandidate",
+        [bind("Observer", symbolic_candidate_observer)], True, True)
+    set_actor_folder(find_actor("HBCT_RoleModel_SymbolicCandidateScene"), role_root + "/Candidates")
+    trigger = configure_story_trigger(
+        "HBCT_Trigger_RoleModel_SymbolicCandidate", (9050.0, -1090.0, 100.0),
+        (260.0, 220.0, 220.0), "VHV.Location.HBCT.RoleModel.SymbolicCandidate",
+        "Q_HBCT_03_ROLE_MODEL", "O06_InspectCandidates",
+        "VHV.WorldReceiver.HBCT.RoleModel.SymbolicCandidate", track_as_objective=False)
+    set_actor_folder(trigger, role_root + "/Candidates")
+
+    timeline_specs = [
+        ("Before", "TimelineBefore", 9500.0, 0),
+        ("FindsModel", "TimelineFindsModel", 9800.0, 1),
+        ("FirstAttempt", "TimelineFirstAttempt", 10100.0, 2),
+        ("Repetition", "TimelineRepetition", 10400.0, 3),
+        ("NewRoutine", "TimelineNewRoutine", 10700.0, 4),
+    ]
+    for suffix, asset_suffix, x, required_count in timeline_specs:
+        target_npc = set_actor_folder(spawn_npc(
+            npc_class, "HBCT_RoleModel_Timeline{}_Target".format(suffix),
+            (x, -1500.0, 100.0), 90.0, preserve_existing_transform=True),
+            role_root + "/Timeline")
+        bindings = [bind("Target", target_npc)]
+        if suffix in ("FindsModel", "Repetition"):
+            model_npc = set_actor_folder(spawn_npc(
+                npc_class, "HBCT_RoleModel_Timeline{}_Model".format(suffix),
+                (x, -1300.0, 100.0), -90.0, preserve_existing_transform=True),
+                role_root + "/Timeline")
+            bindings.append(bind("Model", model_npc))
+        receiver_name = "VHV.WorldReceiver.HBCT.RoleModel.Timeline." + suffix
+        configure_ambient_actor(
+            "HBCT_RoleModel_Timeline{}Scene".format(suffix), (x, -1500.0, 100.0),
+            ambient_assets["DA_Ambient_HBCT_RoleModel_" + asset_suffix],
+            receiver_name, bindings, True, True)
+        set_actor_folder(find_actor("HBCT_RoleModel_Timeline{}Scene".format(suffix)), role_root + "/Timeline")
+        timeline_trigger = configure_story_trigger(
+            "HBCT_Trigger_RoleModel_Timeline{}".format(suffix), (x, -1750.0, 100.0),
+            (135.0, 200.0, 220.0), "VHV.Location.HBCT.RoleModel.Timeline." + suffix,
+            "Q_HBCT_03_ROLE_MODEL", "O09_SeeChangeOverTime",
+            receiver_name, track_as_objective=False)
+        if required_count:
+            timeline_trigger.set_editor_property(
+                "trigger_conditions", counter_at_least_condition(
+                    "VHV.Story.Counter.HBCT.RoleModel.TimelineStationsObserved", required_count))
+        set_actor_folder(timeline_trigger, role_root + "/Timeline")
+
+    configure_semantic_npc_location(
+        "HBCT_Location_RoleModel_Demo_Saeng", (11100.0, -1400.0, 100.0),
+        "VHV.Location.HBCT.RoleModel.Demo.Saeng")
+    configure_semantic_npc_location(
+        "HBCT_Location_RoleModel_Demo_Somchai", (11300.0, -1400.0, 100.0),
+        "VHV.Location.HBCT.RoleModel.Demo.Somchai")
+    for label in ("HBCT_Location_RoleModel_Demo_Saeng", "HBCT_Location_RoleModel_Demo_Somchai"):
+        set_actor_folder(find_actor(label), role_root + "/SaengDemo")
+    demo_trigger = configure_objective_trigger(
+        "HBCT_Trigger_RoleModel_SaengDemo", (11200.0, -1680.0, 100.0),
+        (300.0, 240.0, 220.0), "VHV.Location.HBCT.RoleModel.Demo.Saeng",
+        "Q_HBCT_03_ROLE_MODEL", "O12_ObserveSaeng")
+    set_actor_folder(demo_trigger, role_root + "/SaengDemo")
+
+    walk_locations = [
+        ("HBCT_Location_RoleModel_WalkMid_Saeng", (11600.0, -1400.0, 100.0), "VHV.Location.HBCT.RoleModel.WalkMid.Saeng"),
+        ("HBCT_Location_RoleModel_WalkMid_Somchai", (11750.0, -1400.0, 100.0), "VHV.Location.HBCT.RoleModel.WalkMid.Somchai"),
+        ("HBCT_Location_RoleModel_WalkEnd_Saeng", (12150.0, -1400.0, 100.0), "VHV.Location.HBCT.RoleModel.WalkEnd.Saeng"),
+        ("HBCT_Location_RoleModel_WalkEnd_Somchai", (12350.0, -1400.0, 100.0), "VHV.Location.HBCT.RoleModel.WalkEnd.Somchai"),
+    ]
+    for label, location, location_tag in walk_locations:
+        configure_semantic_npc_location(label, location, location_tag)
+        set_actor_folder(find_actor(label), role_root + "/PracticeWalk")
+
+    road_villager_role = set_actor_folder(spawn_npc(
+        npc_class, "HBCT_RoleModel_RoadVillager", (12700.0, -1400.0, 100.0), 180.0,
+        "VHV.Participant.RoleModel.RoadVillager", preserve_existing_transform=True),
+        role_root + "/FinalApplication")
+    road_role_interaction = road_villager_role.get_npc_interaction_component()
+    road_role_interaction.modify()
+    road_role_interaction.set_editor_properties({
+        "default_interaction_prompt": "Talk",
+        "use_quest_objective_text_as_prompt": False,
+        "interaction_enabled": True,
+    })
+    road_villager_role.get_dialogue_component().set_editor_property("default_conversation", None)
+
+    # Authoritative compact Quest 3 staging layout. Keep this as a final,
+    # Quest-3-only placement pass so regeneration never changes Quest 0-2
+    # transforms while consistently preserving the requested staging anchor.
+    role_positions = {
+        # Exercise Park entry and four observation scenes.
+        "HBCT_RoleModel_ExerciseParkEntry": (-900.0, 3000.0, 100.0),
+        "HBCT_RoleModel_FitVillager": (-650.0, 2800.0, 100.0),
+        "HBCT_RoleModel_YoungObserver": (-450.0, 2800.0, 100.0),
+        "HBCT_RoleModel_ExerciseScene": (-550.0, 2800.0, 100.0),
+        "HBCT_Trigger_RoleModel_ExerciseObservation": (-550.0, 2560.0, 100.0),
+        "HBCT_RoleModel_ExperienceWoman": (-150.0, 2800.0, 100.0),
+        "HBCT_RoleModel_ListeningWoman": (50.0, 2800.0, 100.0),
+        "HBCT_RoleModel_SimilarExperienceScene": (-50.0, 2800.0, 100.0),
+        "HBCT_Trigger_RoleModel_SimilarExperience": (-50.0, 2560.0, 100.0),
+        "HBCT_RoleModel_Parent": (-650.0, 3300.0, 100.0),
+        "HBCT_RoleModel_YoungerFamilyMember": (-450.0, 3300.0, 100.0),
+        "HBCT_RoleModel_FamilyScene": (-550.0, 3300.0, 100.0),
+        "HBCT_Trigger_RoleModel_Family": (-550.0, 3540.0, 100.0),
+        "HBCT_RoleModel_SymbolicObserver": (50.0, 3300.0, 100.0),
+        "HBCT_RoleModel_SymbolicPoster": (-150.0, 3300.0, 110.0),
+        "HBCT_RoleModel_SymbolicScene": (-50.0, 3300.0, 100.0),
+        "HBCT_Trigger_RoleModel_Symbolic": (-50.0, 3540.0, 100.0),
+
+        # Persistent Instructor destination, Somchai, and candidates.
+        "HBCT_Location_ExercisePark": (200.0, 3000.0, 100.0),
+        "HBCT_RoleModel_UncleSomchai": (500.0, 3000.0, 100.0),
+        "HBCT_RoleModel_YoungAthlete": (750.0, 2800.0, 100.0),
+        "HBCT_Location_RoleModel_SaengCandidate": (1000.0, 2800.0, 100.0),
+        "HBCT_RoleModel_SymbolicCandidateDisplay": (850.0, 3300.0, 110.0),
+        "HBCT_RoleModel_SymbolicCandidateObserver": (1050.0, 3300.0, 100.0),
+        "HBCT_RoleModel_SymbolicCandidateScene": (950.0, 3300.0, 100.0),
+        "HBCT_Trigger_RoleModel_SymbolicCandidate": (850.0, 3540.0, 100.0),
+
+        # Five sequential timeline stations.
+        "HBCT_RoleModel_TimelineBefore_Target": (1300.0, 3000.0, 100.0),
+        "HBCT_RoleModel_TimelineBeforeScene": (1300.0, 3000.0, 100.0),
+        "HBCT_Trigger_RoleModel_TimelineBefore": (1300.0, 2760.0, 100.0),
+        "HBCT_RoleModel_TimelineFindsModel_Target": (1550.0, 3000.0, 100.0),
+        "HBCT_RoleModel_TimelineFindsModel_Model": (1550.0, 3200.0, 100.0),
+        "HBCT_RoleModel_TimelineFindsModelScene": (1550.0, 3000.0, 100.0),
+        "HBCT_Trigger_RoleModel_TimelineFindsModel": (1550.0, 2760.0, 100.0),
+        "HBCT_RoleModel_TimelineFirstAttempt_Target": (1800.0, 3000.0, 100.0),
+        "HBCT_RoleModel_TimelineFirstAttemptScene": (1800.0, 3000.0, 100.0),
+        "HBCT_Trigger_RoleModel_TimelineFirstAttempt": (1800.0, 2760.0, 100.0),
+        "HBCT_RoleModel_TimelineRepetition_Target": (2050.0, 3000.0, 100.0),
+        "HBCT_RoleModel_TimelineRepetition_Model": (2050.0, 3200.0, 100.0),
+        "HBCT_RoleModel_TimelineRepetitionScene": (2050.0, 3000.0, 100.0),
+        "HBCT_Trigger_RoleModel_TimelineRepetition": (2050.0, 2760.0, 100.0),
+        "HBCT_RoleModel_TimelineNewRoutine_Target": (2300.0, 3000.0, 100.0),
+        "HBCT_RoleModel_TimelineNewRoutineScene": (2300.0, 3000.0, 100.0),
+        "HBCT_Trigger_RoleModel_TimelineNewRoutine": (2300.0, 2760.0, 100.0),
+
+        # Demonstration, short walking path, and roadside application.
+        "HBCT_Location_RoleModel_Demo_Saeng": (2600.0, 2900.0, 100.0),
+        "HBCT_Location_RoleModel_Demo_Somchai": (2800.0, 2900.0, 100.0),
+        "HBCT_Trigger_RoleModel_SaengDemo": (2700.0, 2660.0, 100.0),
+        "HBCT_Location_RoleModel_WalkMid_Saeng": (3000.0, 3000.0, 100.0),
+        "HBCT_Location_RoleModel_WalkMid_Somchai": (3150.0, 3000.0, 100.0),
+        "HBCT_Location_RoleModel_WalkEnd_Saeng": (3450.0, 3000.0, 100.0),
+        "HBCT_Location_RoleModel_WalkEnd_Somchai": (3650.0, 3000.0, 100.0),
+        "HBCT_RoleModel_RoadVillager": (3900.0, 3000.0, 100.0),
+    }
+    for role_label, role_location in role_positions.items():
+        role_actor = find_actor(role_label)
+        if not role_actor:
+            raise RuntimeError("Quest 3 staging actor is missing: {}".format(role_label))
+        role_actor.modify()
+        role_actor.set_actor_location(unreal.Vector(*role_location), False, True)
 
     if not unreal.EditorLevelLibrary.save_current_level():
         raise RuntimeError("Could not save {}".format(MAP_PATH))
@@ -1870,6 +2733,8 @@ def validate_map_and_defaults(level, arc):
         "HBCT_Motivation_GoodDemo",
         "HBCT_Motivation_Saeng",
         "HBCT_Motivation_Mali",
+        "HBCT_Location_VillageEntrance",
+        "HBCT_Location_HealthPost",
         "HBCT_Location_Market",
         "HBCT_Trigger_PrasertObservation",
         "HBCT_Trigger_BadGoodDemo",
@@ -1885,19 +2750,36 @@ def validate_map_and_defaults(level, arc):
         "HBCT_GoalSetting_JointVHV",
         "HBCT_GoalSetting_JointPatient",
         "HBCT_GoalSetting_RoadVillager",
-        "HBCT_Trigger_GoalSetting_HealthPost",
-        "HBCT_Trigger_GoalSetting_InstructorLesson",
-        "HBCT_Trigger_GoalSetting_InstructorReflection",
-        "HBCT_Trigger_GoalSetting_InstructorMethods",
         "HBCT_Trigger_GoalSetting_InitialObservation",
         "HBCT_Trigger_GoalSetting_ClearGoal",
         "HBCT_Trigger_GoalSetting_NoGoal",
         "HBCT_Trigger_GoalSetting_SelfSet",
         "HBCT_Trigger_GoalSetting_Joint",
-        "HBCT_Trigger_GoalSetting_GoodGoalBoard",
         "HBCT_Trigger_GoalSetting_MaliCheckIn",
         "HBCT_Trigger_GoalSetting_MaliPlanReview",
-        "HBCT_Trigger_GoalSetting_FinalInstructor",
+        "HBCT_Location_ExercisePark",
+        "HBCT_RoleModel_ExerciseParkEntry",
+        "HBCT_RoleModel_UncleSomchai",
+        "HBCT_RoleModel_YoungAthlete",
+        "HBCT_RoleModel_RoadVillager",
+        "HBCT_Location_RoleModel_SaengCandidate",
+        "HBCT_Location_RoleModel_Demo_Saeng",
+        "HBCT_Location_RoleModel_Demo_Somchai",
+        "HBCT_Location_RoleModel_WalkMid_Saeng",
+        "HBCT_Location_RoleModel_WalkMid_Somchai",
+        "HBCT_Location_RoleModel_WalkEnd_Saeng",
+        "HBCT_Location_RoleModel_WalkEnd_Somchai",
+        "HBCT_Trigger_RoleModel_ExerciseObservation",
+        "HBCT_Trigger_RoleModel_SimilarExperience",
+        "HBCT_Trigger_RoleModel_Family",
+        "HBCT_Trigger_RoleModel_Symbolic",
+        "HBCT_Trigger_RoleModel_SymbolicCandidate",
+        "HBCT_Trigger_RoleModel_TimelineBefore",
+        "HBCT_Trigger_RoleModel_TimelineFindsModel",
+        "HBCT_Trigger_RoleModel_TimelineFirstAttempt",
+        "HBCT_Trigger_RoleModel_TimelineRepetition",
+        "HBCT_Trigger_RoleModel_TimelineNewRoutine",
+        "HBCT_Trigger_RoleModel_SaengDemo",
     }
     actors = editor_actors().get_all_level_actors()
     labels = {actor.get_actor_label() for actor in actors}
@@ -1926,11 +2808,44 @@ def validate_map_and_defaults(level, arc):
         "VHV.Participant.AuntSaeng",
         "VHV.Participant.AuntMali",
         "VHV.Participant.GoalSetting.RoadVillager",
+        "VHV.Participant.UncleSomchai",
+        "VHV.Participant.RoleModel.YoungAthlete",
+        "VHV.Participant.RoleModel.RoadVillager",
     }
     if set(participant_tags) != expected_participants:
         raise RuntimeError("Unexpected production quest participant set: {}".format(participant_tags))
 
     actors_by_label = {actor.get_actor_label(): actor for actor in actors}
+    instructor_actors = [actor for actor in actors
+                         if isinstance(actor, unreal.VHVNPCCharacter)
+                         and actor.get_actor_label() == "HBCT_Intro_Instructor"]
+    if len(instructor_actors) != 1:
+        raise RuntimeError("Production map must contain exactly one HBCT Instructor actor")
+    instructor_interaction = instructor_actors[0].get_npc_interaction_component()
+    if (instructor_interaction.get_editor_property("use_quest_objective_text_as_prompt")
+            or str(instructor_interaction.get_editor_property("default_interaction_prompt")) != "Talk"
+            or not instructor_interaction.get_editor_property("interaction_enabled")):
+        raise RuntimeError("Instructor must use the normal Talk interaction prompt")
+    if instructor_actors[0].get_dialogue_component().get_editor_property("default_conversation"):
+        raise RuntimeError("Instructor must not offer fallback dialogue outside an active objective")
+
+    semantic_locations = {
+        "HBCT_Location_VillageEntrance": "VHV.Location.HBCT.VillageEntrance",
+        "HBCT_Location_HealthPost": "VHV.Location.HBCT.HealthPost",
+        "HBCT_Location_ExercisePark": "VHV.Location.HBCT.ExercisePark",
+    }
+    for label, expected_tag in semantic_locations.items():
+        matches = [actor for actor in actors
+                   if isinstance(actor, unreal.VHVQuestLocationVolume)
+                   and str(unreal.GameplayTagLibrary.get_tag_name(
+                       actor.get_editor_property("location_tag"))) == expected_tag]
+        if len(matches) != 1 or matches[0].get_actor_label() != label:
+            raise RuntimeError("Semantic Instructor destination {} must have exactly one location actor".format(expected_tag))
+        location_actor = matches[0]
+        if (location_actor.get_editor_property("enabled")
+                or location_actor.get_editor_property("trigger_world_action")
+                or location_actor.get_editor_property("activate_current_objective")):
+            raise RuntimeError("Semantic Instructor destination {} must not react to player entry".format(label))
     road_interaction = actors_by_label["HBCT_GoalSetting_RoadVillager"].get_npc_interaction_component()
     if (road_interaction.get_editor_property("use_quest_objective_text_as_prompt")
             or str(road_interaction.get_editor_property("default_interaction_prompt")) != "Talk"
@@ -1952,19 +2867,13 @@ def validate_map_and_defaults(level, arc):
         raise RuntimeError("Road villager must be outside Mali's area and farther along toward the Instructor")
 
     expected_goal_triggers = {
-        "HBCT_Trigger_GoalSetting_HealthPost": ("O01_ReachHealthPost", True, "", ["HBCT_Intro_Instructor"]),
-        "HBCT_Trigger_GoalSetting_InstructorLesson": ("O04_LearnGoalSetting", True, "", ["HBCT_Intro_Instructor"]),
-        "HBCT_Trigger_GoalSetting_InstructorReflection": ("O06_ReflectOnDirection", True, "", ["HBCT_Intro_Instructor"]),
-        "HBCT_Trigger_GoalSetting_InstructorMethods": ("O08_IdentifyGoalMethods", True, "", ["HBCT_Intro_Instructor"]),
         "HBCT_Trigger_GoalSetting_InitialObservation": ("O02_ObserveGoalConversation", False, "VHV.WorldReceiver.HBCT.GoalSetting.InitialObservation", ["HBCT_GoalSetting_ObservationVHV", "HBCT_GoalSetting_AuntieNuan"]),
         "HBCT_Trigger_GoalSetting_ClearGoal": ("O05_ComparePatients", False, "VHV.WorldReceiver.HBCT.GoalSetting.ClearGoal", ["HBCT_GoalSetting_Nuan_ClearGoal"]),
         "HBCT_Trigger_GoalSetting_NoGoal": ("O05_ComparePatients", False, "VHV.WorldReceiver.HBCT.GoalSetting.NoGoal", ["HBCT_GoalSetting_UncleChai"]),
         "HBCT_Trigger_GoalSetting_SelfSet": ("O07_ObserveGoalMethods", False, "VHV.WorldReceiver.HBCT.GoalSetting.SelfSet", ["HBCT_GoalSetting_SelfSetVHV", "HBCT_GoalSetting_SelfSetPatient"]),
         "HBCT_Trigger_GoalSetting_Joint": ("O07_ObserveGoalMethods", False, "VHV.WorldReceiver.HBCT.GoalSetting.Joint", ["HBCT_GoalSetting_JointVHV", "HBCT_GoalSetting_JointPatient"]),
-        "HBCT_Trigger_GoalSetting_GoodGoalBoard": ("O09_EvaluateGoals", True, "", ["HBCT_Intro_Instructor"]),
         "HBCT_Trigger_GoalSetting_MaliCheckIn": ("O10_ReturnToMali", True, "", ["HBCT_Motivation_Mali"]),
         "HBCT_Trigger_GoalSetting_MaliPlanReview": ("O15_ReviewGoalPlan", True, "", ["HBCT_Motivation_Mali"]),
-        "HBCT_Trigger_GoalSetting_FinalInstructor": ("O16_FinalDebrief", True, "", ["HBCT_Intro_Instructor"]),
     }
     actual_goal_trigger_labels = {
         actor.get_actor_label() for actor in actors
@@ -1998,6 +2907,83 @@ def validate_map_and_defaults(level, arc):
         if distance_squared > 900.0 ** 2:
             raise RuntimeError("Quest 2 trigger {} is disconnected from {}".format(
                 trigger_label, group_labels))
+
+    expected_role_triggers = {
+        "HBCT_Trigger_RoleModel_ExerciseObservation": ("O02_DiscoverRoleModels", False, "VHV.WorldReceiver.HBCT.RoleModel.ExerciseObservation", ["HBCT_RoleModel_FitVillager", "HBCT_RoleModel_YoungObserver"]),
+        "HBCT_Trigger_RoleModel_SimilarExperience": ("O02_DiscoverRoleModels", False, "VHV.WorldReceiver.HBCT.RoleModel.SimilarExperience", ["HBCT_RoleModel_ExperienceWoman", "HBCT_RoleModel_ListeningWoman"]),
+        "HBCT_Trigger_RoleModel_Family": ("O02_DiscoverRoleModels", False, "VHV.WorldReceiver.HBCT.RoleModel.Family", ["HBCT_RoleModel_Parent", "HBCT_RoleModel_YoungerFamilyMember"]),
+        "HBCT_Trigger_RoleModel_Symbolic": ("O02_DiscoverRoleModels", False, "VHV.WorldReceiver.HBCT.RoleModel.Symbolic", ["HBCT_RoleModel_SymbolicObserver", "HBCT_RoleModel_SymbolicPoster"]),
+        "HBCT_Trigger_RoleModel_SymbolicCandidate": ("O06_InspectCandidates", False, "VHV.WorldReceiver.HBCT.RoleModel.SymbolicCandidate", ["HBCT_RoleModel_SymbolicCandidateDisplay"]),
+        "HBCT_Trigger_RoleModel_TimelineBefore": ("O09_SeeChangeOverTime", False, "VHV.WorldReceiver.HBCT.RoleModel.Timeline.Before", ["HBCT_RoleModel_TimelineBefore_Target"]),
+        "HBCT_Trigger_RoleModel_TimelineFindsModel": ("O09_SeeChangeOverTime", False, "VHV.WorldReceiver.HBCT.RoleModel.Timeline.FindsModel", ["HBCT_RoleModel_TimelineFindsModel_Target"]),
+        "HBCT_Trigger_RoleModel_TimelineFirstAttempt": ("O09_SeeChangeOverTime", False, "VHV.WorldReceiver.HBCT.RoleModel.Timeline.FirstAttempt", ["HBCT_RoleModel_TimelineFirstAttempt_Target"]),
+        "HBCT_Trigger_RoleModel_TimelineRepetition": ("O09_SeeChangeOverTime", False, "VHV.WorldReceiver.HBCT.RoleModel.Timeline.Repetition", ["HBCT_RoleModel_TimelineRepetition_Target"]),
+        "HBCT_Trigger_RoleModel_TimelineNewRoutine": ("O09_SeeChangeOverTime", False, "VHV.WorldReceiver.HBCT.RoleModel.Timeline.NewRoutine", ["HBCT_RoleModel_TimelineNewRoutine_Target"]),
+        "HBCT_Trigger_RoleModel_SaengDemo": ("O12_ObserveSaeng", True, "", ["HBCT_Location_RoleModel_Demo_Saeng", "HBCT_Location_RoleModel_Demo_Somchai"]),
+    }
+    actual_role_trigger_labels = {
+        actor.get_actor_label() for actor in actors
+        if actor.get_actor_label().startswith("HBCT_Trigger_RoleModel_")}
+    if actual_role_trigger_labels != set(expected_role_triggers):
+        raise RuntimeError("Unexpected/orphaned Quest 3 triggers: expected {}, found {}".format(
+            sorted(expected_role_triggers), sorted(actual_role_trigger_labels)))
+    for trigger_label, (objective_id, activates_objective, receiver_tag, group_labels) in expected_role_triggers.items():
+        trigger = actors_by_label[trigger_label]
+        if (str(trigger.get_editor_property("required_active_quest_id")) != "Q_HBCT_03_ROLE_MODEL"
+                or str(trigger.get_editor_property("required_active_objective_id")) != objective_id
+                or trigger.get_editor_property("activate_current_objective") != activates_objective):
+            raise RuntimeError("Quest 3 trigger {} is not gated/routed to {}".format(
+                trigger_label, objective_id))
+        if receiver_tag:
+            actual_receiver = str(unreal.GameplayTagLibrary.get_tag_name(
+                trigger.get_editor_property("world_action_receiver_tag")))
+            if (not trigger.get_editor_property("trigger_world_action")
+                    or actual_receiver != receiver_tag
+                    or trigger.get_editor_property("track_world_action_as_objective")):
+                raise RuntimeError("Quest 3 ambient trigger {} has invalid WorldAction routing".format(
+                    trigger_label))
+        trigger_location = trigger.get_actor_location()
+        group_locations = [actors_by_label[label].get_actor_location() for label in group_labels]
+        center = unreal.Vector(
+            sum(value.x for value in group_locations) / len(group_locations),
+            sum(value.y for value in group_locations) / len(group_locations),
+            sum(value.z for value in group_locations) / len(group_locations))
+        distance_squared = ((trigger_location.x - center.x) ** 2
+                            + (trigger_location.y - center.y) ** 2
+                            + (trigger_location.z - center.z) ** 2)
+        if distance_squared > 900.0 ** 2:
+            raise RuntimeError("Quest 3 trigger {} is disconnected from {}".format(
+                trigger_label, group_labels))
+
+    if any("Instructor" in label for label in actual_role_trigger_labels):
+        raise RuntimeError("Quest 3 must not create an Instructor dialogue trigger")
+    role_npcs = [actor for actor in actors
+                 if isinstance(actor, unreal.VHVNPCCharacter)
+                 and actor.get_actor_label().startswith("HBCT_RoleModel_")]
+    for actor in role_npcs:
+        location = actor.get_actor_location()
+        if (abs(location.z - 100.0) > 5.0 or location.x < -1000.0 or location.x > 4000.0
+                or location.y < 2450.0 or location.y > 3650.0):
+            raise RuntimeError("New Quest 3 NPC {} is off the accessible staging floor: {}".format(
+                actor.get_actor_label(), location))
+    for index, first in enumerate(role_npcs):
+        first_location = first.get_actor_location()
+        for second in role_npcs[index + 1:]:
+            second_location = second.get_actor_location()
+            distance_squared = ((first_location.x - second_location.x) ** 2
+                                + (first_location.y - second_location.y) ** 2)
+            if distance_squared < 90.0 ** 2:
+                raise RuntimeError("Quest 3 NPC capsules overlap: {} and {}".format(
+                    first.get_actor_label(), second.get_actor_label()))
+
+    for ambient_actor in actors:
+        if (isinstance(ambient_actor, unreal.VHVAmbientConversationActor)
+                and ambient_actor.get_actor_label().startswith("HBCT_RoleModel_")
+                and (ambient_actor.get_editor_property("auto_start_on_begin_play")
+                     or not ambient_actor.get_editor_property("requires_explicit_trigger")
+                     or not ambient_actor.get_editor_property("play_once"))):
+            raise RuntimeError("Quest 3 ambient scene {} must be explicit and play once".format(
+                ambient_actor.get_actor_label()))
 
     validator = unreal.get_editor_subsystem(unreal.EditorValidatorSubsystem)
     for actor in actors:
@@ -2042,8 +3028,8 @@ def validate_content_integrity(level, conversations, arc):
         str(unreal.GameplayTagLibrary.get_tag_name(item.get_editor_property("activity_tag"))).split(".")[-1]
         for item in authored_activities
     }
-    if len(authored_activities) != 26 or len(activity_ids) != 26:
-        raise RuntimeError("HBCT production content must contain 26 uniquely addressed activities")
+    if len(authored_activities) != 40 or len(activity_ids) != 40:
+        raise RuntimeError("HBCT production content must contain 40 uniquely addressed activities")
 
     placeholder = "HBCT production learning content."
     activities_by_id = {}
@@ -2061,7 +3047,9 @@ def validate_content_integrity(level, conversations, arc):
         if any(placeholder in value for value in visible_copy):
             raise RuntimeError("Production placeholder remains in activity {}".format(activity_id))
 
-        if item.get_editor_property("activity_type") == unreal.TextbookActivityType.SINGLE_CHOICE:
+        if (item.get_editor_property("activity_type") == unreal.TextbookActivityType.SINGLE_CHOICE
+                and not str(unreal.GameplayTagLibrary.get_tag_name(
+                    item.get_editor_property("activity_tag"))).startswith("VHV.Activity.HBCT.RoleModel.")):
             policy = item.get_editor_property("attempt_policy")
             if (not policy.get_editor_property("enabled")
                     or policy.get_editor_property("max_attempts") != 2
@@ -2077,6 +3065,21 @@ def validate_content_integrity(level, conversations, arc):
             or teaching_data.get_editor_property("media")
             or teaching_data.get_editor_property("media_texture")
             or str(teaching_data.get_editor_property("media_caption")).strip())
+
+    role_activity_ids = {
+        activity_id for activity_id in activities_by_id
+        if str(unreal.GameplayTagLibrary.get_tag_name(
+            activities_by_id[activity_id].get_editor_property("activity_tag"))).startswith(
+                "VHV.Activity.HBCT.RoleModel.")}
+    if len(role_activity_ids) != 14:
+        raise RuntimeError("Quest 3 must contain 14 uniquely addressed activities")
+    if any(has_meaningful_teaching(activities_by_id[activity_id].get_editor_property("teaching"))
+           for activity_id in role_activity_ids):
+        raise RuntimeError("Quest 3 must not author teaching pages")
+    select_policy = activities_by_id["SelectModel"].get_editor_property("attempt_policy")
+    if (not select_policy.get_editor_property("enabled")
+            or select_policy.get_editor_property("max_attempts") != 2):
+        raise RuntimeError("Quest 3 role-model selection must use the two-attempt policy")
 
     intentional_goal_lessons = {"WhatIsGoalSetting", "UsefulGoalCharacteristics"}
     goal_activity_ids = {
@@ -2265,9 +3268,16 @@ def validate_content_integrity(level, conversations, arc):
             "O10_ReturnToMali", "O11_FindCurrentDifficulty", "O12_DefineDesiredBehavior",
             "O13_BuildShortTermGoal", "O14_LinkLongTermGoal", "O15_ReviewGoalPlan",
             "O15B_RoadsidePractice", "O16_FinalDebrief"],
+        "Q_HBCT_03_ROLE_MODEL": [
+            "O01_ReachExercisePark", "O02_DiscoverRoleModels", "O03_ClassifyModels",
+            "O04_MeetSomchai", "O05_UnderstandSomchai", "O06_InspectCandidates",
+            "O07_SelectRoleModel", "O08_ExplainModelFit", "O09_SeeChangeOverTime",
+            "O10_ReconstructModeling", "O11_PrepareDemonstration", "O12_ObserveSaeng",
+            "O13_SupportImitation", "O14_PracticeTogether", "O15_FinalApplication",
+            "O16_FinalDebrief"],
     }
-    if len(quests) != 3:
-        raise RuntimeError("HBCT transition shell must contain exactly three quests")
+    if len(quests) != 4:
+        raise RuntimeError("HBCT production arc must contain exactly four quests through Technique 3")
     for quest in quests:
         quest_id = str(quest.get_editor_property("quest_id"))
         objective_ids = [str(item.get_editor_property("objective_id"))
@@ -2295,6 +3305,29 @@ def validate_content_integrity(level, conversations, arc):
             or str(completion_stinger.get_editor_property("subtitle")) != "TECHNIQUE 1"
             or not motivation_quest.get_editor_property("auto_start_next_quest")):
         raise RuntimeError("Building Motivation completion transition is not authored correctly")
+    initial_moves = arc.get_editor_property("initial_npc_moves")
+    if len(initial_moves) != 1:
+        raise RuntimeError("HBCT arc must author one initial persistent NPC destination")
+    initial_participant = str(unreal.GameplayTagLibrary.get_tag_name(
+        initial_moves[0].get_editor_property("participant_tag")))
+    initial_destination = str(unreal.GameplayTagLibrary.get_tag_name(
+        initial_moves[0].get_editor_property("destination_location_tag")))
+    if (initial_participant != "VHV.Participant.Instructor"
+            or initial_destination != "VHV.Location.HBCT.VillageEntrance"):
+        raise RuntimeError("Instructor initial destination must be VillageEntrance")
+    motivation_objectives = {str(item.get_editor_property("objective_id")): item
+                             for item in motivation_quest.get_editor_property("objectives")}
+    departure_moves = motivation_objectives["O14_FinalDebrief"].get_editor_property(
+        "completion_npc_moves")
+    if len(departure_moves) != 1:
+        raise RuntimeError("Motivation final debrief must issue one Instructor departure move")
+    departure_participant = str(unreal.GameplayTagLibrary.get_tag_name(
+        departure_moves[0].get_editor_property("participant_tag")))
+    departure_destination = str(unreal.GameplayTagLibrary.get_tag_name(
+        departure_moves[0].get_editor_property("destination_location_tag")))
+    if (departure_participant != "VHV.Participant.Instructor"
+            or departure_destination != "VHV.Location.HBCT.HealthPost"):
+        raise RuntimeError("Motivation final debrief must move Instructor to HealthPost")
 
     goal_setting_quest = next(quest for quest in quests
                               if str(quest.get_editor_property("quest_id")) == "Q_HBCT_02_GOAL_SETTING")
@@ -2325,9 +3358,9 @@ def validate_content_integrity(level, conversations, arc):
         "O02_ObserveGoalConversation": "Approach the nearby VHV and observe how an intention becomes a goal",
         "O04_LearnGoalSetting": "Talk to the Instructor about what goal setting means",
         "O05_ComparePatients": "Visit both nearby villagers and compare a person with a goal and one without",
-        "O06_ReflectOnDirection": "Return to the Instructor and discuss why goals matter",
+        "O06_ReflectOnDirection": "Talk to the Instructor about why goals matter",
         "O07_ObserveGoalMethods": "Visit both demonstration areas and observe two ways of setting goals",
-        "O08_IdentifyGoalMethods": "Talk to the Instructor and distinguish self-set and jointly set goals",
+        "O08_IdentifyGoalMethods": "Talk to the Instructor about the two goal-setting methods",
         "O09_EvaluateGoals": "Meet the Instructor at the goal board and evaluate the example goals",
         "O10_ReturnToMali": "Visit Aunt Mali and check how reducing sugar is going",
         "O15_ReviewGoalPlan": "Return to Aunt Mali and review her completed goal plan",
@@ -2339,6 +3372,18 @@ def validate_content_integrity(level, conversations, arc):
         if actual_text != expected_text:
             raise RuntimeError("Unexpected Quest 2 tracker text for {}: {}".format(
                 objective_id, actual_text))
+    for objective_id in (
+            "O01_ReachHealthPost", "O04_LearnGoalSetting", "O06_ReflectOnDirection",
+            "O08_IdentifyGoalMethods", "O09_EvaluateGoals", "O16_FinalDebrief"):
+        objective_data = goal_objectives[objective_id]
+        participant = str(unreal.GameplayTagLibrary.get_tag_name(
+            objective_data.get_editor_property("participant_tag")))
+        if (objective_data.get_editor_property("objective_type")
+                != unreal.VHVQuestObjectiveType.CONVERSATION
+                or participant != "VHV.Participant.Instructor"
+                or objective_data.get_editor_property("auto_start")):
+            raise RuntimeError("Instructor objective {} must use objective-gated Talk interaction".format(
+                objective_id))
     if (goal_objectives["O02_ObserveGoalConversation"].get_editor_property("world_action_start_policy")
             != unreal.VHVWorldActionStartPolicy.EXPLICIT_TRIGGER):
         raise RuntimeError("Goal Setting initial observation must use Explicit Trigger")
@@ -2347,7 +3392,7 @@ def validate_content_integrity(level, conversations, arc):
             "O08_IdentifyGoalMethods", "O09_EvaluateGoals", "O10_ReturnToMali",
             "O15_ReviewGoalPlan", "O15B_RoadsidePractice", "O16_FinalDebrief"):
         if goal_objectives[objective_id].get_editor_property("auto_start"):
-            raise RuntimeError("Location-based Quest 2 objective {} must wait for its trigger".format(
+            raise RuntimeError("Quest 2 interaction objective {} must wait for player interaction".format(
                 objective_id))
     for objective_id, counter_name in (
             ("O05_ComparePatients", "ComparisonObserved"),
@@ -2356,6 +3401,68 @@ def validate_content_integrity(level, conversations, arc):
             "completion_conditions").get_editor_property("conditions")
         if len(conditions) != 1 or conditions[0].get_editor_property("compare_value") != 2:
             raise RuntimeError("{} must wait for both independently triggered scenes".format(objective_id))
+
+    q2_departures = goal_objectives["O16_FinalDebrief"].get_editor_property("completion_npc_moves")
+    q2_move_pairs = {
+        (str(unreal.GameplayTagLibrary.get_tag_name(move.get_editor_property("participant_tag"))),
+         str(unreal.GameplayTagLibrary.get_tag_name(move.get_editor_property("destination_location_tag"))))
+        for move in q2_departures}
+    if q2_move_pairs != {
+            ("VHV.Participant.Instructor", "VHV.Location.HBCT.ExercisePark"),
+            ("VHV.Participant.AuntSaeng", "VHV.Location.HBCT.RoleModel.SaengCandidate")}:
+        raise RuntimeError("Quest 2 completion must independently move Instructor and Aunt Saeng into Quest 3 staging")
+
+    role_quest = next(quest for quest in quests
+                      if str(quest.get_editor_property("quest_id")) == "Q_HBCT_03_ROLE_MODEL")
+    role_start = role_quest.get_editor_property("start_stinger")
+    role_complete = role_quest.get_editor_property("completion_stinger")
+    if (str(role_start.get_editor_property("label")) != "TECHNIQUE 3"
+            or str(role_start.get_editor_property("title")) != "ROLE MODEL"
+            or str(role_start.get_editor_property("subtitle")) != "HEALTH BEHAVIOR CHANGE"):
+        raise RuntimeError("Role Model start stinger is not authored correctly")
+    if (str(role_complete.get_editor_property("label")) != "QUEST COMPLETE"
+            or str(role_complete.get_editor_property("title")) != "ROLE MODEL"
+            or str(role_complete.get_editor_property("subtitle")) != "TECHNIQUE 3"
+            or role_quest.get_editor_property("auto_start_next_quest")):
+        raise RuntimeError("Role Model completion must stop after Technique 3")
+    role_objectives = {str(item.get_editor_property("objective_id")): item
+                       for item in role_quest.get_editor_property("objectives")}
+    expected_role_tracker = {
+        "O01_ReachExercisePark": "Explore the exercise park",
+        "O02_DiscoverRoleModels": "Find examples of people learning from others",
+        "O03_ClassifyModels": "Talk to the Instructor about what you observed",
+        "O04_MeetSomchai": "Talk to Uncle Somchai",
+        "O05_UnderstandSomchai": "Find out what kind of role model could help Somchai",
+        "O06_InspectCandidates": "Meet the possible role models",
+        "O07_SelectRoleModel": "Recommend a role model for Somchai",
+        "O08_ExplainModelFit": "Identify why the model is suitable",
+        "O09_SeeChangeOverTime": "Follow how role modeling can influence behavior over time",
+        "O10_ReconstructModeling": "Reconstruct how modeled behavior becomes a habit",
+        "O11_PrepareDemonstration": "Prepare Somchai's role-model session",
+        "O12_ObserveSaeng": "Listen to Aunt Saeng's experience",
+        "O13_SupportImitation": "Help Somchai try the behavior",
+        "O14_PracticeTogether": "Walk with Aunt Saeng and Somchai",
+        "O15_FinalApplication": "Help another villager choose a useful model",
+        "O16_FinalDebrief": "Talk to the Instructor",
+    }
+    for objective_id, expected_text in expected_role_tracker.items():
+        if str(role_objectives[objective_id].get_editor_property("objective_text")) != expected_text:
+            raise RuntimeError("Unexpected Quest 3 tracker text for {}".format(objective_id))
+    for objective_id in ("O03_ClassifyModels", "O11_PrepareDemonstration", "O16_FinalDebrief"):
+        objective_data = role_objectives[objective_id]
+        participant = str(unreal.GameplayTagLibrary.get_tag_name(
+            objective_data.get_editor_property("participant_tag")))
+        if (participant != "VHV.Participant.Instructor"
+                or objective_data.get_editor_property("auto_start")):
+            raise RuntimeError("Quest 3 Instructor objective {} must wait for normal Talk interaction".format(
+                objective_id))
+    for objective_id, counter_value in (
+            ("O02_DiscoverRoleModels", 4), ("O06_InspectCandidates", 3),
+            ("O09_SeeChangeOverTime", 5)):
+        conditions = role_objectives[objective_id].get_editor_property(
+            "completion_conditions").get_editor_property("conditions")
+        if len(conditions) != 1 or conditions[0].get_editor_property("compare_value") != counter_value:
+            raise RuntimeError("Quest 3 counter objective {} has invalid threshold".format(objective_id))
 
     final_nodes = conversations["DA_Conversation_HBCT_FinalDebrief"].get_editor_property(
         "conversation").get_editor_property("nodes")
@@ -2479,11 +3586,11 @@ def run():
     validate_assets(all_assets)
     for asset in all_assets:
         save_asset(asset)
-    configure_map(ambient_assets)
+    configure_map(ambient_assets, conversations)
     configure_player_controller(level, arc)
     validate_map_and_defaults(level, arc)
-    unreal.log("{} Authored {} activities, {} conversations, {} ambient sequences, 3 quests, and the production level bindings.".format(
-        LOG, len(build_activities()) + len(build_goal_setting_activities()),
+    unreal.log("{} Authored {} activities, {} conversations, {} ambient sequences, 4 quests, and the production level bindings.".format(
+        LOG, len(build_activities()) + len(build_goal_setting_activities()) + len(build_role_model_activities()),
         len(conversations), len(ambient_assets)))
 
 

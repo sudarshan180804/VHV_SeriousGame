@@ -28,6 +28,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Quest Arc")
     TArray<FVHVQuestDefinition> Quests;
 
+    /** Initial semantic destinations for persistent story NPCs. Reapplied when a new arc starts or an earlier save is restored. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Quest Arc|NPC Movement")
+    TArray<FVHVQuestNPCMoveRequest> InitialNPCMoves;
+
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Quest Arc")
     bool bAutoStartNextQuest = true;
 

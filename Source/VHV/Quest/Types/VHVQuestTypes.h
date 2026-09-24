@@ -48,6 +48,29 @@ enum class EVHVWorldActionStartPolicy : uint8
     ExplicitTrigger UMETA(DisplayName = "Explicit Trigger")
 };
 
+/** A story-authored request that moves a persistent quest NPC to a semantic world location. */
+USTRUCT(BlueprintType)
+struct VHV_API FVHVQuestNPCMoveRequest
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "NPC Move", meta = (DisplayName = "Participant", Categories = "VHV.Participant"))
+    FGameplayTag ParticipantTag;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "NPC Move", meta = (DisplayName = "Destination", Categories = "VHV.Location"))
+    FGameplayTag DestinationLocationTag;
+
+    FName GetEffectiveParticipantID() const
+    {
+        return VHVAuthoringReferences::ResolveID(ParticipantTag, NAME_None, TEXT("VHV.Participant"));
+    }
+
+    FName GetEffectiveDestinationID() const
+    {
+        return VHVAuthoringReferences::ResolveID(DestinationLocationTag, NAME_None, TEXT("VHV.Location"));
+    }
+};
+
 USTRUCT(BlueprintType)
 struct VHV_API FVHVQuestObjectiveDefinition
 {
@@ -144,6 +167,10 @@ struct VHV_API FVHVQuestObjectiveDefinition
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|Story State")
     TArray<FVHVStoryEffect> CompletionEffects;
+
+    /** Fire-and-forget NPC movement started when this objective completes. It does not become quest UI or block progression. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|NPC Movement")
+    TArray<FVHVQuestNPCMoveRequest> CompletionNPCMoves;
 
     FName GetEffectiveTargetID() const
     {
