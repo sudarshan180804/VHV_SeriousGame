@@ -32,7 +32,10 @@ void UVHVNPCBehaviorComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 }
 
-bool UVHVNPCBehaviorComponent::StartMoveToLocation(const FVector Destination, const float AcceptanceRadius)
+bool UVHVNPCBehaviorComponent::StartMoveToLocation(
+	const FVector Destination,
+	const float AcceptanceRadius,
+	const bool bAllowPartialPath)
 {
 	if (BehaviorState == EVHVNPCBehaviorState::Engaging || BehaviorState == EVHVNPCBehaviorState::Talking || BehaviorState == EVHVNPCBehaviorState::Unavailable)
 	{
@@ -52,11 +55,14 @@ bool UVHVNPCBehaviorComponent::StartMoveToLocation(const FVector Destination, co
 	SetBehaviorState(EVHVNPCBehaviorState::Moving);
 	UE_LOG(LogVHV, Log, TEXT("[VHVNPC] Movement started for '%s' to %s."), *GetNameSafe(GetOwner()), *Destination.ToCompactString());
 	return HandleMoveRequestResult(
-		AIController->RequestMoveToLocation(Destination, FMath::Max(0.0f, AcceptanceRadius)),
+		AIController->RequestMoveToLocation(Destination, FMath::Max(0.0f, AcceptanceRadius), bAllowPartialPath),
 		TEXT("location"));
 }
 
-bool UVHVNPCBehaviorComponent::StartMoveToActor(AActor* Target, const float AcceptanceRadius)
+bool UVHVNPCBehaviorComponent::StartMoveToActor(
+	AActor* Target,
+	const float AcceptanceRadius,
+	const bool bAllowPartialPath)
 {
 	if (BehaviorState == EVHVNPCBehaviorState::Engaging || BehaviorState == EVHVNPCBehaviorState::Talking || BehaviorState == EVHVNPCBehaviorState::Unavailable)
 	{
@@ -76,7 +82,7 @@ bool UVHVNPCBehaviorComponent::StartMoveToActor(AActor* Target, const float Acce
 	SetBehaviorState(EVHVNPCBehaviorState::Moving);
 	UE_LOG(LogVHV, Log, TEXT("[VHVNPC] Movement started for '%s' toward '%s'."), *GetNameSafe(GetOwner()), *GetNameSafe(Target));
 	return HandleMoveRequestResult(
-		AIController->RequestMoveToActor(Target, FMath::Max(0.0f, AcceptanceRadius)),
+		AIController->RequestMoveToActor(Target, FMath::Max(0.0f, AcceptanceRadius), bAllowPartialPath),
 		TEXT("actor"));
 }
 

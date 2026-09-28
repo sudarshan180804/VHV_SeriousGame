@@ -72,6 +72,14 @@ public:
     UFUNCTION(BlueprintPure, Category = "VHV|Quest")
     bool IsTransientObjectiveExecutionActive() const;
 
+    /** True while the active objective is running staged NPC travel that leaves the player in Gameplay input. */
+    UFUNCTION(BlueprintPure, Category = "VHV|Quest|NPC Travel")
+    bool IsCurrentObjectiveFreeRoamNPCTravelActive() const;
+
+    /** Used by contextual interaction to suppress prompts on NPCs while they are required travel participants. */
+    UFUNCTION(BlueprintPure, Category = "VHV|Quest|NPC Travel")
+    bool IsParticipantInActiveFreeRoamNPCTravel(FName ParticipantID) const;
+
     void ExportSaveState(FVHVQuestSaveState& OutSaveState) const;
     bool ValidateSaveState(const FVHVQuestSaveState& SaveState) const;
     bool ImportSaveState(const FVHVQuestSaveState& SaveState);
@@ -86,6 +94,10 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "VHV|Quest")
     bool NotifyParticipantInteracted(FName ParticipantID);
+
+    /** Returns whether the active objective currently accepts an interaction from this participant. */
+    UFUNCTION(BlueprintPure, Category = "VHV|Quest")
+    bool CanParticipantInteract(FName ParticipantID) const;
 
     UFUNCTION(BlueprintCallable, Category = "VHV|Quest")
     void NotifyConversationCompleted(FName ConversationID);
@@ -108,7 +120,11 @@ public:
         FName RequiredObjectiveID = NAME_None);
 
     UFUNCTION(BlueprintCallable, Category = "VHV|Quest|NPC Commands")
-    bool RequestNPCMove(FName ParticipantID, FName TargetID);
+    bool RequestNPCMove(
+        FName ParticipantID,
+        FName TargetID,
+        bool bFaceDestinationRotation = false,
+        float MoveSpeedOverride = 0.0f);
 
     UFUNCTION(BlueprintCallable, Category = "VHV|Quest|NPC Commands")
     bool RequestNPCWait(FName ParticipantID, float Duration);
@@ -164,6 +180,16 @@ private:
     UFUNCTION()
     void HandleNPCObjectiveCommandCompleted(EVHVNPCQuestCommandType Command, bool bSuccess);
 
+    void HandleObjectiveNPCMoveCompleted(
+        UVHVNPCQuestCommandComponent* CommandComponent,
+        EVHVNPCQuestCommandType Command,
+        bool bSuccess);
+
+    void HandleObjectiveNPCReadinessMoveCompleted(
+        UVHVNPCQuestCommandComponent* CommandComponent,
+        EVHVNPCQuestCommandType Command,
+        bool bSuccess);
+
     UFUNCTION()
     void HandleStoryFlagChanged(FName FlagID, bool bValue);
 
@@ -180,6 +206,17 @@ private:
     void ReevaluateWaitingObjective();
     bool TryCompleteCurrentObjectiveFromStoryState();
     void EnsureStoryStateDelegateBindings();
+    bool GetActiveObjectiveNPCReadinessRequirements(TArray<TPair<FName, FName>>& OutRequirements) const;
+    bool AreActiveObjectiveNPCReadinessRequirementsMet() const;
+    void BindActiveObjectiveNPCReadinessCallbacks();
+    void ClearActiveObjectiveNPCReadinessTracking();
+    void ContinueActiveObjectiveAfterNPCMoves();
+    void StartActiveObjectiveNPCMoveSequence();
+    void StartActiveObjectiveNPCMoveStage();
+    void StartActiveObjectiveStageAmbientConversation(const FVHVQuestNPCMoveStage& Stage);
+    void FinishActiveObjectiveNPCMoveStage();
+    void FailActiveObjectiveNPCMoveSequence(FName ParticipantID, const TCHAR* Reason);
+    void ClearActiveObjectiveNPCMoveTracking(bool bCancelCommands = false);
     void ExecuteActiveNPCAction();
     void ClearActiveNPCActionTracking();
     bool ExecuteActiveWorldAction();
@@ -216,6 +253,19 @@ private:
     FName ActiveNPCObjectiveID;
     FName ActiveNPCObjectiveParticipantID;
     EVHVNPCQuestCommandType ActiveNPCObjectiveCommandType = EVHVNPCQuestCommandType::None;
+
+    TMap<TWeakObjectPtr<UVHVNPCQuestCommandComponent>, FName> ActiveObjectiveNPCMoveParticipants;
+    TSet<FName> PendingObjectiveNPCMoveParticipants;
+    FName ActiveObjectiveNPCMoveQuestID;
+    FName ActiveObjectiveNPCMoveObjectiveID;
+    int32 ActiveObjectiveNPCMoveStageIndex = INDEX_NONE;
+    uint32 ActiveObjectiveNPCMoveActivationSerial = 0;
+    bool bCurrentObjectiveWaitingOnNPCMoves = false;
+    bool bDispatchingObjectiveNPCMoveStage = false;
+    bool bObjectiveNPCMoveStageFailed = false;
+
+    TMap<TWeakObjectPtr<UVHVNPCQuestCommandComponent>, FDelegateHandle> ActiveObjectiveNPCReadinessBindings;
+    bool bCurrentObjectiveWaitingOnNPCReadiness = false;
 
     UPROPERTY(Transient)
     TObjectPtr<UVHVWorldActionSubsystem> ActiveWorldActionSubsystem;

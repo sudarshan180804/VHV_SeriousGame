@@ -48,6 +48,14 @@ enum class EVHVWorldActionStartPolicy : uint8
     ExplicitTrigger UMETA(DisplayName = "Explicit Trigger")
 };
 
+/** Controls player/UI presentation while an objective's staged NPC travel is running. */
+UENUM(BlueprintType)
+enum class EVHVQuestNPCTravelMode : uint8
+{
+    Standard UMETA(DisplayName = "Standard / Modal"),
+    FreeRoam UMETA(DisplayName = "Free Roam / Walk Along")
+};
+
 /** A story-authored request that moves a persistent quest NPC to a semantic world location. */
 USTRUCT(BlueprintType)
 struct VHV_API FVHVQuestNPCMoveRequest
@@ -60,6 +68,14 @@ struct VHV_API FVHVQuestNPCMoveRequest
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "NPC Move", meta = (DisplayName = "Destination", Categories = "VHV.Location"))
     FGameplayTag DestinationLocationTag;
 
+    /** Apply the destination actor's authored yaw after the path-following move succeeds. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "NPC Move")
+    bool bFaceDestinationRotation = false;
+
+    /** Optional speed for this move. Values at or below zero preserve the NPC's authored walk speed. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "NPC Move", meta = (ClampMin = "0.0", Units = "CentimetersPerSecond"))
+    float MoveSpeedOverride = 0.0f;
+
     FName GetEffectiveParticipantID() const
     {
         return VHVAuthoringReferences::ResolveID(ParticipantTag, NAME_None, TEXT("VHV.Participant"));
@@ -69,6 +85,20 @@ struct VHV_API FVHVQuestNPCMoveRequest
     {
         return VHVAuthoringReferences::ResolveID(DestinationLocationTag, NAME_None, TEXT("VHV.Location"));
     }
+};
+
+/** A group of NPC moves that must all finish before the next authored stage begins. */
+USTRUCT(BlueprintType)
+struct VHV_API FVHVQuestNPCMoveStage
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "NPC Move")
+    TArray<FVHVQuestNPCMoveRequest> Moves;
+
+    /** Optional ambient-conversation receiver started non-modally after this stage's move requests are dispatched. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "NPC Move", meta = (DisplayName = "Ambient Conversation Receiver", Categories = "VHV.WorldReceiver"))
+    FGameplayTag AmbientConversationReceiverTag;
 };
 
 USTRUCT(BlueprintType)
@@ -171,6 +201,18 @@ struct VHV_API FVHVQuestObjectiveDefinition
     /** Fire-and-forget NPC movement started when this objective completes. It does not become quest UI or block progression. */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|NPC Movement")
     TArray<FVHVQuestNPCMoveRequest> CompletionNPCMoves;
+
+    /**
+     * Ordered, blocking movement stages started when this objective activates.
+     * Every participant in a stage must arrive before the next stage begins, and
+     * the objective's normal interaction/auto-start remains locked until all stages finish.
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|NPC Movement")
+    TArray<FVHVQuestNPCMoveStage> NPCMoveStages;
+
+    /** Free-roam travel blocks quest progression on arrivals while leaving gameplay input and camera control active. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|NPC Movement")
+    EVHVQuestNPCTravelMode NPCTravelMode = EVHVQuestNPCTravelMode::Standard;
 
     FName GetEffectiveTargetID() const
     {

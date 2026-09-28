@@ -6,6 +6,7 @@
 #include "NPC/Components/VHVAmbientSpeechComponent.h"
 #include "NPC/Components/VHVNPCDialogueComponent.h"
 #include "NPC/Components/VHVNPCInteractionComponent.h"
+#include "NPC/Components/VHVNPCNameplateComponent.h"
 #include "NPC/Components/VHVNPCPatrolComponent.h"
 #include "NPC/Components/VHVNPCPresentationComponent.h"
 #include "NPC/Components/VHVNPCQuestCommandComponent.h"
@@ -44,6 +45,8 @@ AVHVNPCCharacter::AVHVNPCCharacter()
 	QuestCommandComponent = CreateDefaultSubobject<UVHVNPCQuestCommandComponent>(TEXT("QuestCommandComponent"));
 	AmbientSpeechComponent = CreateDefaultSubobject<UVHVAmbientSpeechComponent>(TEXT("AmbientSpeechComponent"));
 	AmbientSpeechComponent->SetupAttachment(GetRootComponent());
+	NameplateComponent = CreateDefaultSubobject<UVHVNPCNameplateComponent>(TEXT("NameplateComponent"));
+	NameplateComponent->SetupAttachment(GetRootComponent());
 
 	InteractionCollision = CreateDefaultSubobject<USphereComponent>(TEXT("InteractionCollision"));
 	InteractionCollision->SetupAttachment(GetRootComponent());
@@ -120,4 +123,9 @@ UVHVNPCPresentationComponent* AVHVNPCCharacter::GetPresentationComponent() const
 UVHVAmbientSpeechComponent* AVHVNPCCharacter::GetAmbientSpeechComponent() const
 {
 	return AmbientSpeechComponent;
+}
+
+UVHVNPCNameplateComponent* AVHVNPCCharacter::GetNameplateComponent() const
+{
+	return NameplateComponent;
 }

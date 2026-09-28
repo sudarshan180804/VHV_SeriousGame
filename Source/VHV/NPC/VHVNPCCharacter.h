@@ -9,6 +9,7 @@ class UVHVAmbientSpeechComponent;
 class UVHVNPCBehaviorComponent;
 class UVHVNPCDialogueComponent;
 class UVHVNPCInteractionComponent;
+class UVHVNPCNameplateComponent;
 class UVHVNPCPatrolComponent;
 class UVHVNPCPresentationComponent;
 class UVHVNPCQuestCommandComponent;
@@ -59,6 +60,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "VHV|NPC|Components")
 	UVHVAmbientSpeechComponent* GetAmbientSpeechComponent() const;
 
+	UFUNCTION(BlueprintPure, Category = "VHV|NPC|Components")
+	UVHVNPCNameplateComponent* GetNameplateComponent() const;
+
 private:
 	virtual void BeginPlay() override;
 
@@ -94,4 +98,7 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VHV|NPC|Components", meta = (AllowPrivateAccess = "true", NoEditInline))
 	TObjectPtr<UVHVAmbientSpeechComponent> AmbientSpeechComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VHV|NPC|Components", meta = (AllowPrivateAccess = "true", NoEditInline))
+	TObjectPtr<UVHVNPCNameplateComponent> NameplateComponent;
 };

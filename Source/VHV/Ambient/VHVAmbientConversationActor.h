@@ -51,6 +51,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|Ambient Conversation|Playback")
     bool bPlayOnce = true;
 
+    /** Keep locomotion/behavior ownership unchanged so bubbles can play over quest travel. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|Ambient Conversation|Playback")
+    bool bPreserveParticipantBehavior = false;
+
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|Ambient Conversation|Playback")
     EVHVAmbientConversationLeavePolicy PlayerLeavePolicy = EVHVAmbientConversationLeavePolicy::Cancel;
 

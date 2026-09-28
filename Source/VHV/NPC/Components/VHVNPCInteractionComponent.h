@@ -5,6 +5,15 @@
 #include "VHVNPCInteractionComponent.generated.h"
 
 class AVHVNPCAIController;
+class UVHVConversationDataAsset;
+
+UENUM(BlueprintType)
+enum class EVHVNPCAvailableInteraction : uint8
+{
+	None,
+	Quest,
+	DefaultDialogue
+};
 
 UCLASS(ClassGroup=(VHV), meta=(BlueprintSpawnableComponent))
 class VHV_API UVHVNPCInteractionComponent : public UActorComponent
@@ -16,6 +25,10 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "VHV|NPC|Interaction")
 	bool CanInteract() const;
+
+	/** Authoritative interaction resolution used by both prompt targeting and execution. */
+	UFUNCTION(BlueprintPure, Category = "VHV|NPC|Interaction")
+	EVHVNPCAvailableInteraction GetAvailableInteraction() const;
 
 	UFUNCTION(BlueprintPure, Category = "VHV|NPC|Interaction")
 	FText GetInteractionPrompt() const;
@@ -46,6 +59,23 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
+	struct FResolvedInteraction
+	{
+		EVHVNPCAvailableInteraction Type = EVHVNPCAvailableInteraction::None;
+		FName QuestID;
+		FName ObjectiveID;
+		UVHVConversationDataAsset* Conversation = nullptr;
+
+		bool IsAvailable() const { return Type != EVHVNPCAvailableInteraction::None; }
+		bool operator==(const FResolvedInteraction& Other) const
+		{
+			return Type == Other.Type
+				&& QuestID == Other.QuestID
+				&& ObjectiveID == Other.ObjectiveID
+				&& Conversation == Other.Conversation;
+		}
+	};
+
 	UPROPERTY(Transient)
 	TObjectPtr<AVHVNPCAIController> FacingAIController;
 
@@ -53,7 +83,9 @@ private:
 	TObjectPtr<AActor> PendingInteractingActor;
 
 	bool bInteractionPending = false;
+	FResolvedInteraction PendingInteraction;
 
+	FResolvedInteraction ResolveAvailableInteraction(bool bAllowPendingInteraction) const;
 	void HandleFacingCompleted(bool bSuccess);
 	void StartDialogueAfterFacing();
 	void RestoreNPCStateWithoutDialogue();

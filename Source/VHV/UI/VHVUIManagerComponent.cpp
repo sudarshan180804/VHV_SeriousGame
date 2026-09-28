@@ -1600,35 +1600,15 @@ bool UVHVUIManagerComponent::StartConversationInternal(const FDialogueConversati
         return false;
     }
 
+    FString StartingNodeID;
+    if (!ResolveAvailableConversationStartNode(InConversation, ExplicitStartNodeID, StartingNodeID))
+    {
+        return false;
+    }
+
     ActiveConversation = InConversation;
     ActiveConversationState = ConversationStates.Contains(InConversation.ConversationID) ? ConversationStates[InConversation.ConversationID] : FConversationRuntimeState();
     ActiveConversationState.ConversationID = InConversation.ConversationID;
-
-    FString StartingNodeID = ExplicitStartNodeID;
-    if (StartingNodeID.IsEmpty())
-    {
-        StartingNodeID = InConversation.StartNodeID;
-        if (!ActiveConversationState.LatestCheckpointID.IsEmpty())
-        {
-            for (const FDialogueNode& Node : InConversation.Nodes)
-            {
-                if (Node.bIsCheckpoint && Node.GetEffectiveCheckpointID() == ActiveConversationState.LatestCheckpointID)
-                {
-                    StartingNodeID = Node.NodeID;
-                    break;
-                }
-            }
-        }
-        else if (!ActiveConversationState.CurrentNodeID.IsEmpty())
-        {
-            StartingNodeID = ActiveConversationState.CurrentNodeID;
-        }
-    }
-
-    if (StartingNodeID.IsEmpty() && InConversation.Nodes.Num() > 0)
-    {
-        StartingNodeID = InConversation.Nodes[0].NodeID;
-    }
 
     DialogueWidget->SetOwningUIManager(this);
 
@@ -1658,6 +1638,77 @@ bool UVHVUIManagerComponent::StartConversationFromAsset(UVHVConversationDataAsse
     }
 
     return StartConversation(ConversationAsset->Conversation);
+}
+
+bool UVHVUIManagerComponent::CanStartConversationFromAsset(const UVHVConversationDataAsset* ConversationAsset) const
+{
+    if (!ConversationAsset || bConversationSessionActive || !MainHUD || !DialogueWidget || !MainHUD->DialogueLayer)
+    {
+        return false;
+    }
+
+    FString StartingNodeID;
+    return ResolveAvailableConversationStartNode(ConversationAsset->Conversation, FString(), StartingNodeID);
+}
+
+bool UVHVUIManagerComponent::ResolveAvailableConversationStartNode(
+    const FDialogueConversation& InConversation,
+    const FString& ExplicitStartNodeID,
+    FString& OutStartingNodeID) const
+{
+    OutStartingNodeID = ExplicitStartNodeID;
+    const FConversationRuntimeState* ExistingState = ConversationStates.Find(InConversation.ConversationID);
+    if (OutStartingNodeID.IsEmpty())
+    {
+        OutStartingNodeID = InConversation.StartNodeID;
+        if (ExistingState && !ExistingState->LatestCheckpointID.IsEmpty())
+        {
+            for (const FDialogueNode& Node : InConversation.Nodes)
+            {
+                if (Node.bIsCheckpoint && Node.GetEffectiveCheckpointID() == ExistingState->LatestCheckpointID)
+                {
+                    OutStartingNodeID = Node.NodeID;
+                    break;
+                }
+            }
+        }
+        else if (ExistingState && !ExistingState->CurrentNodeID.IsEmpty())
+        {
+            OutStartingNodeID = ExistingState->CurrentNodeID;
+        }
+    }
+
+    if (OutStartingNodeID.IsEmpty() && !InConversation.Nodes.IsEmpty())
+    {
+        OutStartingNodeID = InConversation.Nodes[0].NodeID;
+    }
+
+    TSet<FString> VisitedNodeIDs;
+    while (!OutStartingNodeID.IsEmpty() && !VisitedNodeIDs.Contains(OutStartingNodeID))
+    {
+        VisitedNodeIDs.Add(OutStartingNodeID);
+        const FDialogueNode* Node = InConversation.Nodes.FindByPredicate(
+            [&OutStartingNodeID](const FDialogueNode& Candidate)
+            {
+                return Candidate.NodeID == OutStartingNodeID;
+            });
+        if (!Node)
+        {
+            return false;
+        }
+
+        const bool bConditionsPass = Node->ActivationConditions.Conditions.IsEmpty()
+            || (StoryStateSubsystem && StoryStateSubsystem->EvaluateConditionSet(Node->ActivationConditions));
+        if (bConditionsPass)
+        {
+            return true;
+        }
+
+        OutStartingNodeID = Node->NextNodeID;
+    }
+
+    OutStartingNodeID.Reset();
+    return false;
 }
 
 void UVHVUIManagerComponent::AdvanceConversation()
@@ -2154,7 +2205,11 @@ void UVHVUIManagerComponent::RestoreGameplayAfterQuestModalIfNeeded()
         const bool bAutoStartsModal = Objective.bAutoStart
             && (Objective.ObjectiveType == EVHVQuestObjectiveType::Conversation
                 || Objective.ObjectiveType == EVHVQuestObjectiveType::LearningActivity);
-        if (bAutoStartsModal && !QuestSubsystem->IsCurrentObjectiveWaitingForActivation())
+        const bool bFreeRoamTravelActive =
+            QuestSubsystem->IsCurrentObjectiveFreeRoamNPCTravelActive();
+        if (bAutoStartsModal
+            && !bFreeRoamTravelActive
+            && !QuestSubsystem->IsCurrentObjectiveWaitingForActivation())
         {
             return;
         }

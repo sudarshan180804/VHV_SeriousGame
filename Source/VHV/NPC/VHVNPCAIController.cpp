@@ -8,21 +8,23 @@
 
 EPathFollowingRequestResult::Type AVHVNPCAIController::RequestMoveToLocation(
 	const FVector& Destination,
-	const float AcceptanceRadius)
+	const float AcceptanceRadius,
+	const bool bAllowPartialPath)
 {
-	return Super::MoveToLocation(Destination, AcceptanceRadius, true, true, true, true, nullptr, true);
+	return Super::MoveToLocation(Destination, AcceptanceRadius, true, true, true, true, nullptr, bAllowPartialPath);
 }
 
 EPathFollowingRequestResult::Type AVHVNPCAIController::RequestMoveToActor(
 	AActor* Target,
-	const float AcceptanceRadius)
+	const float AcceptanceRadius,
+	const bool bAllowPartialPath)
 {
 	if (!IsValid(Target))
 	{
 		return EPathFollowingRequestResult::Failed;
 	}
 
-	return Super::MoveToActor(Target, AcceptanceRadius, true, true, true, nullptr, true);
+	return Super::MoveToActor(Target, AcceptanceRadius, true, true, true, nullptr, bAllowPartialPath);
 }
 
 EPathFollowingRequestResult::Type AVHVNPCAIController::ReturnToPost(const float AcceptanceRadius)

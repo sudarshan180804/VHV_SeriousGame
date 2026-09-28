@@ -28,6 +28,8 @@ Saved/
 *.log
 *.tmp
 *.bak
+__pycache__/
+*.py[cod]
 
 # ==============================
 # Operating system files

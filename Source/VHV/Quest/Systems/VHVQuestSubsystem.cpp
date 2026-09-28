@@ -30,6 +30,8 @@ void UVHVQuestSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 void UVHVQuestSubsystem::Deinitialize()
 {
+    ClearActiveObjectiveNPCReadinessTracking();
+    ClearActiveObjectiveNPCMoveTracking(true);
     ClearActiveNPCActionTracking();
     ClearActiveWorldActionTracking();
     if (TextbookSubsystem)
@@ -206,6 +208,8 @@ bool UVHVQuestSubsystem::CompleteCurrentObjective()
     bCompletingCurrentObjective = true;
     bCurrentObjectiveActivated = false;
     bCurrentObjectiveWaitingOnConditions = false;
+    ClearActiveObjectiveNPCReadinessTracking();
+    ClearActiveObjectiveNPCMoveTracking(false);
     ClearActiveNPCActionTracking();
     ClearActiveWorldActionTracking();
     QuestState->CompletedObjectiveIDs.Add(ObjectiveID);
@@ -285,12 +289,33 @@ bool UVHVQuestSubsystem::IsQuestFlowActive() const
 
 bool UVHVQuestSubsystem::IsCurrentObjectiveWaitingForActivation() const
 {
-    return GetActiveObjective() && bCurrentObjectiveWaitingOnConditions && !bCurrentObjectiveActivated;
+    return GetActiveObjective()
+        && (bCurrentObjectiveWaitingOnConditions || bCurrentObjectiveWaitingOnNPCReadiness)
+        && !bCurrentObjectiveActivated;
 }
 
 bool UVHVQuestSubsystem::IsTransientObjectiveExecutionActive() const
 {
-    return ActiveNPCObjectiveCommandComponent != nullptr || ActiveWorldActionRequestID.IsValid();
+    return bCurrentObjectiveWaitingOnNPCMoves
+        || ActiveNPCObjectiveCommandComponent != nullptr
+        || ActiveWorldActionRequestID.IsValid();
+}
+
+bool UVHVQuestSubsystem::IsCurrentObjectiveFreeRoamNPCTravelActive() const
+{
+    const FVHVQuestObjectiveDefinition* Objective = GetActiveObjective();
+    return Objective
+        && Objective->NPCTravelMode == EVHVQuestNPCTravelMode::FreeRoam
+        && bCurrentObjectiveWaitingOnNPCMoves
+        && Objective->NPCMoveStages.IsValidIndex(ActiveObjectiveNPCMoveStageIndex);
+}
+
+bool UVHVQuestSubsystem::IsParticipantInActiveFreeRoamNPCTravel(const FName ParticipantID) const
+{
+    return !ParticipantID.IsNone()
+        && IsCurrentObjectiveFreeRoamNPCTravelActive()
+        && (PendingObjectiveNPCMoveParticipants.Contains(ParticipantID)
+            || ActiveObjectiveNPCMoveParticipants.FindKey(ParticipantID) != nullptr);
 }
 
 #if !UE_BUILD_SHIPPING
@@ -341,6 +366,8 @@ bool UVHVQuestSubsystem::DebugRestartCurrentQuest()
 
 void UVHVQuestSubsystem::DebugCancelActiveObjectiveExecution()
 {
+    ClearActiveObjectiveNPCReadinessTracking();
+    ClearActiveObjectiveNPCMoveTracking(true);
     if (ActiveNPCObjectiveCommandComponent)
     {
         ActiveNPCObjectiveCommandComponent->OnQuestCommandCompleted.RemoveDynamic(this, &UVHVQuestSubsystem::HandleNPCObjectiveCommandCompleted);
@@ -489,6 +516,8 @@ bool UVHVQuestSubsystem::ImportSaveState(const FVHVQuestSaveState& SaveState)
         return false;
     }
 
+    ClearActiveObjectiveNPCReadinessTracking();
+    ClearActiveObjectiveNPCMoveTracking(true);
     if (ActiveNPCObjectiveCommandComponent)
     {
         ActiveNPCObjectiveCommandComponent->OnQuestCommandCompleted.RemoveDynamic(this, &UVHVQuestSubsystem::HandleNPCObjectiveCommandCompleted);
@@ -503,6 +532,8 @@ bool UVHVQuestSubsystem::ImportSaveState(const FVHVQuestSaveState& SaveState)
     ClearActiveWorldActionTracking();
     bCurrentObjectiveActivated = false;
     bCurrentObjectiveWaitingOnConditions = false;
+    bCurrentObjectiveWaitingOnNPCReadiness = false;
+    bCurrentObjectiveWaitingOnNPCMoves = false;
     bCompletingCurrentObjective = false;
 
     if (!SaveState.bHasState)
@@ -585,7 +616,7 @@ bool UVHVQuestSubsystem::ImportSaveState(const FVHVQuestSaveState& SaveState)
 bool UVHVQuestSubsystem::RequestCurrentObjectiveActivation()
 {
     const FVHVQuestObjectiveDefinition* Objective = GetActiveObjective();
-    if (!Objective || !bCurrentObjectiveActivated)
+    if (!Objective || !bCurrentObjectiveActivated || bCurrentObjectiveWaitingOnNPCMoves)
     {
         return false;
     }
@@ -595,12 +626,12 @@ bool UVHVQuestSubsystem::RequestCurrentObjectiveActivation()
 
 bool UVHVQuestSubsystem::NotifyParticipantInteracted(FName ParticipantID)
 {
-    const FVHVQuestObjectiveDefinition* Objective = GetActiveObjective();
-    if (!Objective || ParticipantID.IsNone())
+    if (!CanParticipantInteract(ParticipantID))
     {
         return false;
     }
 
+    const FVHVQuestObjectiveDefinition* Objective = GetActiveObjective();
     if (Objective->ObjectiveType == EVHVQuestObjectiveType::Interact && Objective->GetEffectiveTargetID() == ParticipantID)
     {
         return CompleteCurrentObjective();
@@ -615,6 +646,36 @@ bool UVHVQuestSubsystem::NotifyParticipantInteracted(FName ParticipantID)
         return RequestCurrentObjectiveActivation();
     }
     return false;
+}
+
+bool UVHVQuestSubsystem::CanParticipantInteract(const FName ParticipantID) const
+{
+    const FVHVQuestObjectiveDefinition* Objective = GetActiveObjective();
+    if (!Objective || ParticipantID.IsNone() || !bCurrentObjectiveActivated
+        || bCurrentObjectiveWaitingOnNPCMoves || bCompletingCurrentObjective)
+    {
+        return false;
+    }
+
+    const FName TargetParticipantID = Objective->GetEffectiveTargetID();
+    if (TargetParticipantID != ParticipantID)
+    {
+        return false;
+    }
+
+    switch (Objective->ObjectiveType)
+    {
+    case EVHVQuestObjectiveType::Interact:
+        return true;
+    case EVHVQuestObjectiveType::Talk:
+        return !GetRequiredConversationID(*Objective).IsNone();
+    case EVHVQuestObjectiveType::Conversation:
+        return !Objective->bAutoStart && !GetRequiredConversationID(*Objective).IsNone();
+    case EVHVQuestObjectiveType::LearningActivity:
+        return !Objective->bAutoStart && !Objective->GetEffectiveActivityID().IsNone();
+    default:
+        return false;
+    }
 }
 
 void UVHVQuestSubsystem::NotifyConversationCompleted(FName ConversationID)
@@ -654,10 +715,15 @@ void UVHVQuestSubsystem::NotifyCustomEvent(FName EventID)
     }
 }
 
-bool UVHVQuestSubsystem::RequestNPCMove(const FName ParticipantID, const FName TargetID)
+bool UVHVQuestSubsystem::RequestNPCMove(
+    const FName ParticipantID,
+    const FName TargetID,
+    const bool bFaceDestinationRotation,
+    const float MoveSpeedOverride)
 {
     UVHVNPCQuestCommandComponent* CommandComponent = FindNPCCommandComponent(GetWorld(), ParticipantID);
-    return CommandComponent && CommandComponent->MoveToTarget(TargetID);
+    return CommandComponent && CommandComponent->MoveToTarget(
+        TargetID, bFaceDestinationRotation, MoveSpeedOverride);
 }
 
 bool UVHVQuestSubsystem::RequestNPCWait(const FName ParticipantID, const float Duration)
@@ -812,6 +878,7 @@ bool UVHVQuestSubsystem::RegisterNPCCommandComponent(UVHVNPCQuestCommandComponen
     }
     Registry.Add(ParticipantID, CommandComponent);
     RestorePersistentNPCMoveForParticipant(ParticipantID);
+    ReevaluateWaitingObjective();
     return true;
 }
 
@@ -821,7 +888,8 @@ void UVHVQuestSubsystem::DispatchNPCMoves(const TArray<FVHVQuestNPCMoveRequest>&
     {
         const FName ParticipantID = Move.GetEffectiveParticipantID();
         const FName DestinationID = Move.GetEffectiveDestinationID();
-        if (!RequestNPCMove(ParticipantID, DestinationID))
+        if (!RequestNPCMove(
+            ParticipantID, DestinationID, Move.bFaceDestinationRotation, Move.MoveSpeedOverride))
         {
             UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Could not move participant '%s' to semantic location '%s'."),
                 *ParticipantID.ToString(), *DestinationID.ToString());
@@ -853,6 +921,13 @@ void UVHVQuestSubsystem::RestorePersistentNPCMoves()
             if (!QuestState->CompletedObjectiveIDs.Contains(Objective.ObjectiveID))
             {
                 continue;
+            }
+            if (!Objective.NPCMoveStages.IsEmpty())
+            {
+                for (const FVHVQuestNPCMoveRequest& Move : Objective.NPCMoveStages.Last().Moves)
+                {
+                    LatestMoves.Add(Move.GetEffectiveParticipantID(), Move);
+                }
             }
             for (const FVHVQuestNPCMoveRequest& Move : Objective.CompletionNPCMoves)
             {
@@ -891,6 +966,17 @@ void UVHVQuestSubsystem::RestorePersistentNPCMoveForParticipant(const FName Part
             {
                 continue;
             }
+            if (!Objective.NPCMoveStages.IsEmpty())
+            {
+                if (const FVHVQuestNPCMoveRequest* Move = Objective.NPCMoveStages.Last().Moves.FindByPredicate(
+                    [ParticipantID](const FVHVQuestNPCMoveRequest& Candidate)
+                    {
+                        return Candidate.GetEffectiveParticipantID() == ParticipantID;
+                    }))
+                {
+                    LatestMove = Move;
+                }
+            }
             if (const FVHVQuestNPCMoveRequest* Move = Objective.CompletionNPCMoves.FindByPredicate(
                 [ParticipantID](const FVHVQuestNPCMoveRequest& Candidate)
                 {
@@ -903,7 +989,11 @@ void UVHVQuestSubsystem::RestorePersistentNPCMoveForParticipant(const FName Part
     }
     if (LatestMove)
     {
-        RequestNPCMove(ParticipantID, LatestMove->GetEffectiveDestinationID());
+        RequestNPCMove(
+            ParticipantID,
+            LatestMove->GetEffectiveDestinationID(),
+            LatestMove->bFaceDestinationRotation,
+            LatestMove->MoveSpeedOverride);
     }
 }
 
@@ -1205,6 +1295,61 @@ bool UVHVQuestSubsystem::ValidateQuestArc(const UVHVQuestArcData* QuestArc) cons
                 }
                 CompletionMoveParticipants.Add(ParticipantID);
             }
+            for (int32 StageIndex = 0; StageIndex < Objective.NPCMoveStages.Num(); ++StageIndex)
+            {
+                const FVHVQuestNPCMoveStage& Stage = Objective.NPCMoveStages[StageIndex];
+                if (Stage.Moves.IsEmpty())
+                {
+                    UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Quest '%s' objective '%s' has an empty NPC move stage at index %d."),
+                        *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString(), StageIndex);
+                    bValid = false;
+                    continue;
+                }
+
+                if (Stage.AmbientConversationReceiverTag.IsValid()
+                    && !VHVAuthoringReferences::IsValidReferenceTag(
+                        Stage.AmbientConversationReceiverTag, TEXT("VHV.WorldReceiver")))
+                {
+                    UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Quest '%s' objective '%s' stage %d has an invalid ambient conversation receiver tag."),
+                        *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString(), StageIndex);
+                    bValid = false;
+                }
+
+                TSet<FName> StageParticipants;
+                for (const FVHVQuestNPCMoveRequest& Move : Stage.Moves)
+                {
+                    const FName ParticipantID = Move.GetEffectiveParticipantID();
+                    const FName DestinationID = Move.GetEffectiveDestinationID();
+                    if (!VHVAuthoringReferences::IsValidReferenceTag(Move.ParticipantTag, TEXT("VHV.Participant"))
+                        || !VHVAuthoringReferences::IsValidReferenceTag(Move.DestinationLocationTag, TEXT("VHV.Location"))
+                        || ParticipantID.IsNone() || DestinationID.IsNone())
+                    {
+                        UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Quest '%s' objective '%s' has an invalid NPC move in stage %d."),
+                            *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString(), StageIndex);
+                        bValid = false;
+                    }
+                    if (Move.MoveSpeedOverride < 0.0f)
+                    {
+                        UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Quest '%s' objective '%s' stage %d has a negative NPC move speed override."),
+                            *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString(), StageIndex);
+                        bValid = false;
+                    }
+                    else if (StageParticipants.Contains(ParticipantID))
+                    {
+                        UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Quest '%s' objective '%s' stage %d moves participant '%s' more than once."),
+                            *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString(), StageIndex, *ParticipantID.ToString());
+                        bValid = false;
+                    }
+                    StageParticipants.Add(ParticipantID);
+                }
+            }
+            if (Objective.NPCTravelMode == EVHVQuestNPCTravelMode::FreeRoam
+                && Objective.NPCMoveStages.IsEmpty())
+            {
+                UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Quest '%s' objective '%s' enables free-roam NPC travel without movement stages."),
+                    *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString());
+                bValid = false;
+            }
             for (const FVHVStoryCondition& Condition : Objective.ActivationConditions.Conditions)
             {
                 const FName StateID = Condition.GetEffectiveStateID();
@@ -1317,10 +1462,14 @@ void UVHVQuestSubsystem::CompleteCurrentQuest()
 void UVHVQuestSubsystem::ActivateCurrentObjective()
 {
     ++ObjectiveActivationSerial;
+    ClearActiveObjectiveNPCReadinessTracking();
+    ClearActiveObjectiveNPCMoveTracking(true);
     ClearActiveNPCActionTracking();
     ClearActiveWorldActionTracking();
     bCurrentObjectiveActivated = false;
     bCurrentObjectiveWaitingOnConditions = false;
+    bCurrentObjectiveWaitingOnNPCReadiness = false;
+    bCurrentObjectiveWaitingOnNPCMoves = false;
     const FVHVQuestRuntimeState* State = FindQuestState(RuntimeState.ActiveQuestID);
     const FVHVQuestObjectiveDefinition* Objective = GetActiveObjective();
     if (!State || !Objective)
@@ -1366,11 +1515,37 @@ void UVHVQuestSubsystem::TryActivateCurrentObjective()
     }
 
     bCurrentObjectiveWaitingOnConditions = false;
+    if (!AreActiveObjectiveNPCReadinessRequirementsMet())
+    {
+        bCurrentObjectiveWaitingOnNPCReadiness = true;
+        BindActiveObjectiveNPCReadinessCallbacks();
+        return;
+    }
+
+    ClearActiveObjectiveNPCReadinessTracking();
     bCurrentObjectiveActivated = true;
     if (TryCompleteCurrentObjectiveFromStoryState())
     {
         return;
     }
+
+    if (!Objective->NPCMoveStages.IsEmpty())
+    {
+        StartActiveObjectiveNPCMoveSequence();
+        return;
+    }
+
+    ContinueActiveObjectiveAfterNPCMoves();
+}
+
+void UVHVQuestSubsystem::ContinueActiveObjectiveAfterNPCMoves()
+{
+    const FVHVQuestObjectiveDefinition* Objective = GetActiveObjective();
+    if (!Objective || !bCurrentObjectiveActivated || bCurrentObjectiveWaitingOnNPCMoves)
+    {
+        return;
+    }
+
     if (Objective->ObjectiveType == EVHVQuestObjectiveType::NPCAction)
     {
         ExecuteActiveNPCAction();
@@ -1412,10 +1587,142 @@ void UVHVQuestSubsystem::TryActivateCurrentObjective()
 
 void UVHVQuestSubsystem::ReevaluateWaitingObjective()
 {
-    if (bCurrentObjectiveWaitingOnConditions && !bCurrentObjectiveActivated)
+    if ((bCurrentObjectiveWaitingOnConditions || bCurrentObjectiveWaitingOnNPCReadiness)
+        && !bCurrentObjectiveActivated)
     {
         TryActivateCurrentObjective();
     }
+}
+
+bool UVHVQuestSubsystem::GetActiveObjectiveNPCReadinessRequirements(
+    TArray<TPair<FName, FName>>& OutRequirements) const
+{
+    OutRequirements.Reset();
+    const FVHVQuestObjectiveDefinition* Objective = GetActiveObjective();
+    if (!Objective || RuntimeState.ActiveQuestID != FName(TEXT("Q_HBCT_03_ROLE_MODEL")))
+    {
+        return false;
+    }
+
+    // Quest 3 dispatches these routes from earlier objectives. These gates only
+    // observe the existing commands; they never issue, restart, or cancel movement.
+    if (Objective->ObjectiveID == FName(TEXT("O06_InspectCandidates")))
+    {
+        OutRequirements.Emplace(
+            FName(TEXT("AuntSaeng")),
+            FName(TEXT("SaengCandidate")));
+    }
+    else if (Objective->ObjectiveID == FName(TEXT("O12_ObserveSaeng")))
+    {
+        OutRequirements.Emplace(
+            FName(TEXT("AuntSaeng")),
+            FName(TEXT("SaengDemo")));
+        OutRequirements.Emplace(
+            FName(TEXT("UncleSomchai")),
+            FName(TEXT("SomchaiDemo")));
+    }
+    return !OutRequirements.IsEmpty();
+}
+
+bool UVHVQuestSubsystem::AreActiveObjectiveNPCReadinessRequirementsMet() const
+{
+    TArray<TPair<FName, FName>> Requirements;
+    if (!GetActiveObjectiveNPCReadinessRequirements(Requirements))
+    {
+        return true;
+    }
+
+    for (const TPair<FName, FName>& Requirement : Requirements)
+    {
+        const UVHVNPCQuestCommandComponent* CommandComponent = FindNPCCommandComponent(
+            GetWorld(), Requirement.Key);
+        if (!CommandComponent || !CommandComponent->HasReachedTarget(Requirement.Value))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+void UVHVQuestSubsystem::BindActiveObjectiveNPCReadinessCallbacks()
+{
+    ClearActiveObjectiveNPCReadinessTracking();
+    bCurrentObjectiveWaitingOnNPCReadiness = true;
+
+    TArray<TPair<FName, FName>> Requirements;
+    GetActiveObjectiveNPCReadinessRequirements(Requirements);
+    for (const TPair<FName, FName>& Requirement : Requirements)
+    {
+        UVHVNPCQuestCommandComponent* CommandComponent = FindNPCCommandComponent(
+            GetWorld(), Requirement.Key);
+        if (!CommandComponent || CommandComponent->HasReachedTarget(Requirement.Value))
+        {
+            continue;
+        }
+        const TWeakObjectPtr<UVHVNPCQuestCommandComponent> WeakCommand(CommandComponent);
+        if (!ActiveObjectiveNPCReadinessBindings.Contains(WeakCommand))
+        {
+            ActiveObjectiveNPCReadinessBindings.Add(
+                WeakCommand,
+                CommandComponent->OnQuestCommandCompletedNative.AddUObject(
+                    this, &UVHVQuestSubsystem::HandleObjectiveNPCReadinessMoveCompleted));
+        }
+    }
+}
+
+void UVHVQuestSubsystem::HandleObjectiveNPCReadinessMoveCompleted(
+    UVHVNPCQuestCommandComponent* CommandComponent,
+    const EVHVNPCQuestCommandType Command,
+    const bool bSuccess)
+{
+    if (!CommandComponent
+        || Command != EVHVNPCQuestCommandType::MoveToTarget
+        || !bCurrentObjectiveWaitingOnNPCReadiness
+        || bCurrentObjectiveActivated)
+    {
+        return;
+    }
+
+    if (!bSuccess)
+    {
+        UE_LOG(LogVHV, Warning,
+            TEXT("[VHVQuest] NPC pre-stage move failed for '%s'; the gated objective remains unavailable."),
+            *GetNameSafe(CommandComponent->GetOwner()));
+    }
+
+    const uint32 ExpectedActivationSerial = ObjectiveActivationSerial;
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(
+            this,
+            [this, ExpectedActivationSerial]()
+            {
+                if (ObjectiveActivationSerial == ExpectedActivationSerial
+                    && bCurrentObjectiveWaitingOnNPCReadiness
+                    && !bCurrentObjectiveActivated)
+                {
+                    TryActivateCurrentObjective();
+                }
+            }));
+    }
+    else
+    {
+        TryActivateCurrentObjective();
+    }
+}
+
+void UVHVQuestSubsystem::ClearActiveObjectiveNPCReadinessTracking()
+{
+    for (const TPair<TWeakObjectPtr<UVHVNPCQuestCommandComponent>, FDelegateHandle>& Pair
+        : ActiveObjectiveNPCReadinessBindings)
+    {
+        if (UVHVNPCQuestCommandComponent* CommandComponent = Pair.Key.Get())
+        {
+            CommandComponent->OnQuestCommandCompletedNative.Remove(Pair.Value);
+        }
+    }
+    ActiveObjectiveNPCReadinessBindings.Reset();
+    bCurrentObjectiveWaitingOnNPCReadiness = false;
 }
 
 bool UVHVQuestSubsystem::TryCompleteCurrentObjectiveFromStoryState()
@@ -1443,6 +1750,273 @@ void UVHVQuestSubsystem::EnsureStoryStateDelegateBindings()
 
     StoryStateSubsystem->OnStoryFlagChanged.AddUniqueDynamic(this, &UVHVQuestSubsystem::HandleStoryFlagChanged);
     StoryStateSubsystem->OnStoryCounterChanged.AddUniqueDynamic(this, &UVHVQuestSubsystem::HandleStoryCounterChanged);
+}
+
+void UVHVQuestSubsystem::StartActiveObjectiveNPCMoveSequence()
+{
+    const FVHVQuestObjectiveDefinition* Objective = GetActiveObjective();
+    if (!Objective || Objective->NPCMoveStages.IsEmpty() || !bCurrentObjectiveActivated)
+    {
+        return;
+    }
+
+    ClearActiveObjectiveNPCMoveTracking(true);
+    ActiveObjectiveNPCMoveQuestID = RuntimeState.ActiveQuestID;
+    ActiveObjectiveNPCMoveObjectiveID = Objective->ObjectiveID;
+    ActiveObjectiveNPCMoveStageIndex = 0;
+    ActiveObjectiveNPCMoveActivationSerial = ObjectiveActivationSerial;
+    bCurrentObjectiveWaitingOnNPCMoves = true;
+    StartActiveObjectiveNPCMoveStage();
+}
+
+void UVHVQuestSubsystem::StartActiveObjectiveNPCMoveStage()
+{
+    const FVHVQuestObjectiveDefinition* Objective = GetActiveObjective();
+    if (!Objective
+        || RuntimeState.ActiveQuestID != ActiveObjectiveNPCMoveQuestID
+        || Objective->ObjectiveID != ActiveObjectiveNPCMoveObjectiveID
+        || ObjectiveActivationSerial != ActiveObjectiveNPCMoveActivationSerial
+        || !Objective->NPCMoveStages.IsValidIndex(ActiveObjectiveNPCMoveStageIndex))
+    {
+        FailActiveObjectiveNPCMoveSequence(NAME_None, TEXT("the active quest objective changed"));
+        return;
+    }
+
+    const FVHVQuestNPCMoveStage& Stage = Objective->NPCMoveStages[ActiveObjectiveNPCMoveStageIndex];
+    ActiveObjectiveNPCMoveParticipants.Reset();
+    PendingObjectiveNPCMoveParticipants.Reset();
+    bObjectiveNPCMoveStageFailed = false;
+
+    for (const FVHVQuestNPCMoveRequest& Move : Stage.Moves)
+    {
+        const FName ParticipantID = Move.GetEffectiveParticipantID();
+        UVHVNPCQuestCommandComponent* CommandComponent = FindNPCCommandComponent(GetWorld(), ParticipantID);
+        if (!CommandComponent)
+        {
+            FailActiveObjectiveNPCMoveSequence(ParticipantID, TEXT("the participant command component was not found"));
+            return;
+        }
+
+        const TWeakObjectPtr<UVHVNPCQuestCommandComponent> WeakCommand(CommandComponent);
+        if (PendingObjectiveNPCMoveParticipants.Contains(ParticipantID)
+            || ActiveObjectiveNPCMoveParticipants.Contains(WeakCommand))
+        {
+            FailActiveObjectiveNPCMoveSequence(ParticipantID, TEXT("the stage contains a duplicate participant"));
+            return;
+        }
+        ActiveObjectiveNPCMoveParticipants.Add(WeakCommand, ParticipantID);
+        PendingObjectiveNPCMoveParticipants.Add(ParticipantID);
+    }
+
+    // Replace any previous fire-and-forget route before binding this stage so the
+    // cancellation cannot be mistaken for a failure of the newly authored move.
+    for (const TPair<TWeakObjectPtr<UVHVNPCQuestCommandComponent>, FName>& Pair : ActiveObjectiveNPCMoveParticipants)
+    {
+        if (UVHVNPCQuestCommandComponent* CommandComponent = Pair.Key.Get())
+        {
+            CommandComponent->CancelQuestCommand();
+            CommandComponent->OnQuestCommandCompletedNative.AddUObject(
+                this, &UVHVQuestSubsystem::HandleObjectiveNPCMoveCompleted);
+        }
+    }
+
+    UE_LOG(LogVHV, Log, TEXT("[VHVQuest] Quest '%s' objective '%s' starting NPC move stage %d with %d participant(s)."),
+        *ActiveObjectiveNPCMoveQuestID.ToString(), *ActiveObjectiveNPCMoveObjectiveID.ToString(),
+        ActiveObjectiveNPCMoveStageIndex, Stage.Moves.Num());
+
+    bDispatchingObjectiveNPCMoveStage = true;
+    for (const FVHVQuestNPCMoveRequest& Move : Stage.Moves)
+    {
+        const FName ParticipantID = Move.GetEffectiveParticipantID();
+        if (!RequestNPCMove(
+            ParticipantID,
+            Move.GetEffectiveDestinationID(),
+            Move.bFaceDestinationRotation,
+            Move.MoveSpeedOverride))
+        {
+            // Synchronous command failures broadcast through the native delegate.
+            // Cover registry/request failures that could not broadcast here.
+            if (PendingObjectiveNPCMoveParticipants.Contains(ParticipantID))
+            {
+                bObjectiveNPCMoveStageFailed = true;
+                PendingObjectiveNPCMoveParticipants.Remove(ParticipantID);
+            }
+        }
+    }
+    bDispatchingObjectiveNPCMoveStage = false;
+
+    if (bObjectiveNPCMoveStageFailed)
+    {
+        FailActiveObjectiveNPCMoveSequence(NAME_None, TEXT("one or more movement requests failed to start"));
+    }
+    else
+    {
+        StartActiveObjectiveStageAmbientConversation(Stage);
+        if (PendingObjectiveNPCMoveParticipants.IsEmpty())
+        {
+            FinishActiveObjectiveNPCMoveStage();
+        }
+    }
+}
+
+void UVHVQuestSubsystem::StartActiveObjectiveStageAmbientConversation(
+    const FVHVQuestNPCMoveStage& Stage)
+{
+    if (!Stage.AmbientConversationReceiverTag.IsValid() || !GetWorld())
+    {
+        return;
+    }
+
+    const FName ReceiverID = VHVAuthoringReferences::ResolveID(
+        Stage.AmbientConversationReceiverTag, NAME_None, TEXT("VHV.WorldReceiver"));
+    const FName ExpectedQuestID = ActiveObjectiveNPCMoveQuestID;
+    const FName ExpectedObjectiveID = ActiveObjectiveNPCMoveObjectiveID;
+    const int32 ExpectedStageIndex = ActiveObjectiveNPCMoveStageIndex;
+    const uint32 ExpectedActivationSerial = ActiveObjectiveNPCMoveActivationSerial;
+    GetWorld()->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(
+        this,
+        [this, ReceiverID, ExpectedQuestID, ExpectedObjectiveID, ExpectedStageIndex, ExpectedActivationSerial]()
+        {
+            if (ReceiverID.IsNone()
+                || RuntimeState.ActiveQuestID != ExpectedQuestID
+                || ActiveObjectiveNPCMoveObjectiveID != ExpectedObjectiveID
+                || ActiveObjectiveNPCMoveStageIndex != ExpectedStageIndex
+                || ActiveObjectiveNPCMoveActivationSerial != ExpectedActivationSerial
+                || !bCurrentObjectiveWaitingOnNPCMoves
+                || !GetWorld())
+            {
+                return;
+            }
+
+            UVHVWorldActionSubsystem* WorldActions = GetWorld()->GetSubsystem<UVHVWorldActionSubsystem>();
+            FGuid RequestID;
+            if (!WorldActions
+                || WorldActions->RequestWorldAction(
+                    ReceiverID, FName(TEXT("StartConversation")), RequestID)
+                    == EVHVWorldActionExecutionResult::Rejected)
+            {
+                UE_LOG(LogVHV, Warning,
+                    TEXT("[VHVQuest] Quest '%s' objective '%s' NPC move stage %d could not start optional ambient conversation receiver '%s'; NPC travel continues."),
+                    *ExpectedQuestID.ToString(), *ExpectedObjectiveID.ToString(),
+                    ExpectedStageIndex, *ReceiverID.ToString());
+            }
+        }));
+}
+
+void UVHVQuestSubsystem::HandleObjectiveNPCMoveCompleted(
+    UVHVNPCQuestCommandComponent* CommandComponent,
+    const EVHVNPCQuestCommandType Command,
+    const bool bSuccess)
+{
+    if (!CommandComponent || Command != EVHVNPCQuestCommandType::MoveToTarget)
+    {
+        return;
+    }
+
+    const TWeakObjectPtr<UVHVNPCQuestCommandComponent> WeakCommand(CommandComponent);
+    const FName* ParticipantID = ActiveObjectiveNPCMoveParticipants.Find(WeakCommand);
+    if (!ParticipantID || !PendingObjectiveNPCMoveParticipants.Contains(*ParticipantID))
+    {
+        return;
+    }
+
+    PendingObjectiveNPCMoveParticipants.Remove(*ParticipantID);
+    if (!bSuccess)
+    {
+        bObjectiveNPCMoveStageFailed = true;
+        UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Quest '%s' objective '%s' NPC move stage %d failed for participant '%s'; objective remains active."),
+            *ActiveObjectiveNPCMoveQuestID.ToString(), *ActiveObjectiveNPCMoveObjectiveID.ToString(),
+            ActiveObjectiveNPCMoveStageIndex, *ParticipantID->ToString());
+    }
+
+    if (bDispatchingObjectiveNPCMoveStage)
+    {
+        return;
+    }
+    if (bObjectiveNPCMoveStageFailed)
+    {
+        FailActiveObjectiveNPCMoveSequence(*ParticipantID, TEXT("path following did not reach the authored destination"));
+    }
+    else if (PendingObjectiveNPCMoveParticipants.IsEmpty())
+    {
+        FinishActiveObjectiveNPCMoveStage();
+    }
+}
+
+void UVHVQuestSubsystem::FinishActiveObjectiveNPCMoveStage()
+{
+    for (const TPair<TWeakObjectPtr<UVHVNPCQuestCommandComponent>, FName>& Pair : ActiveObjectiveNPCMoveParticipants)
+    {
+        if (UVHVNPCQuestCommandComponent* CommandComponent = Pair.Key.Get())
+        {
+            CommandComponent->OnQuestCommandCompletedNative.RemoveAll(this);
+        }
+    }
+    ActiveObjectiveNPCMoveParticipants.Reset();
+    PendingObjectiveNPCMoveParticipants.Reset();
+    bObjectiveNPCMoveStageFailed = false;
+
+    const FVHVQuestObjectiveDefinition* Objective = GetActiveObjective();
+    ++ActiveObjectiveNPCMoveStageIndex;
+    if (Objective && Objective->NPCMoveStages.IsValidIndex(ActiveObjectiveNPCMoveStageIndex))
+    {
+        StartActiveObjectiveNPCMoveStage();
+        return;
+    }
+
+    UE_LOG(LogVHV, Log, TEXT("[VHVQuest] Quest '%s' objective '%s' completed all NPC movement stages."),
+        *ActiveObjectiveNPCMoveQuestID.ToString(), *ActiveObjectiveNPCMoveObjectiveID.ToString());
+    ClearActiveObjectiveNPCMoveTracking(false);
+    ContinueActiveObjectiveAfterNPCMoves();
+}
+
+void UVHVQuestSubsystem::FailActiveObjectiveNPCMoveSequence(
+    const FName ParticipantID,
+    const TCHAR* Reason)
+{
+    if (ParticipantID.IsNone())
+    {
+        UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Quest '%s' objective '%s' NPC move stage %d failed: %s; objective remains active."),
+            *ActiveObjectiveNPCMoveQuestID.ToString(), *ActiveObjectiveNPCMoveObjectiveID.ToString(),
+            ActiveObjectiveNPCMoveStageIndex, Reason);
+    }
+    else
+    {
+        UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Quest '%s' objective '%s' NPC move stage %d failed for participant '%s': %s; objective remains active."),
+            *ActiveObjectiveNPCMoveQuestID.ToString(), *ActiveObjectiveNPCMoveObjectiveID.ToString(),
+            ActiveObjectiveNPCMoveStageIndex, *ParticipantID.ToString(), Reason);
+    }
+
+    ClearActiveObjectiveNPCMoveTracking(true);
+    bCurrentObjectiveWaitingOnNPCMoves = true;
+    bObjectiveNPCMoveStageFailed = true;
+}
+
+void UVHVQuestSubsystem::ClearActiveObjectiveNPCMoveTracking(const bool bCancelCommands)
+{
+    TArray<TWeakObjectPtr<UVHVNPCQuestCommandComponent>> Commands;
+    ActiveObjectiveNPCMoveParticipants.GenerateKeyArray(Commands);
+    for (const TWeakObjectPtr<UVHVNPCQuestCommandComponent>& WeakCommand : Commands)
+    {
+        if (UVHVNPCQuestCommandComponent* CommandComponent = WeakCommand.Get())
+        {
+            CommandComponent->OnQuestCommandCompletedNative.RemoveAll(this);
+            if (bCancelCommands)
+            {
+                CommandComponent->CancelQuestCommand();
+            }
+        }
+    }
+
+    ActiveObjectiveNPCMoveParticipants.Reset();
+    PendingObjectiveNPCMoveParticipants.Reset();
+    ActiveObjectiveNPCMoveQuestID = NAME_None;
+    ActiveObjectiveNPCMoveObjectiveID = NAME_None;
+    ActiveObjectiveNPCMoveStageIndex = INDEX_NONE;
+    ActiveObjectiveNPCMoveActivationSerial = 0;
+    bCurrentObjectiveWaitingOnNPCMoves = false;
+    bDispatchingObjectiveNPCMoveStage = false;
+    bObjectiveNPCMoveStageFailed = false;
 }
 
 void UVHVQuestSubsystem::ExecuteActiveNPCAction()

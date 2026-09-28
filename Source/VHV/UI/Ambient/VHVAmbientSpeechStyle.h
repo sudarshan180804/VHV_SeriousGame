@@ -17,7 +17,7 @@ namespace VHVAmbientSpeechStyle
     inline constexpr float EntranceOffset = 8.0f;
     inline constexpr float EntranceScale = 0.97f;
     inline constexpr float DefaultFallbackAnchorHeight = 135.0f;
-    inline constexpr float DefaultHeadSocketLift = 18.0f;
+    inline constexpr float DefaultHeadSocketLift = 42.0f;
     inline constexpr float FadeStartDistance = 1400.0f;
     inline constexpr float MaxVisibleDistance = 2300.0f;
     inline constexpr float AutoDurationPerCharacter = 0.052f;

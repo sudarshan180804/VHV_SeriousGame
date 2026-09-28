@@ -156,6 +156,10 @@ public:
     UFUNCTION(BlueprintCallable, Category = "VHV|UI", meta = (DisplayName = "Start Conversation From Asset"))
     bool StartConversationFromAsset(UVHVConversationDataAsset* ConversationAsset);
 
+    /** Read-only check used by world interaction prompts before offering a conversation. */
+    UFUNCTION(BlueprintPure, Category = "VHV|UI")
+    bool CanStartConversationFromAsset(const UVHVConversationDataAsset* ConversationAsset) const;
+
     UFUNCTION(BlueprintCallable, Category = "VHV|UI")
     void AdvanceConversation();
 
@@ -324,6 +328,10 @@ protected:
     const FDialogueNode* FindNodeByID(const FString& ConversationID, const FString& NodeID) const;
     FDialogueNode* FindNodeByIDMutable(const FString& ConversationID, const FString& NodeID);
     bool StartConversationInternal(const FDialogueConversation& InConversation, const FString& ExplicitStartNodeID);
+    bool ResolveAvailableConversationStartNode(
+        const FDialogueConversation& InConversation,
+        const FString& ExplicitStartNodeID,
+        FString& OutStartingNodeID) const;
     bool StartDialogueChoiceActivity(const FDialogueChoiceActivityReference& Reference);
     bool TraverseToNode(const FString& NodeID, bool bLogBranchEntry = false);
     void ApplyCurrentDialogueNodeCompletionEffects(const TArray<FVHVStoryEffect>* SelectionEffects = nullptr);

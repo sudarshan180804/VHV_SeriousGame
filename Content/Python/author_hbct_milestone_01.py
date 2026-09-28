@@ -1625,6 +1625,18 @@ def create_ambient_assets():
             "show_names": True,
             "effects": [counter_effect("VHV.Story.Counter.HBCT.RoleModel.TimelineStationsObserved")],
         },
+        "DA_Ambient_HBCT_RoleModel_WalkAlong": {
+            "id": "HBCT_RoleModel_WalkAlong",
+            "participants": [ambient_participant("Saeng", "AUNT SAENG"),
+                             ambient_participant("Somchai", "UNCLE SOMCHAI")],
+            "lines": [
+                ambient_line("Saeng", "Starting slowly made it easier for me to keep going.", 2.6),
+                ambient_line("Somchai", "I thought I had to do a lot at once.", 2.5),
+                ambient_line("Saeng", "Even a short walk is a good place to begin.", 2.6),
+                ambient_line("Somchai", "That feels manageable.", 2.2),
+            ],
+            "show_names": True,
+        },
     }
     assets = {}
     for name, data in specs.items():
@@ -1651,11 +1663,23 @@ def objective(objective_id, text, objective_type, flag="", **properties):
     return struct(unreal.VHVQuestObjectiveDefinition, **values)
 
 
-def npc_move(participant_tag, destination_location_tag):
+def npc_move(participant_tag, destination_location_tag, face_destination_rotation=False,
+             move_speed_override=0.0):
     return struct(
         unreal.VHVQuestNPCMoveRequest,
         participant_tag=tag(participant_tag),
-        destination_location_tag=tag(destination_location_tag))
+        destination_location_tag=tag(destination_location_tag),
+        face_destination_rotation=face_destination_rotation,
+        move_speed_override=move_speed_override)
+
+
+def npc_move_stage(*moves, ambient_conversation_receiver=""):
+    return struct(
+        unreal.VHVQuestNPCMoveStage,
+        moves=list(moves),
+        ambient_conversation_receiver_tag=(
+            tag(ambient_conversation_receiver)
+            if ambient_conversation_receiver else unreal.GameplayTag()))
 
 
 def configure_arc(arc, level, conversations):
@@ -1805,7 +1829,7 @@ def configure_arc(arc, level, conversations):
                   entry_node_id="GSFinal_01", auto_start=False,
                   completion_npc_moves=[
                       npc_move("VHV.Participant.Instructor", "VHV.Location.HBCT.ExercisePark"),
-                      npc_move("VHV.Participant.AuntSaeng", "VHV.Location.HBCT.RoleModel.SaengCandidate"),
+                      npc_move("VHV.Participant.AuntSaeng", "VHV.Location.HBCT.RoleModel.SaengCandidate", True),
                   ]),
     ]
     role_model = [
@@ -1838,8 +1862,8 @@ def configure_arc(arc, level, conversations):
         objective("O08_ExplainModelFit", "Identify why the model is suitable", q.LEARNING_ACTIVITY,
                   activity_tag=tag("VHV.Activity.HBCT.RoleModel.ExplainModelFit"), auto_start=True,
                   completion_npc_moves=[
-                      npc_move("VHV.Participant.AuntSaeng", "VHV.Location.HBCT.RoleModel.Demo.Saeng"),
-                      npc_move("VHV.Participant.UncleSomchai", "VHV.Location.HBCT.RoleModel.Demo.Somchai"),
+                      npc_move("VHV.Participant.AuntSaeng", "VHV.Location.HBCT.RoleModel.SaengDemo", True),
+                      npc_move("VHV.Participant.UncleSomchai", "VHV.Location.HBCT.RoleModel.SomchaiDemo", True),
                   ]),
         objective("O09_SeeChangeOverTime", "Follow how role modeling can influence behavior over time", q.CUSTOM_EVENT,
                   custom_event_tag=tag("VHV.CustomEvent.HBCT.RoleModel.TimelineComplete"),
@@ -1855,24 +1879,28 @@ def configure_arc(arc, level, conversations):
                   "VHV.Story.Flag.HBCT.RoleModel.DemonstrationComplete",
                   participant_tag=tag("VHV.Participant.AuntSaeng"),
                   conversation=conversations["DA_Conversation_HBCT_RoleModel_SaengDemo"],
-                  entry_node_id="RMSaeng_01", auto_start=False,
-                  completion_npc_moves=[
-                      npc_move("VHV.Participant.AuntSaeng", "VHV.Location.HBCT.RoleModel.WalkMid.Saeng"),
-                      npc_move("VHV.Participant.UncleSomchai", "VHV.Location.HBCT.RoleModel.WalkMid.Somchai"),
-                  ]),
+                  entry_node_id="RMSaeng_01", auto_start=False),
         objective("O13_SupportImitation", "Help Somchai try the behavior", q.CONVERSATION,
                   participant_tag=tag("VHV.Participant.UncleSomchai"),
                   conversation=conversations["DA_Conversation_HBCT_RoleModel_MidWalk"],
-                  entry_node_id="RMMid_01", auto_start=False,
-                  completion_npc_moves=[
-                      npc_move("VHV.Participant.UncleSomchai", "VHV.Location.HBCT.RoleModel.WalkEnd.Somchai"),
-                      npc_move("VHV.Participant.AuntSaeng", "VHV.Location.HBCT.RoleModel.WalkEnd.Saeng"),
-                  ]),
+                  entry_node_id="RMMid_01", auto_start=False),
         objective("O14_PracticeTogether", "Walk with Aunt Saeng and Somchai", q.CONVERSATION,
                   "VHV.Story.Flag.HBCT.RoleModel.ImitationComplete",
                   participant_tag=tag("VHV.Participant.UncleSomchai"),
                   conversation=conversations["DA_Conversation_HBCT_RoleModel_WalkEnd"],
-                  entry_node_id="RMEnd_01", auto_start=False),
+                  entry_node_id="RMEnd_01", auto_start=True,
+                  npc_travel_mode=unreal.VHVQuestNPCTravelMode.FREE_ROAM,
+                  npc_move_stages=[
+                      npc_move_stage(
+                          npc_move("VHV.Participant.AuntSaeng", "VHV.Location.HBCT.RoleModel.SaengWalkMid", True, 180.0),
+                          npc_move("VHV.Participant.UncleSomchai", "VHV.Location.HBCT.RoleModel.SomchaiWalkMid", True, 180.0),
+                          ambient_conversation_receiver="VHV.WorldReceiver.HBCT.RoleModel.WalkAlong",
+                      ),
+                      npc_move_stage(
+                          npc_move("VHV.Participant.AuntSaeng", "VHV.Location.HBCT.RoleModel.SaengWalkEnd", True, 180.0),
+                          npc_move("VHV.Participant.UncleSomchai", "VHV.Location.HBCT.RoleModel.SomchaiWalkEnd", True, 180.0),
+                      ),
+                  ]),
         objective("O15_FinalApplication", "Help another villager choose a useful model", q.CONVERSATION,
                   participant_tag=tag("VHV.Participant.RoleModel.RoadVillager"),
                   conversation=conversations["DA_Conversation_HBCT_RoleModel_Roadside"],
@@ -1979,6 +2007,18 @@ def spawn_npc(npc_class, label, location, yaw, participant_tag="", preserve_exis
     component.modify()
     component.set_editor_property("quest_participation_enabled", bool(participant_tag))
     component.set_editor_property("participant_tag", tag(participant_tag) if participant_tag else unreal.GameplayTag())
+    return actor
+
+
+def configure_npc_nameplate(actor, display_name="", show_nameplate=True):
+    if not actor:
+        raise RuntimeError("Cannot configure a nameplate on a missing NPC")
+    component = actor.get_nameplate_component()
+    component.modify()
+    component.set_editor_properties({
+        "nameplate_display_name": display_name,
+        "show_nameplate": bool(show_nameplate and display_name),
+    })
     return actor
 
 
@@ -2153,7 +2193,29 @@ def remove_development_ambient_actor():
 def configure_map(ambient_assets, conversations):
     if not unreal.EditorLoadingAndSavingUtils.load_map(MAP_PATH):
         raise RuntimeError("Could not load {}".format(MAP_PATH))
+    role_model_prefixes = (
+        "HBCT_RoleModel_",
+        "HBCT_Trigger_RoleModel_",
+        "HBCT_Location_RoleModel_",
+        "HBCT_NavLink_",
+    )
+    protected_transforms = {}
+    for actor in editor_actors().get_all_level_actors():
+        label = actor.get_actor_label()
+        if label == "HBCT_Location_ExercisePark" or label.startswith(role_model_prefixes):
+            continue
+        location = actor.get_actor_location()
+        rotation = actor.get_actor_rotation()
+        scale = actor.get_actor_scale3d()
+        protected_transforms[label] = (
+            location.x, location.y, location.z,
+            rotation.pitch, rotation.yaw, rotation.roll,
+            scale.x, scale.y, scale.z)
     remove_development_ambient_actor()
+    obsolete_saeng_approach = find_actor("HBCT_Location_RoleModel_SaengCandidateApproach")
+    if obsolete_saeng_approach:
+        unreal.log("{} Removing obsolete Aunt Saeng candidate approach waypoint".format(LOG))
+        editor_actors().destroy_actor(obsolete_saeng_approach)
 
     npc_bp = unreal.EditorAssetLibrary.load_asset(NPC_BP_PATH)
     if not npc_bp:
@@ -2432,8 +2494,8 @@ def configure_map(ambient_assets, conversations):
             unreal.log("{} Removing obsolete Quest 2 trigger {}".format(LOG, label))
             editor_actors().destroy_actor(actor)
 
-    # Technique 3 is staged in a compact strip immediately beyond the Quest 2
-    # greybox. New NPC capsule centers use the established floor height (Z=100).
+    # Technique 3 is staged as a spaced, readable sequence beginning immediately
+    # beyond the Quest 2 greybox. NPC capsule centers remain at floor Z=100.
     role_root = "04_RoleModel"
     configure_semantic_npc_location(
         "HBCT_Location_ExercisePark", (7350.0, -1500.0, 100.0),
@@ -2597,27 +2659,40 @@ def configure_map(ambient_assets, conversations):
 
     configure_semantic_npc_location(
         "HBCT_Location_RoleModel_Demo_Saeng", (11100.0, -1400.0, 100.0),
-        "VHV.Location.HBCT.RoleModel.Demo.Saeng")
+        "VHV.Location.HBCT.RoleModel.SaengDemo")
     configure_semantic_npc_location(
         "HBCT_Location_RoleModel_Demo_Somchai", (11300.0, -1400.0, 100.0),
-        "VHV.Location.HBCT.RoleModel.Demo.Somchai")
+        "VHV.Location.HBCT.RoleModel.SomchaiDemo")
     for label in ("HBCT_Location_RoleModel_Demo_Saeng", "HBCT_Location_RoleModel_Demo_Somchai"):
         set_actor_folder(find_actor(label), role_root + "/SaengDemo")
     demo_trigger = configure_objective_trigger(
         "HBCT_Trigger_RoleModel_SaengDemo", (11200.0, -1680.0, 100.0),
-        (300.0, 240.0, 220.0), "VHV.Location.HBCT.RoleModel.Demo.Saeng",
+        (300.0, 240.0, 220.0), "VHV.Location.HBCT.RoleModel.DemonstrationArea",
         "Q_HBCT_03_ROLE_MODEL", "O12_ObserveSaeng")
     set_actor_folder(demo_trigger, role_root + "/SaengDemo")
 
     walk_locations = [
-        ("HBCT_Location_RoleModel_WalkMid_Saeng", (11600.0, -1400.0, 100.0), "VHV.Location.HBCT.RoleModel.WalkMid.Saeng"),
-        ("HBCT_Location_RoleModel_WalkMid_Somchai", (11750.0, -1400.0, 100.0), "VHV.Location.HBCT.RoleModel.WalkMid.Somchai"),
-        ("HBCT_Location_RoleModel_WalkEnd_Saeng", (12150.0, -1400.0, 100.0), "VHV.Location.HBCT.RoleModel.WalkEnd.Saeng"),
-        ("HBCT_Location_RoleModel_WalkEnd_Somchai", (12350.0, -1400.0, 100.0), "VHV.Location.HBCT.RoleModel.WalkEnd.Somchai"),
+        ("HBCT_Location_RoleModel_WalkMid_Saeng", (11600.0, -1400.0, 100.0), "VHV.Location.HBCT.RoleModel.SaengWalkMid"),
+        ("HBCT_Location_RoleModel_WalkMid_Somchai", (11750.0, -1400.0, 100.0), "VHV.Location.HBCT.RoleModel.SomchaiWalkMid"),
+        ("HBCT_Location_RoleModel_WalkEnd_Saeng", (12150.0, -1400.0, 100.0), "VHV.Location.HBCT.RoleModel.SaengWalkEnd"),
+        ("HBCT_Location_RoleModel_WalkEnd_Somchai", (12350.0, -1400.0, 100.0), "VHV.Location.HBCT.RoleModel.SomchaiWalkEnd"),
     ]
     for label, location, location_tag in walk_locations:
         configure_semantic_npc_location(label, location, location_tag)
         set_actor_folder(find_actor(label), role_root + "/PracticeWalk")
+
+    walk_along_scene = configure_ambient_actor(
+        "HBCT_RoleModel_WalkAlongScene", (4500.0, 4400.0, 100.0),
+        ambient_assets["DA_Ambient_HBCT_RoleModel_WalkAlong"],
+        "VHV.WorldReceiver.HBCT.RoleModel.WalkAlong",
+        [bind("Saeng", saeng), bind("Somchai", somchai)],
+        explicit_trigger=False, preserve_existing_transform=True)
+    walk_along_scene.set_editor_properties({
+        "preserve_participant_behavior": True,
+        "player_leave_policy": unreal.VHVAmbientConversationLeavePolicy.CONTINUE,
+        "observation_radius": 0.0,
+    })
+    set_actor_folder(walk_along_scene, role_root + "/PracticeWalk")
 
     road_villager_role = set_actor_folder(spawn_npc(
         npc_class, "HBCT_RoleModel_RoadVillager", (12700.0, -1400.0, 100.0), 180.0,
@@ -2632,67 +2707,66 @@ def configure_map(ambient_assets, conversations):
     })
     road_villager_role.get_dialogue_component().set_editor_property("default_conversation", None)
 
-    # Authoritative compact Quest 3 staging layout. Keep this as a final,
-    # Quest-3-only placement pass so regeneration never changes Quest 0-2
-    # transforms while consistently preserving the requested staging anchor.
+    # Authoritative, spaced Quest 3 staging layout. This final pass intentionally
+    # updates Quest 3 actors on every run, but never changes Quest 0-2 transforms.
     role_positions = {
         # Exercise Park entry and four observation scenes.
         "HBCT_RoleModel_ExerciseParkEntry": (-900.0, 3000.0, 100.0),
-        "HBCT_RoleModel_FitVillager": (-650.0, 2800.0, 100.0),
-        "HBCT_RoleModel_YoungObserver": (-450.0, 2800.0, 100.0),
-        "HBCT_RoleModel_ExerciseScene": (-550.0, 2800.0, 100.0),
-        "HBCT_Trigger_RoleModel_ExerciseObservation": (-550.0, 2560.0, 100.0),
-        "HBCT_RoleModel_ExperienceWoman": (-150.0, 2800.0, 100.0),
-        "HBCT_RoleModel_ListeningWoman": (50.0, 2800.0, 100.0),
-        "HBCT_RoleModel_SimilarExperienceScene": (-50.0, 2800.0, 100.0),
-        "HBCT_Trigger_RoleModel_SimilarExperience": (-50.0, 2560.0, 100.0),
-        "HBCT_RoleModel_Parent": (-650.0, 3300.0, 100.0),
-        "HBCT_RoleModel_YoungerFamilyMember": (-450.0, 3300.0, 100.0),
-        "HBCT_RoleModel_FamilyScene": (-550.0, 3300.0, 100.0),
-        "HBCT_Trigger_RoleModel_Family": (-550.0, 3540.0, 100.0),
-        "HBCT_RoleModel_SymbolicObserver": (50.0, 3300.0, 100.0),
-        "HBCT_RoleModel_SymbolicPoster": (-150.0, 3300.0, 110.0),
-        "HBCT_RoleModel_SymbolicScene": (-50.0, 3300.0, 100.0),
-        "HBCT_Trigger_RoleModel_Symbolic": (-50.0, 3540.0, 100.0),
+        "HBCT_RoleModel_FitVillager": (100.0, 3000.0, 100.0),
+        "HBCT_RoleModel_YoungObserver": (300.0, 3000.0, 100.0),
+        "HBCT_RoleModel_ExerciseScene": (200.0, 3000.0, 100.0),
+        "HBCT_Trigger_RoleModel_ExerciseObservation": (200.0, 3000.0, 100.0),
+        "HBCT_RoleModel_ExperienceWoman": (1200.0, 3000.0, 100.0),
+        "HBCT_RoleModel_ListeningWoman": (1400.0, 3000.0, 100.0),
+        "HBCT_RoleModel_SimilarExperienceScene": (1300.0, 3000.0, 100.0),
+        "HBCT_Trigger_RoleModel_SimilarExperience": (1300.0, 3000.0, 100.0),
+        "HBCT_RoleModel_Parent": (2300.0, 3000.0, 100.0),
+        "HBCT_RoleModel_YoungerFamilyMember": (2500.0, 3000.0, 100.0),
+        "HBCT_RoleModel_FamilyScene": (2400.0, 3000.0, 100.0),
+        "HBCT_Trigger_RoleModel_Family": (2400.0, 3000.0, 100.0),
+        "HBCT_RoleModel_SymbolicObserver": (2500.0, 4100.0, 100.0),
+        "HBCT_RoleModel_SymbolicPoster": (2300.0, 4100.0, 110.0),
+        "HBCT_RoleModel_SymbolicScene": (2400.0, 4100.0, 100.0),
+        "HBCT_Trigger_RoleModel_Symbolic": (2400.0, 4100.0, 100.0),
 
         # Persistent Instructor destination, Somchai, and candidates.
-        "HBCT_Location_ExercisePark": (200.0, 3000.0, 100.0),
-        "HBCT_RoleModel_UncleSomchai": (500.0, 3000.0, 100.0),
-        "HBCT_RoleModel_YoungAthlete": (750.0, 2800.0, 100.0),
-        "HBCT_Location_RoleModel_SaengCandidate": (1000.0, 2800.0, 100.0),
-        "HBCT_RoleModel_SymbolicCandidateDisplay": (850.0, 3300.0, 110.0),
-        "HBCT_RoleModel_SymbolicCandidateObserver": (1050.0, 3300.0, 100.0),
-        "HBCT_RoleModel_SymbolicCandidateScene": (950.0, 3300.0, 100.0),
-        "HBCT_Trigger_RoleModel_SymbolicCandidate": (850.0, 3540.0, 100.0),
+        "HBCT_Location_ExercisePark": (-700.0, 4100.0, 100.0),
+        "HBCT_RoleModel_UncleSomchai": (0.0, 4100.0, 100.0),
+        "HBCT_RoleModel_YoungAthlete": (700.0, 3900.0, 100.0),
+        "HBCT_Location_RoleModel_SaengCandidate": (900.0, 4300.0, 100.0),
+        "HBCT_RoleModel_SymbolicCandidateDisplay": (1300.0, 4100.0, 110.0),
+        "HBCT_RoleModel_SymbolicCandidateObserver": (1500.0, 4100.0, 100.0),
+        "HBCT_RoleModel_SymbolicCandidateScene": (1400.0, 4100.0, 100.0),
+        "HBCT_Trigger_RoleModel_SymbolicCandidate": (1400.0, 4100.0, 100.0),
 
         # Five sequential timeline stations.
-        "HBCT_RoleModel_TimelineBefore_Target": (1300.0, 3000.0, 100.0),
-        "HBCT_RoleModel_TimelineBeforeScene": (1300.0, 3000.0, 100.0),
-        "HBCT_Trigger_RoleModel_TimelineBefore": (1300.0, 2760.0, 100.0),
-        "HBCT_RoleModel_TimelineFindsModel_Target": (1550.0, 3000.0, 100.0),
-        "HBCT_RoleModel_TimelineFindsModel_Model": (1550.0, 3200.0, 100.0),
-        "HBCT_RoleModel_TimelineFindsModelScene": (1550.0, 3000.0, 100.0),
-        "HBCT_Trigger_RoleModel_TimelineFindsModel": (1550.0, 2760.0, 100.0),
-        "HBCT_RoleModel_TimelineFirstAttempt_Target": (1800.0, 3000.0, 100.0),
-        "HBCT_RoleModel_TimelineFirstAttemptScene": (1800.0, 3000.0, 100.0),
-        "HBCT_Trigger_RoleModel_TimelineFirstAttempt": (1800.0, 2760.0, 100.0),
-        "HBCT_RoleModel_TimelineRepetition_Target": (2050.0, 3000.0, 100.0),
-        "HBCT_RoleModel_TimelineRepetition_Model": (2050.0, 3200.0, 100.0),
-        "HBCT_RoleModel_TimelineRepetitionScene": (2050.0, 3000.0, 100.0),
-        "HBCT_Trigger_RoleModel_TimelineRepetition": (2050.0, 2760.0, 100.0),
-        "HBCT_RoleModel_TimelineNewRoutine_Target": (2300.0, 3000.0, 100.0),
-        "HBCT_RoleModel_TimelineNewRoutineScene": (2300.0, 3000.0, 100.0),
-        "HBCT_Trigger_RoleModel_TimelineNewRoutine": (2300.0, 2760.0, 100.0),
+        "HBCT_RoleModel_TimelineBefore_Target": (-900.0, 5200.0, 100.0),
+        "HBCT_RoleModel_TimelineBeforeScene": (-900.0, 5200.0, 100.0),
+        "HBCT_Trigger_RoleModel_TimelineBefore": (-900.0, 5200.0, 100.0),
+        "HBCT_RoleModel_TimelineFindsModel_Target": (0.0, 5100.0, 100.0),
+        "HBCT_RoleModel_TimelineFindsModel_Model": (0.0, 5300.0, 100.0),
+        "HBCT_RoleModel_TimelineFindsModelScene": (0.0, 5200.0, 100.0),
+        "HBCT_Trigger_RoleModel_TimelineFindsModel": (0.0, 5200.0, 100.0),
+        "HBCT_RoleModel_TimelineFirstAttempt_Target": (900.0, 5200.0, 100.0),
+        "HBCT_RoleModel_TimelineFirstAttemptScene": (900.0, 5200.0, 100.0),
+        "HBCT_Trigger_RoleModel_TimelineFirstAttempt": (900.0, 5200.0, 100.0),
+        "HBCT_RoleModel_TimelineRepetition_Target": (1800.0, 5100.0, 100.0),
+        "HBCT_RoleModel_TimelineRepetition_Model": (1800.0, 5300.0, 100.0),
+        "HBCT_RoleModel_TimelineRepetitionScene": (1800.0, 5200.0, 100.0),
+        "HBCT_Trigger_RoleModel_TimelineRepetition": (1800.0, 5200.0, 100.0),
+        "HBCT_RoleModel_TimelineNewRoutine_Target": (2700.0, 5200.0, 100.0),
+        "HBCT_RoleModel_TimelineNewRoutineScene": (2700.0, 5200.0, 100.0),
+        "HBCT_Trigger_RoleModel_TimelineNewRoutine": (2700.0, 5200.0, 100.0),
 
         # Demonstration, short walking path, and roadside application.
-        "HBCT_Location_RoleModel_Demo_Saeng": (2600.0, 2900.0, 100.0),
-        "HBCT_Location_RoleModel_Demo_Somchai": (2800.0, 2900.0, 100.0),
-        "HBCT_Trigger_RoleModel_SaengDemo": (2700.0, 2660.0, 100.0),
-        "HBCT_Location_RoleModel_WalkMid_Saeng": (3000.0, 3000.0, 100.0),
-        "HBCT_Location_RoleModel_WalkMid_Somchai": (3150.0, 3000.0, 100.0),
-        "HBCT_Location_RoleModel_WalkEnd_Saeng": (3450.0, 3000.0, 100.0),
-        "HBCT_Location_RoleModel_WalkEnd_Somchai": (3650.0, 3000.0, 100.0),
-        "HBCT_RoleModel_RoadVillager": (3900.0, 3000.0, 100.0),
+        "HBCT_Location_RoleModel_Demo_Saeng": (3600.0, 4500.0, 100.0),
+        "HBCT_Location_RoleModel_Demo_Somchai": (3600.0, 4300.0, 100.0),
+        "HBCT_Trigger_RoleModel_SaengDemo": (3600.0, 4400.0, 100.0),
+        "HBCT_Location_RoleModel_WalkMid_Saeng": (4200.0, 4500.0, 100.0),
+        "HBCT_Location_RoleModel_WalkMid_Somchai": (4200.0, 4300.0, 100.0),
+        "HBCT_Location_RoleModel_WalkEnd_Saeng": (4800.0, 4500.0, 100.0),
+        "HBCT_Location_RoleModel_WalkEnd_Somchai": (4800.0, 4300.0, 100.0),
+        "HBCT_RoleModel_RoadVillager": (5200.0, 5200.0, 100.0),
     }
     for role_label, role_location in role_positions.items():
         role_actor = find_actor(role_label)
@@ -2700,6 +2774,118 @@ def configure_map(ambient_assets, conversations):
             raise RuntimeError("Quest 3 staging actor is missing: {}".format(role_label))
         role_actor.modify()
         role_actor.set_actor_location(unreal.Vector(*role_location), False, True)
+
+    # Movement destinations carry the final authored facing used by requests that
+    # opt into destination orientation. The walking route faces east; Saeng faces
+    # back toward the candidate cluster after arriving from her house.
+    role_rotations = {
+        "HBCT_Location_RoleModel_SaengCandidate": -90.0,
+        "HBCT_Location_RoleModel_Demo_Saeng": 0.0,
+        "HBCT_Location_RoleModel_Demo_Somchai": 0.0,
+        "HBCT_Location_RoleModel_WalkMid_Saeng": 0.0,
+        "HBCT_Location_RoleModel_WalkMid_Somchai": 0.0,
+        "HBCT_Location_RoleModel_WalkEnd_Saeng": 0.0,
+        "HBCT_Location_RoleModel_WalkEnd_Somchai": 0.0,
+    }
+    for role_label, yaw in role_rotations.items():
+        find_actor(role_label).set_actor_rotation(unreal.Rotator(0.0, yaw, 0.0), False)
+
+    # These two authored walkers use a natural group-walking pace without changing
+    # ambient villagers or the shared NPC movement implementation.
+    for walker in (saeng, somchai):
+        movement = walker.get_editor_property("character_movement")
+        movement.modify()
+        movement.set_editor_property("max_walk_speed", 180.0)
+
+    # The blockout house interior and the village road are separate Recast
+    # polygons at the doorway. Bridge them with a normal navigation link so AI
+    # path following can route through the existing opening without teleporting
+    # or using a Saeng-specific movement implementation.
+    saeng_exit_nav_link = find_actor("HBCT_NavLink_SaengHouseExit")
+    if saeng_exit_nav_link:
+        editor_actors().destroy_actor(saeng_exit_nav_link)
+    saeng_exit_nav_link = editor_actors().spawn_actor_from_class(
+        unreal.NavLinkProxy, unreal.Vector(-3820.0, -1275.0, 0.0))
+    saeng_exit_nav_link.set_actor_label("HBCT_NavLink_SaengHouseExit")
+    saeng_exit_nav_link.modify()
+    saeng_exit_nav_link.set_actor_location(
+        unreal.Vector(-3820.0, -1275.0, 0.0), False, True)
+    doorway_link = unreal.NavigationLink()
+    doorway_link.set_editor_properties({
+        "left": unreal.Vector(-80.0, 0.0, 0.0),
+        "right": unreal.Vector(80.0, 0.0, 0.0),
+        "direction": unreal.NavLinkDirection.BOTH_WAYS,
+        "snap_radius": 90.0,
+        "snap_height": 140.0,
+    })
+    saeng_exit_nav_link.set_editor_property("point_links", [doorway_link])
+    set_actor_folder(saeng_exit_nav_link, role_root + "/Navigation")
+
+    role_trigger_extents = {
+        "HBCT_RoleModel_ExerciseParkEntry": (260.0, 220.0, 220.0),
+        "HBCT_Trigger_RoleModel_ExerciseObservation": (250.0, 200.0, 220.0),
+        "HBCT_Trigger_RoleModel_SimilarExperience": (250.0, 200.0, 220.0),
+        "HBCT_Trigger_RoleModel_Family": (250.0, 200.0, 220.0),
+        "HBCT_Trigger_RoleModel_Symbolic": (250.0, 200.0, 220.0),
+        "HBCT_Trigger_RoleModel_SymbolicCandidate": (250.0, 200.0, 220.0),
+        "HBCT_Trigger_RoleModel_TimelineBefore": (130.0, 180.0, 220.0),
+        "HBCT_Trigger_RoleModel_TimelineFindsModel": (130.0, 180.0, 220.0),
+        "HBCT_Trigger_RoleModel_TimelineFirstAttempt": (130.0, 180.0, 220.0),
+        "HBCT_Trigger_RoleModel_TimelineRepetition": (130.0, 180.0, 220.0),
+        "HBCT_Trigger_RoleModel_TimelineNewRoutine": (130.0, 180.0, 220.0),
+        "HBCT_Trigger_RoleModel_SaengDemo": (280.0, 220.0, 220.0),
+    }
+    for trigger_label, extent in role_trigger_extents.items():
+        trigger = find_actor(trigger_label)
+        trigger.get_editor_property("box_component").set_box_extent(
+            unreal.Vector(*extent), True)
+
+    # Semantic destinations are points for NPC movement, not player triggers.
+    # Small editor boxes keep the route readable without changing movement logic.
+    for location_label in (
+            "HBCT_Location_ExercisePark",
+            "HBCT_Location_RoleModel_SaengCandidate",
+            "HBCT_Location_RoleModel_Demo_Saeng",
+            "HBCT_Location_RoleModel_Demo_Somchai",
+            "HBCT_Location_RoleModel_WalkMid_Saeng",
+            "HBCT_Location_RoleModel_WalkMid_Somchai",
+            "HBCT_Location_RoleModel_WalkEnd_Saeng",
+            "HBCT_Location_RoleModel_WalkEnd_Somchai"):
+        find_actor(location_label).get_editor_property("box_component").set_box_extent(
+            unreal.Vector(70.0, 70.0, 120.0), True)
+
+    named_npcs = {
+        "HBCT_Intro_Instructor": "Instructor",
+        "HBCT_Motivation_Prasert": "Uncle Prasert",
+        "HBCT_Motivation_Saeng": "Aunt Saeng",
+        "HBCT_Motivation_Mali": "Aunt Mali",
+        "HBCT_GoalSetting_AuntieNuan": "Auntie Nuan",
+        "HBCT_GoalSetting_Nuan_ClearGoal": "Auntie Nuan",
+        "HBCT_GoalSetting_UncleChai": "Uncle Chai",
+        "HBCT_RoleModel_UncleSomchai": "Uncle Somchai",
+        "HBCT_RoleModel_YoungAthlete": "Young Athlete",
+    }
+    for npc_label, display_name in named_npcs.items():
+        configure_npc_nameplate(find_actor(npc_label), display_name)
+    for generic_label in (
+            "HBCT_GoalSetting_RoadVillager",
+            "HBCT_RoleModel_RoadVillager"):
+        configure_npc_nameplate(find_actor(generic_label), show_nameplate=False)
+
+    for actor in editor_actors().get_all_level_actors():
+        label = actor.get_actor_label()
+        expected = protected_transforms.get(label)
+        if expected is None:
+            continue
+        location = actor.get_actor_location()
+        rotation = actor.get_actor_rotation()
+        scale = actor.get_actor_scale3d()
+        actual = (
+            location.x, location.y, location.z,
+            rotation.pitch, rotation.yaw, rotation.roll,
+            scale.x, scale.y, scale.z)
+        if any(abs(before - after) > 0.01 for before, after in zip(expected, actual)):
+            raise RuntimeError("Quest 3 authoring changed protected actor transform: {}".format(label))
 
     if not unreal.EditorLevelLibrary.save_current_level():
         raise RuntimeError("Could not save {}".format(MAP_PATH))
@@ -2769,6 +2955,7 @@ def validate_map_and_defaults(level, arc):
         "HBCT_Location_RoleModel_WalkMid_Somchai",
         "HBCT_Location_RoleModel_WalkEnd_Saeng",
         "HBCT_Location_RoleModel_WalkEnd_Somchai",
+        "HBCT_RoleModel_WalkAlongScene",
         "HBCT_Trigger_RoleModel_ExerciseObservation",
         "HBCT_Trigger_RoleModel_SimilarExperience",
         "HBCT_Trigger_RoleModel_Family",
@@ -2780,6 +2967,7 @@ def validate_map_and_defaults(level, arc):
         "HBCT_Trigger_RoleModel_TimelineRepetition",
         "HBCT_Trigger_RoleModel_TimelineNewRoutine",
         "HBCT_Trigger_RoleModel_SaengDemo",
+        "HBCT_NavLink_SaengHouseExit",
     }
     actors = editor_actors().get_all_level_actors()
     labels = {actor.get_actor_label() for actor in actors}
@@ -2814,8 +3002,29 @@ def validate_map_and_defaults(level, arc):
     }
     if set(participant_tags) != expected_participants:
         raise RuntimeError("Unexpected production quest participant set: {}".format(participant_tags))
+    if participant_tags.get("VHV.Participant.AuntSaeng") != "HBCT_Motivation_Saeng":
+        raise RuntimeError("Quest 3 must reuse the single production Aunt Saeng actor")
 
     actors_by_label = {actor.get_actor_label(): actor for actor in actors}
+    expected_nameplates = {
+        "HBCT_Intro_Instructor": "Instructor",
+        "HBCT_Motivation_Prasert": "Uncle Prasert",
+        "HBCT_Motivation_Saeng": "Aunt Saeng",
+        "HBCT_Motivation_Mali": "Aunt Mali",
+        "HBCT_GoalSetting_AuntieNuan": "Auntie Nuan",
+        "HBCT_GoalSetting_Nuan_ClearGoal": "Auntie Nuan",
+        "HBCT_GoalSetting_UncleChai": "Uncle Chai",
+        "HBCT_RoleModel_UncleSomchai": "Uncle Somchai",
+        "HBCT_RoleModel_YoungAthlete": "Young Athlete",
+    }
+    for npc_label, display_name in expected_nameplates.items():
+        nameplate = actors_by_label[npc_label].get_nameplate_component()
+        if (not nameplate.get_editor_property("show_nameplate")
+                or str(nameplate.get_editor_property("nameplate_display_name")) != display_name):
+            raise RuntimeError("Unexpected NPC nameplate for {}".format(npc_label))
+    for generic_label in ("HBCT_GoalSetting_RoadVillager", "HBCT_RoleModel_RoadVillager"):
+        if actors_by_label[generic_label].get_nameplate_component().get_editor_property("show_nameplate"):
+            raise RuntimeError("Generic roadside NPC must not show a nameplate: {}".format(generic_label))
     instructor_actors = [actor for actor in actors
                          if isinstance(actor, unreal.VHVNPCCharacter)
                          and actor.get_actor_label() == "HBCT_Intro_Instructor"]
@@ -2846,6 +3055,55 @@ def validate_map_and_defaults(level, arc):
                 or location_actor.get_editor_property("trigger_world_action")
                 or location_actor.get_editor_property("activate_current_objective")):
             raise RuntimeError("Semantic Instructor destination {} must not react to player entry".format(label))
+    saeng_candidate_location = actors_by_label["HBCT_Location_RoleModel_SaengCandidate"]
+    if (str(unreal.GameplayTagLibrary.get_tag_name(
+            saeng_candidate_location.get_editor_property("location_tag")))
+            != "VHV.Location.HBCT.RoleModel.SaengCandidate"):
+        raise RuntimeError("Aunt Saeng candidate destination has the wrong semantic location tag")
+    if (saeng_candidate_location.get_editor_property("enabled")
+            or saeng_candidate_location.get_editor_property("trigger_world_action")
+            or saeng_candidate_location.get_editor_property("activate_current_objective")):
+        raise RuntimeError("Aunt Saeng candidate destination must remain an NPC-only movement point")
+    role_move_locations = {
+        "HBCT_Location_RoleModel_SaengCandidate": "VHV.Location.HBCT.RoleModel.SaengCandidate",
+        "HBCT_Location_RoleModel_Demo_Saeng": "VHV.Location.HBCT.RoleModel.SaengDemo",
+        "HBCT_Location_RoleModel_Demo_Somchai": "VHV.Location.HBCT.RoleModel.SomchaiDemo",
+        "HBCT_Location_RoleModel_WalkMid_Saeng": "VHV.Location.HBCT.RoleModel.SaengWalkMid",
+        "HBCT_Location_RoleModel_WalkMid_Somchai": "VHV.Location.HBCT.RoleModel.SomchaiWalkMid",
+        "HBCT_Location_RoleModel_WalkEnd_Saeng": "VHV.Location.HBCT.RoleModel.SaengWalkEnd",
+        "HBCT_Location_RoleModel_WalkEnd_Somchai": "VHV.Location.HBCT.RoleModel.SomchaiWalkEnd",
+    }
+    expected_move_leaves = {location_tag.rsplit(".", 1)[-1]
+                            for location_tag in role_move_locations.values()}
+    if len(expected_move_leaves) != len(role_move_locations):
+        raise RuntimeError("Quest 3 movement destinations must have unique semantic leaf IDs")
+    for label, expected_tag in role_move_locations.items():
+        label_matches = [actor for actor in actors if actor.get_actor_label() == label]
+        tag_matches = [actor for actor in actors
+                       if isinstance(actor, unreal.VHVQuestLocationVolume)
+                       and str(unreal.GameplayTagLibrary.get_tag_name(
+                           actor.get_editor_property("location_tag"))) == expected_tag]
+        if len(label_matches) != 1 or len(tag_matches) != 1 or tag_matches[0] != label_matches[0]:
+            raise RuntimeError(
+                "Quest 3 movement destination {} must resolve only to {}".format(expected_tag, label))
+    for actor in actors:
+        if not isinstance(actor, unreal.VHVQuestLocationVolume):
+            continue
+        authored_tag = str(unreal.GameplayTagLibrary.get_tag_name(
+            actor.get_editor_property("location_tag")))
+        authored_leaf = authored_tag.rsplit(".", 1)[-1]
+        if authored_leaf in ("Saeng", "Somchai"):
+            raise RuntimeError("Ambiguous Quest 3 movement destination leaf remains on {}: {}".format(
+                actor.get_actor_label(), authored_tag))
+    saeng_actor = actors_by_label["HBCT_Motivation_Saeng"]
+    saeng_interaction = saeng_actor.get_npc_interaction_component()
+    if (str(saeng_interaction.get_editor_property("default_interaction_prompt")) != "Talk"
+            or not saeng_interaction.get_editor_property("interaction_enabled")):
+        raise RuntimeError("Aunt Saeng candidate interaction must use normal Talk/E")
+    saeng_default_conversation = str(
+        saeng_actor.get_dialogue_component().get_editor_property("default_conversation"))
+    if "DA_Conversation_HBCT_RoleModel_SaengCandidate" not in saeng_default_conversation:
+        raise RuntimeError("Aunt Saeng is not routed to the Quest 3 candidate conversation")
     road_interaction = actors_by_label["HBCT_GoalSetting_RoadVillager"].get_npc_interaction_component()
     if (road_interaction.get_editor_property("use_quest_objective_text_as_prompt")
             or str(road_interaction.get_editor_property("default_interaction_prompt")) != "Talk"
@@ -2913,11 +3171,11 @@ def validate_map_and_defaults(level, arc):
         "HBCT_Trigger_RoleModel_SimilarExperience": ("O02_DiscoverRoleModels", False, "VHV.WorldReceiver.HBCT.RoleModel.SimilarExperience", ["HBCT_RoleModel_ExperienceWoman", "HBCT_RoleModel_ListeningWoman"]),
         "HBCT_Trigger_RoleModel_Family": ("O02_DiscoverRoleModels", False, "VHV.WorldReceiver.HBCT.RoleModel.Family", ["HBCT_RoleModel_Parent", "HBCT_RoleModel_YoungerFamilyMember"]),
         "HBCT_Trigger_RoleModel_Symbolic": ("O02_DiscoverRoleModels", False, "VHV.WorldReceiver.HBCT.RoleModel.Symbolic", ["HBCT_RoleModel_SymbolicObserver", "HBCT_RoleModel_SymbolicPoster"]),
-        "HBCT_Trigger_RoleModel_SymbolicCandidate": ("O06_InspectCandidates", False, "VHV.WorldReceiver.HBCT.RoleModel.SymbolicCandidate", ["HBCT_RoleModel_SymbolicCandidateDisplay"]),
+        "HBCT_Trigger_RoleModel_SymbolicCandidate": ("O06_InspectCandidates", False, "VHV.WorldReceiver.HBCT.RoleModel.SymbolicCandidate", ["HBCT_RoleModel_SymbolicCandidateDisplay", "HBCT_RoleModel_SymbolicCandidateObserver"]),
         "HBCT_Trigger_RoleModel_TimelineBefore": ("O09_SeeChangeOverTime", False, "VHV.WorldReceiver.HBCT.RoleModel.Timeline.Before", ["HBCT_RoleModel_TimelineBefore_Target"]),
-        "HBCT_Trigger_RoleModel_TimelineFindsModel": ("O09_SeeChangeOverTime", False, "VHV.WorldReceiver.HBCT.RoleModel.Timeline.FindsModel", ["HBCT_RoleModel_TimelineFindsModel_Target"]),
+        "HBCT_Trigger_RoleModel_TimelineFindsModel": ("O09_SeeChangeOverTime", False, "VHV.WorldReceiver.HBCT.RoleModel.Timeline.FindsModel", ["HBCT_RoleModel_TimelineFindsModel_Target", "HBCT_RoleModel_TimelineFindsModel_Model"]),
         "HBCT_Trigger_RoleModel_TimelineFirstAttempt": ("O09_SeeChangeOverTime", False, "VHV.WorldReceiver.HBCT.RoleModel.Timeline.FirstAttempt", ["HBCT_RoleModel_TimelineFirstAttempt_Target"]),
-        "HBCT_Trigger_RoleModel_TimelineRepetition": ("O09_SeeChangeOverTime", False, "VHV.WorldReceiver.HBCT.RoleModel.Timeline.Repetition", ["HBCT_RoleModel_TimelineRepetition_Target"]),
+        "HBCT_Trigger_RoleModel_TimelineRepetition": ("O09_SeeChangeOverTime", False, "VHV.WorldReceiver.HBCT.RoleModel.Timeline.Repetition", ["HBCT_RoleModel_TimelineRepetition_Target", "HBCT_RoleModel_TimelineRepetition_Model"]),
         "HBCT_Trigger_RoleModel_TimelineNewRoutine": ("O09_SeeChangeOverTime", False, "VHV.WorldReceiver.HBCT.RoleModel.Timeline.NewRoutine", ["HBCT_RoleModel_TimelineNewRoutine_Target"]),
         "HBCT_Trigger_RoleModel_SaengDemo": ("O12_ObserveSaeng", True, "", ["HBCT_Location_RoleModel_Demo_Saeng", "HBCT_Location_RoleModel_Demo_Somchai"]),
     }
@@ -2948,12 +3206,29 @@ def validate_map_and_defaults(level, arc):
             sum(value.x for value in group_locations) / len(group_locations),
             sum(value.y for value in group_locations) / len(group_locations),
             sum(value.z for value in group_locations) / len(group_locations))
-        distance_squared = ((trigger_location.x - center.x) ** 2
-                            + (trigger_location.y - center.y) ** 2
-                            + (trigger_location.z - center.z) ** 2)
-        if distance_squared > 900.0 ** 2:
-            raise RuntimeError("Quest 3 trigger {} is disconnected from {}".format(
+        xy_offset_squared = ((trigger_location.x - center.x) ** 2
+                             + (trigger_location.y - center.y) ** 2)
+        if xy_offset_squared > 1.0:
+            raise RuntimeError("Quest 3 trigger {} is not centered on {} in XY".format(
                 trigger_label, group_labels))
+
+    spaced_role_triggers = [actors_by_label["HBCT_RoleModel_ExerciseParkEntry"]]
+    spaced_role_triggers.extend(actors_by_label[label] for label in expected_role_triggers)
+    for index, first in enumerate(spaced_role_triggers):
+        first_location = first.get_actor_location()
+        first_extent = first.get_editor_property("box_component").get_unscaled_box_extent()
+        for second in spaced_role_triggers[index + 1:]:
+            second_location = second.get_actor_location()
+            second_extent = second.get_editor_property("box_component").get_unscaled_box_extent()
+            clear_x = max(0.0, abs(first_location.x - second_location.x)
+                          - first_extent.x - second_extent.x)
+            clear_y = max(0.0, abs(first_location.y - second_location.y)
+                          - first_extent.y - second_extent.y)
+            edge_clearance = (clear_x ** 2 + clear_y ** 2) ** 0.5
+            if edge_clearance < 499.0:
+                raise RuntimeError(
+                    "Quest 3 triggers {} and {} have only {:.1f} cm edge clearance".format(
+                        first.get_actor_label(), second.get_actor_label(), edge_clearance))
 
     if any("Instructor" in label for label in actual_role_trigger_labels):
         raise RuntimeError("Quest 3 must not create an Instructor dialogue trigger")
@@ -2962,8 +3237,8 @@ def validate_map_and_defaults(level, arc):
                  and actor.get_actor_label().startswith("HBCT_RoleModel_")]
     for actor in role_npcs:
         location = actor.get_actor_location()
-        if (abs(location.z - 100.0) > 5.0 or location.x < -1000.0 or location.x > 4000.0
-                or location.y < 2450.0 or location.y > 3650.0):
+        if (abs(location.z - 100.0) > 5.0 or location.x < -1000.0 or location.x > 5300.0
+                or location.y < 2900.0 or location.y > 5400.0):
             raise RuntimeError("New Quest 3 NPC {} is off the accessible staging floor: {}".format(
                 actor.get_actor_label(), location))
     for index, first in enumerate(role_npcs):
@@ -2976,12 +3251,59 @@ def validate_map_and_defaults(level, arc):
                 raise RuntimeError("Quest 3 NPC capsules overlap: {} and {}".format(
                     first.get_actor_label(), second.get_actor_label()))
 
+    movement_waypoint_labels = (
+            "HBCT_Location_RoleModel_SaengCandidate",
+            "HBCT_Location_RoleModel_Demo_Saeng",
+            "HBCT_Location_RoleModel_Demo_Somchai",
+            "HBCT_Location_RoleModel_WalkMid_Saeng",
+            "HBCT_Location_RoleModel_WalkMid_Somchai",
+            "HBCT_Location_RoleModel_WalkEnd_Saeng",
+            "HBCT_Location_RoleModel_WalkEnd_Somchai")
+    for waypoint_label in movement_waypoint_labels:
+        location = actors_by_label[waypoint_label].get_actor_location()
+        if (abs(location.z - 100.0) > 1.0 or location.x < -1000.0 or location.x > 5300.0
+                or location.y < 2900.0 or location.y > 5400.0):
+            raise RuntimeError("Quest 3 movement point is off the staged walkable floor: {}".format(
+                waypoint_label))
+
+    nav_bounds = [actor for actor in actors if isinstance(actor, unreal.NavMeshBoundsVolume)]
+    if not nav_bounds:
+        raise RuntimeError("Production map has no NavMesh bounds for Quest 3 movement")
+    nav_boxes = [volume.get_actor_bounds(False, False) for volume in nav_bounds]
+    for waypoint_label in movement_waypoint_labels:
+        location = actors_by_label[waypoint_label].get_actor_location()
+        if not any(
+                abs(location.x - origin.x) <= extent.x
+                and abs(location.y - origin.y) <= extent.y
+                and abs(location.z - origin.z) <= extent.z
+                for origin, extent in nav_boxes):
+            raise RuntimeError("Quest 3 movement point is outside NavMesh bounds: {}".format(
+                waypoint_label))
+
     for ambient_actor in actors:
-        if (isinstance(ambient_actor, unreal.VHVAmbientConversationActor)
-                and ambient_actor.get_actor_label().startswith("HBCT_RoleModel_")
-                and (ambient_actor.get_editor_property("auto_start_on_begin_play")
-                     or not ambient_actor.get_editor_property("requires_explicit_trigger")
-                     or not ambient_actor.get_editor_property("play_once"))):
+        if not (isinstance(ambient_actor, unreal.VHVAmbientConversationActor)
+                and ambient_actor.get_actor_label().startswith("HBCT_RoleModel_")):
+            continue
+        if ambient_actor.get_actor_label() == "HBCT_RoleModel_WalkAlongScene":
+            receiver = ambient_actor.get_editor_property("world_action_receiver")
+            receiver_tag = str(unreal.GameplayTagLibrary.get_tag_name(
+                receiver.get_editor_property("receiver_tag")))
+            if (ambient_actor.get_editor_property("auto_start_on_begin_play")
+                    or ambient_actor.get_editor_property("requires_explicit_trigger")
+                    or not ambient_actor.get_editor_property("play_once")
+                    or not ambient_actor.get_editor_property("preserve_participant_behavior")
+                    or receiver_tag != "VHV.WorldReceiver.HBCT.RoleModel.WalkAlong"):
+                raise RuntimeError("Quest 3 walk-along speech must be quest-started, non-modal, and play once")
+            bound_slots = {
+                str(binding.get_editor_property("slot_id")): binding.get_editor_property("npc").get_actor_label()
+                for binding in ambient_actor.get_editor_property("participants")}
+            if bound_slots != {
+                    "Saeng": "HBCT_Motivation_Saeng",
+                    "Somchai": "HBCT_RoleModel_UncleSomchai"}:
+                raise RuntimeError("Quest 3 walk-along speech has incorrect persistent NPC bindings")
+        elif (ambient_actor.get_editor_property("auto_start_on_begin_play")
+                or not ambient_actor.get_editor_property("requires_explicit_trigger")
+                or not ambient_actor.get_editor_property("play_once")):
             raise RuntimeError("Quest 3 ambient scene {} must be explicit and play once".format(
                 ambient_actor.get_actor_label()))
 
@@ -3463,6 +3785,74 @@ def validate_content_integrity(level, conversations, arc):
             "completion_conditions").get_editor_property("conditions")
         if len(conditions) != 1 or conditions[0].get_editor_property("compare_value") != counter_value:
             raise RuntimeError("Quest 3 counter objective {} has invalid threshold".format(objective_id))
+
+    for objective_id in (
+            "O01_ReachExercisePark", "O02_DiscoverRoleModels",
+            "O03_ClassifyModels", "O05_UnderstandSomchai"):
+        if role_objectives[objective_id].get_editor_property("completion_npc_moves"):
+            raise RuntimeError("Aunt Saeng must not be repeatedly rerouted during {}".format(objective_id))
+
+    expected_later_role_moves = {
+        "O08_ExplainModelFit": {
+            ("VHV.Participant.AuntSaeng", "VHV.Location.HBCT.RoleModel.SaengDemo"),
+            ("VHV.Participant.UncleSomchai", "VHV.Location.HBCT.RoleModel.SomchaiDemo"),
+        },
+    }
+    for objective_id, expected_moves in expected_later_role_moves.items():
+        actual_moves = {
+            (str(unreal.GameplayTagLibrary.get_tag_name(move.get_editor_property("participant_tag"))),
+             str(unreal.GameplayTagLibrary.get_tag_name(
+                 move.get_editor_property("destination_location_tag"))))
+            for move in role_objectives[objective_id].get_editor_property("completion_npc_moves")}
+        if actual_moves != expected_moves:
+            raise RuntimeError("Quest 3 later Saeng/Somchai routing changed at {}".format(
+                objective_id))
+
+    if role_objectives["O12_ObserveSaeng"].get_editor_property("completion_npc_moves"):
+        raise RuntimeError("The walking practice must begin as blocking objective movement, not a fire-and-forget completion move")
+
+    def authored_stage_pairs(objective_id):
+        result = []
+        for stage in role_objectives[objective_id].get_editor_property("npc_move_stages"):
+            result.append({
+                (str(unreal.GameplayTagLibrary.get_tag_name(move.get_editor_property("participant_tag"))),
+                 str(unreal.GameplayTagLibrary.get_tag_name(
+                     move.get_editor_property("destination_location_tag"))))
+                for move in stage.get_editor_property("moves")})
+            if not all(move.get_editor_property("face_destination_rotation")
+                       for move in stage.get_editor_property("moves")):
+                raise RuntimeError("Walking-practice moves must apply authored destination facing")
+        return result
+
+    mid_stage = {
+        ("VHV.Participant.AuntSaeng", "VHV.Location.HBCT.RoleModel.SaengWalkMid"),
+        ("VHV.Participant.UncleSomchai", "VHV.Location.HBCT.RoleModel.SomchaiWalkMid"),
+    }
+    end_stage = {
+        ("VHV.Participant.AuntSaeng", "VHV.Location.HBCT.RoleModel.SaengWalkEnd"),
+        ("VHV.Participant.UncleSomchai", "VHV.Location.HBCT.RoleModel.SomchaiWalkEnd"),
+    }
+    if authored_stage_pairs("O13_SupportImitation"):
+        raise RuntimeError("Somchai practice must remain interactable before walking begins")
+    if authored_stage_pairs("O14_PracticeTogether") != [mid_stage, end_stage]:
+        raise RuntimeError("Quest 3 walking objective must restore at Mid and then wait for both End arrivals")
+    walk_objective = role_objectives["O14_PracticeTogether"]
+    if walk_objective.get_editor_property("npc_travel_mode") != unreal.VHVQuestNPCTravelMode.FREE_ROAM:
+        raise RuntimeError("Quest 3 walking objective must use free-roam NPC travel")
+    walk_stages = walk_objective.get_editor_property("npc_move_stages")
+    first_stage_receiver = str(unreal.GameplayTagLibrary.get_tag_name(
+        walk_stages[0].get_editor_property("ambient_conversation_receiver_tag")))
+    second_stage_receiver = str(unreal.GameplayTagLibrary.get_tag_name(
+        walk_stages[1].get_editor_property("ambient_conversation_receiver_tag")))
+    if (first_stage_receiver != "VHV.WorldReceiver.HBCT.RoleModel.WalkAlong"
+            or second_stage_receiver not in ("", "None")):
+        raise RuntimeError("Quest 3 walking speech must start once with the Mid travel stage")
+    if not all(abs(move.get_editor_property("move_speed_override") - 180.0) < 0.01
+               for stage in walk_stages for move in stage.get_editor_property("moves")):
+        raise RuntimeError("Quest 3 free-roam walkers must use the authored 180 cm/s speed")
+    if (role_objectives["O13_SupportImitation"].get_editor_property("auto_start")
+            or not role_objectives["O14_PracticeTogether"].get_editor_property("auto_start")):
+        raise RuntimeError("Somchai practice must be interactive and the end beat must auto-start after the walk")
 
     final_nodes = conversations["DA_Conversation_HBCT_FinalDebrief"].get_editor_property(
         "conversation").get_editor_property("nodes")

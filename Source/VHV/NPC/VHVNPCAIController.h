@@ -13,8 +13,8 @@ class VHV_API AVHVNPCAIController : public AAIController
 	GENERATED_BODY()
 
 public:
-	EPathFollowingRequestResult::Type RequestMoveToLocation(const FVector& Destination, float AcceptanceRadius);
-	EPathFollowingRequestResult::Type RequestMoveToActor(AActor* Target, float AcceptanceRadius);
+	EPathFollowingRequestResult::Type RequestMoveToLocation(const FVector& Destination, float AcceptanceRadius, bool bAllowPartialPath = true);
+	EPathFollowingRequestResult::Type RequestMoveToActor(AActor* Target, float AcceptanceRadius, bool bAllowPartialPath = true);
 	EPathFollowingRequestResult::Type ReturnToPost(float AcceptanceRadius);
 	void StopMovementForBehavior();
 

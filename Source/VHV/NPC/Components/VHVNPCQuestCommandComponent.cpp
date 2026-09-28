@@ -1,6 +1,8 @@
 #include "NPC/Components/VHVNPCQuestCommandComponent.h"
 
 #include "Engine/GameInstance.h"
+#include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "NPC/Components/VHVNPCBehaviorComponent.h"
 #include "NPC/Components/VHVNPCPatrolComponent.h"
 #include "NPC/Components/VHVNPCPresentationComponent.h"
@@ -49,7 +51,10 @@ void UVHVNPCQuestCommandComponent::EndPlay(const EEndPlayReason::Type EndPlayRea
 	Super::EndPlay(EndPlayReason);
 }
 
-bool UVHVNPCQuestCommandComponent::MoveToTarget(const FName TargetID)
+bool UVHVNPCQuestCommandComponent::MoveToTarget(
+	const FName TargetID,
+	const bool bFaceDestinationRotation,
+	const float MoveSpeedOverride)
 {
 	if (TargetID.IsNone() || !BehaviorComponent)
 	{
@@ -59,6 +64,8 @@ bool UVHVNPCQuestCommandComponent::MoveToTarget(const FName TargetID)
 	AbortActiveCommand(true);
 	ActiveCommand = EVHVNPCQuestCommandType::MoveToTarget;
 	ActiveTargetID = TargetID;
+	bFaceActiveDestinationRotation = bFaceDestinationRotation;
+	ActiveMoveSpeedOverride = FMath::Max(0.0f, MoveSpeedOverride);
 	return QueueOrExecuteActiveCommand();
 }
 
@@ -126,6 +133,7 @@ bool UVHVNPCQuestCommandComponent::ReleaseToPatrol()
 		}
 	}
 	OnQuestCommandCompleted.Broadcast(EVHVNPCQuestCommandType::ReleaseToPatrol, true);
+	OnQuestCommandCompletedNative.Broadcast(this, EVHVNPCQuestCommandType::ReleaseToPatrol, true);
 	return true;
 }
 
@@ -194,6 +202,7 @@ bool UVHVNPCQuestCommandComponent::ExecuteActiveCommand()
 	switch (ActiveCommand)
 	{
 	case EVHVNPCQuestCommandType::MoveToTarget:
+		ApplyActiveMoveSpeedOverride();
 		if (UWorld* World = GetWorld())
 		{
 			if (UGameInstance* GameInstance = World->GetGameInstance())
@@ -202,11 +211,12 @@ bool UVHVNPCQuestCommandComponent::ExecuteActiveCommand()
 				{
 					if (AActor* Target = QuestSubsystem->FindNPCMovementTarget(World, ActiveTargetID))
 					{
+						ActiveMoveTarget = Target;
 						// Semantic location volumes define an area for designers, but the
 						// authored wait point is their transform rather than the box edge.
 						bStarted = Target->IsA<AVHVQuestLocationVolume>()
-							? BehaviorComponent->StartMoveToLocation(Target->GetActorLocation())
-							: BehaviorComponent->StartMoveToActor(Target);
+							? BehaviorComponent->StartMoveToLocation(Target->GetActorLocation(), 25.0f, false)
+							: BehaviorComponent->StartMoveToActor(Target, 25.0f, false);
 					}
 					else
 					{
@@ -236,6 +246,38 @@ bool UVHVNPCQuestCommandComponent::ExecuteActiveCommand()
 	return bStarted;
 }
 
+void UVHVNPCQuestCommandComponent::ApplyActiveMoveSpeedOverride()
+{
+	if (ActiveMoveSpeedOverride <= 0.0f || bMoveSpeedOverridden)
+	{
+		return;
+	}
+	ACharacter* Character = Cast<ACharacter>(GetOwner());
+	UCharacterMovementComponent* Movement = Character ? Character->GetCharacterMovement() : nullptr;
+	if (!Movement)
+	{
+		return;
+	}
+	PreviousMaxWalkSpeed = Movement->MaxWalkSpeed;
+	Movement->MaxWalkSpeed = ActiveMoveSpeedOverride;
+	bMoveSpeedOverridden = true;
+}
+
+void UVHVNPCQuestCommandComponent::RestoreMoveSpeedOverride()
+{
+	if (!bMoveSpeedOverridden)
+	{
+		return;
+	}
+	ACharacter* Character = Cast<ACharacter>(GetOwner());
+	if (UCharacterMovementComponent* Movement = Character ? Character->GetCharacterMovement() : nullptr)
+	{
+		Movement->MaxWalkSpeed = PreviousMaxWalkSpeed;
+	}
+	PreviousMaxWalkSpeed = 0.0f;
+	bMoveSpeedOverridden = false;
+}
+
 void UVHVNPCQuestCommandComponent::CompleteActiveCommand(const bool bSuccess)
 {
 	if (ActiveCommand == EVHVNPCQuestCommandType::None)
@@ -243,19 +285,40 @@ void UVHVNPCQuestCommandComponent::CompleteActiveCommand(const bool bSuccess)
 		return;
 	}
 	const EVHVNPCQuestCommandType CompletedCommand = ActiveCommand;
+	if (bSuccess && CompletedCommand == EVHVNPCQuestCommandType::MoveToTarget)
+	{
+		LastSuccessfulMoveTargetID = ActiveTargetID;
+	}
+	if (bSuccess
+		&& CompletedCommand == EVHVNPCQuestCommandType::MoveToTarget
+		&& bFaceActiveDestinationRotation
+		&& ActiveMoveTarget.IsValid()
+		&& GetOwner())
+	{
+		const FRotator DestinationRotation = ActiveMoveTarget->GetActorRotation();
+		FRotator OwnerRotation = GetOwner()->GetActorRotation();
+		OwnerRotation.Yaw = DestinationRotation.Yaw;
+		GetOwner()->SetActorRotation(OwnerRotation);
+	}
+	RestoreMoveSpeedOverride();
 	ActiveCommand = EVHVNPCQuestCommandType::None;
 	ActiveTargetID = NAME_None;
 	ActiveActionID = NAME_None;
 	ActiveWaitDuration = 0.0f;
+	ActiveMoveSpeedOverride = 0.0f;
+	bFaceActiveDestinationRotation = false;
+	ActiveMoveTarget.Reset();
 	bBehaviorOperationActive = false;
 	bCommandPending = false;
 	OnQuestCommandCompleted.Broadcast(CompletedCommand, bSuccess);
+	OnQuestCommandCompletedNative.Broadcast(this, CompletedCommand, bSuccess);
 }
 
 void UVHVNPCQuestCommandComponent::AbortActiveCommand(const bool bBroadcastFailure)
 {
 	if (ActiveCommand == EVHVNPCQuestCommandType::None)
 	{
+		RestoreMoveSpeedOverride();
 		bBehaviorOperationActive = false;
 		bCommandPending = false;
 		return;
@@ -263,10 +326,14 @@ void UVHVNPCQuestCommandComponent::AbortActiveCommand(const bool bBroadcastFailu
 
 	const EVHVNPCQuestCommandType AbortedCommand = ActiveCommand;
 	const bool bShouldCancelBehavior = bBehaviorOperationActive;
+	RestoreMoveSpeedOverride();
 	ActiveCommand = EVHVNPCQuestCommandType::None;
 	ActiveTargetID = NAME_None;
 	ActiveActionID = NAME_None;
 	ActiveWaitDuration = 0.0f;
+	ActiveMoveSpeedOverride = 0.0f;
+	bFaceActiveDestinationRotation = false;
+	ActiveMoveTarget.Reset();
 	bBehaviorOperationActive = false;
 	bCommandPending = false;
 	if (bShouldCancelBehavior && AbortedCommand == EVHVNPCQuestCommandType::PlayAction && PresentationComponent)
@@ -280,6 +347,7 @@ void UVHVNPCQuestCommandComponent::AbortActiveCommand(const bool bBroadcastFailu
 	if (bBroadcastFailure)
 	{
 		OnQuestCommandCompleted.Broadcast(AbortedCommand, false);
+		OnQuestCommandCompletedNative.Broadcast(this, AbortedCommand, false);
 	}
 }
 

@@ -278,6 +278,10 @@ bool AVHVAmbientConversationActor::ResolveAndValidateParticipants(FString& OutEr
 void AVHVAmbientConversationActor::PrepareParticipants()
 {
     PreviousBehaviorStates.Empty();
+    if (bPreserveParticipantBehavior)
+    {
+        return;
+    }
     for (const TPair<FName, TObjectPtr<AVHVNPCCharacter>>& Pair : ResolvedParticipants)
     {
         if (UVHVNPCBehaviorComponent* Behavior = Pair.Value->GetBehaviorComponent())

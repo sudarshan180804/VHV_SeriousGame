@@ -33,10 +33,10 @@ public:
 	UVHVNPCBehaviorComponent();
 
 	UFUNCTION(BlueprintCallable, Category = "VHV|NPC|Behavior", meta = (DisplayName = "Move To Location"))
-	bool StartMoveToLocation(FVector Destination, float AcceptanceRadius = 25.0f);
+	bool StartMoveToLocation(FVector Destination, float AcceptanceRadius = 25.0f, bool bAllowPartialPath = true);
 
 	UFUNCTION(BlueprintCallable, Category = "VHV|NPC|Behavior", meta = (DisplayName = "Move To Actor"))
-	bool StartMoveToActor(AActor* Target, float AcceptanceRadius = 25.0f);
+	bool StartMoveToActor(AActor* Target, float AcceptanceRadius = 25.0f, bool bAllowPartialPath = true);
 
 	UFUNCTION(BlueprintCallable, Category = "VHV|NPC|Behavior", meta = (DisplayName = "Wait"))
 	bool StartWait(float Duration);
