@@ -25,6 +25,9 @@ class UVHVQuestSubsystem;
 class UVHVQuestTrackerWidget;
 class UVHVMajorQuestStingerWidget;
 class UVHVStoryStateSubsystem;
+class UVHVSupportTypeOverlayWidget;
+class UVHVSupportNetworkWidget;
+class UVHVSocialSupportHUDWidget;
 class UUserWidget;
 struct FVHVDialogueCheckpointSaveState;
 
@@ -126,6 +129,15 @@ public:
     TObjectPtr<UVHVMajorQuestStingerWidget> MajorQuestStingerWidget;
 
     UPROPERTY()
+    TObjectPtr<UVHVSupportTypeOverlayWidget> SupportTypeOverlayWidget;
+
+    UPROPERTY()
+    TObjectPtr<UVHVSupportNetworkWidget> SupportNetworkWidget;
+
+    UPROPERTY()
+    TObjectPtr<UVHVSocialSupportHUDWidget> SocialSupportHUDWidget;
+
+    UPROPERTY()
     TObjectPtr<UVHVInteractionComponent> CurrentInteractionTarget;
 
     UPROPERTY()
@@ -211,6 +223,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "VHV|UI")
     bool StartLinkedLearningActivity(const FTextbookActivityReference& Reference);
 
+    /** Starts a standalone quest-owned activity through the normal textbook/UI lifecycle. */
+    bool StartQuestManagedLearningActivity(const FTextbookActivityReference& Reference);
+
     UFUNCTION(BlueprintCallable, Category = "VHV|Textbook")
     bool TrySubmitCurrentQuestionAnswer();
 
@@ -254,6 +269,16 @@ public:
     /** Development-only teardown used before skipping the current quest objective. */
     bool PrepareForDeveloperObjectiveSkip();
 
+    void ShowSocialSupportObservationProgress(int32 CompletedCount);
+    void ShowSocialSupportSupporterProgress(int32 CompletedCount);
+    void HideSocialSupportProgress();
+    void ShowSupportTypeReveal();
+    void HideSupportTypeOverlay();
+
+    bool IsSupportNetworkSubmissionCorrect(const TArray<FMatchingPair>& Matches) const;
+    void CompleteSupportNetworkPlanning(const TArray<FMatchingPair>& Matches);
+    void CompleteSocialSupportNetworkPayoff();
+
 protected:
     UPROPERTY()
     TObjectPtr<UVHVPlayerInteractionComponent> PlayerInteractionComponent;
@@ -289,6 +314,8 @@ protected:
     UFUNCTION()
     void HandleQuestObjectiveActivationRequested(FName QuestID, FName ObjectiveID);
     UFUNCTION()
+    void HandleQuestObjectiveReady(FName QuestID, FName ObjectiveID);
+    UFUNCTION()
     void HandleQuestStarted(FName QuestID);
     UFUNCTION()
     void HandleQuestCompleted(FName QuestID);
@@ -302,6 +329,7 @@ protected:
     void EnsureObservationWidget();
     void EnsureOrderingWidget();
     void EnsureMatchingWidget();
+    void EnsureSocialSupportWidgets();
     void RefreshInteractionPrompt();
     void RefreshCurrentAskQuestionUI();
     void RefreshCurrentHintUI();
@@ -314,6 +342,7 @@ protected:
     void HideObservationUI();
     void HideOrderingUI();
     void HideMatchingUI();
+    void HideSupportNetworkUI();
     void AdvanceFeedback();
     void AdvanceHint();
     void AdvanceTeach();
@@ -336,4 +365,6 @@ protected:
     bool TraverseToNode(const FString& NodeID, bool bLogBranchEntry = false);
     void ApplyCurrentDialogueNodeCompletionEffects(const TArray<FVHVStoryEffect>* SelectionEffects = nullptr);
     void CompleteConversation();
+
+    FTimerHandle SupportTypeOverlayTimer;
 };

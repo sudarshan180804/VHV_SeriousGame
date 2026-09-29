@@ -248,6 +248,15 @@ struct FTeachingContent
     }
 };
 
+/** Optional presentation override that keeps evaluation in the textbook subsystem. */
+UENUM(BlueprintType)
+enum class EVHVActivityPresentationStyle : uint8
+{
+    Default,
+    SocialSupportNetwork,
+    SocialSupportNetworkReadOnly
+};
+
 // ============================================================
 // OPTIONAL OBSERVATION EVIDENCE TAGGING
 // ============================================================
@@ -340,6 +349,9 @@ struct FTextbookActivityData
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Activity")
     ETextbookActivityType ActivityType = ETextbookActivityType::SingleChoice;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Activity")
+    EVHVActivityPresentationStyle PresentationStyle = EVHVActivityPresentationStyle::Default;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Activity")
     FString NarrativeContext;

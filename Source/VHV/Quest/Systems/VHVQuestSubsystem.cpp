@@ -187,6 +187,38 @@ bool UVHVQuestSubsystem::GetQuestDefinition(
     return true;
 }
 
+bool UVHVQuestSubsystem::TryGetCurrentContextualConversation(
+    const FName ParticipantID,
+    UVHVConversationDataAsset*& OutConversation,
+    FName& OutEntryNodeID) const
+{
+    OutConversation = nullptr;
+    OutEntryNodeID = NAME_None;
+    const FVHVQuestObjectiveDefinition* Objective = GetActiveObjective();
+    if (!Objective || ParticipantID.IsNone() || !bCurrentObjectiveActivated
+        || bCurrentObjectiveWaitingOnNPCMoves || bCompletingCurrentObjective)
+    {
+        return false;
+    }
+
+    const FVHVQuestContextualConversation* Contextual = Objective->ContextualConversations.FindByPredicate(
+        [this, ParticipantID](const FVHVQuestContextualConversation& Candidate)
+        {
+            return Candidate.GetEffectiveParticipantID() == ParticipantID
+                && (Candidate.AvailabilityConditions.Conditions.IsEmpty()
+                    || (StoryStateSubsystem
+                        && StoryStateSubsystem->EvaluateConditionSet(Candidate.AvailabilityConditions)));
+        });
+    if (!Contextual)
+    {
+        return false;
+    }
+
+    OutConversation = Contextual->Conversation.LoadSynchronous();
+    OutEntryNodeID = Contextual->EntryNodeID;
+    return OutConversation != nullptr;
+}
+
 bool UVHVQuestSubsystem::CompleteCurrentObjective()
 {
     FVHVQuestRuntimeState* QuestState = FindQuestState(RuntimeState.ActiveQuestID);
@@ -321,14 +353,79 @@ bool UVHVQuestSubsystem::IsParticipantInActiveFreeRoamNPCTravel(const FName Part
 #if !UE_BUILD_SHIPPING
 bool UVHVQuestSubsystem::DebugCompleteCurrentObjective()
 {
-    if (!GetActiveObjective())
+    if (bDeveloperObjectiveSkipInProgress || bCompletingCurrentObjective)
+    {
+        UE_LOG(LogVHV, Verbose,
+            TEXT("[VHVQuest] Ignoring developer skip while an objective transition is already in progress."));
+        return false;
+    }
+
+    const FVHVQuestObjectiveDefinition* Objective = GetActiveObjective();
+    if (!Objective)
     {
         UE_LOG(LogVHV, Warning, TEXT("[VHVDeveloper] Cannot complete objective: there is no active objective."));
         return false;
     }
 
+    TGuardValue<bool> DeveloperSkipGuard(bDeveloperObjectiveSkipInProgress, true);
+
+    const FName SkippedQuestID = RuntimeState.ActiveQuestID;
+    const FName SkippedObjectiveID = Objective->ObjectiveID;
+    const bool bWasWaitingOnReadiness = bCurrentObjectiveWaitingOnNPCReadiness;
+    const int32 ReadinessBindingCount = ActiveObjectiveNPCReadinessBindings.Num();
+    const bool bWasWaitingOnMovement = bCurrentObjectiveWaitingOnNPCMoves;
+    const int32 SkippedMovementStage = ActiveObjectiveNPCMoveStageIndex;
+    const int32 PendingMovementParticipants = PendingObjectiveNPCMoveParticipants.Num();
+
+    UE_LOG(LogVHV, Log,
+        TEXT("[VHVQuest] Developer skip requested: Quest='%s' Objective='%s'"),
+        *SkippedQuestID.ToString(),
+        *SkippedObjectiveID.ToString());
+
+    if (bWasWaitingOnReadiness)
+    {
+        UE_LOG(LogVHV, Log,
+            TEXT("[VHVQuest] Abandoned readiness wait for skipped objective: PendingParticipants=%d"),
+            ReadinessBindingCount);
+    }
+
+    if (bWasWaitingOnMovement)
+    {
+        UE_LOG(LogVHV, Log,
+            TEXT("[VHVQuest] Abandoned movement wait for skipped objective: Stage=%d PendingParticipants=%d"),
+            SkippedMovementStage,
+            PendingMovementParticipants);
+    }
+
+    // Reject deferred callbacks captured by this activation before detaching delegates or
+    // cancelling objective-owned commands. The next objective receives a new activation serial.
+    ++ObjectiveActivationSerial;
     DebugCancelActiveObjectiveExecution();
-    return CompleteCurrentObjective();
+    bCurrentObjectiveWaitingOnConditions = false;
+
+    // Readiness-gated objectives intentionally remain inactive until their participants arrive.
+    // Developer skip abandons that prerequisite, then uses the established completion path so
+    // effects, persistence, broadcasts, and next-objective activation remain identical.
+    const FVHVQuestObjectiveDefinition* ObjectiveAfterCleanup = GetActiveObjective();
+    if (RuntimeState.ActiveQuestID != SkippedQuestID
+        || !ObjectiveAfterCleanup
+        || ObjectiveAfterCleanup->ObjectiveID != SkippedObjectiveID)
+    {
+        UE_LOG(LogVHV, Warning,
+            TEXT("[VHVQuest] Developer skip aborted because the active objective changed during cleanup."));
+        return false;
+    }
+
+    bCurrentObjectiveActivated = true;
+    const bool bCompleted = CompleteCurrentObjective();
+    const FVHVQuestObjectiveDefinition* NextObjective = GetActiveObjective();
+    if (bCompleted)
+    {
+        UE_LOG(LogVHV, Log,
+            TEXT("[VHVQuest] Developer skip complete: NextObjective='%s'"),
+            NextObjective ? *NextObjective->ObjectiveID.ToString() : TEXT("None"));
+    }
+    return bCompleted;
 }
 
 bool UVHVQuestSubsystem::DebugRestartCurrentQuest()
@@ -631,6 +728,13 @@ bool UVHVQuestSubsystem::NotifyParticipantInteracted(FName ParticipantID)
         return false;
     }
 
+    UVHVConversationDataAsset* ContextualConversation = nullptr;
+    FName ContextualEntryNode;
+    if (TryGetCurrentContextualConversation(ParticipantID, ContextualConversation, ContextualEntryNode))
+    {
+        return true;
+    }
+
     const FVHVQuestObjectiveDefinition* Objective = GetActiveObjective();
     if (Objective->ObjectiveType == EVHVQuestObjectiveType::Interact && Objective->GetEffectiveTargetID() == ParticipantID)
     {
@@ -655,6 +759,13 @@ bool UVHVQuestSubsystem::CanParticipantInteract(const FName ParticipantID) const
         || bCurrentObjectiveWaitingOnNPCMoves || bCompletingCurrentObjective)
     {
         return false;
+    }
+
+    UVHVConversationDataAsset* ContextualConversation = nullptr;
+    FName ContextualEntryNode;
+    if (TryGetCurrentContextualConversation(ParticipantID, ContextualConversation, ContextualEntryNode))
+    {
+        return true;
     }
 
     const FName TargetParticipantID = Objective->GetEffectiveTargetID();
@@ -1048,6 +1159,7 @@ void UVHVQuestSubsystem::HandleStoryFlagChanged(const FName FlagID, const bool b
 {
     (void)FlagID;
     (void)bValue;
+    TryStartActiveObjectiveNPCMoveSequenceFromConditions();
     if (!TryCompleteCurrentObjectiveFromStoryState()) ReevaluateWaitingObjective();
 }
 
@@ -1055,6 +1167,7 @@ void UVHVQuestSubsystem::HandleStoryCounterChanged(const FName CounterID, const 
 {
     (void)CounterID;
     (void)NewValue;
+    TryStartActiveObjectiveNPCMoveSequenceFromConditions();
     if (!TryCompleteCurrentObjectiveFromStoryState()) ReevaluateWaitingObjective();
 }
 
@@ -1495,7 +1608,9 @@ void UVHVQuestSubsystem::TryActivateCurrentObjective()
         return;
     }
 
-    if (!Objective->ActivationConditions.Conditions.IsEmpty() || !Objective->CompletionConditions.Conditions.IsEmpty())
+    if (!Objective->ActivationConditions.Conditions.IsEmpty()
+        || !Objective->CompletionConditions.Conditions.IsEmpty()
+        || !Objective->NPCMoveStageActivationConditions.Conditions.IsEmpty())
     {
         EnsureStoryStateDelegateBindings();
     }
@@ -1524,12 +1639,16 @@ void UVHVQuestSubsystem::TryActivateCurrentObjective()
 
     ClearActiveObjectiveNPCReadinessTracking();
     bCurrentObjectiveActivated = true;
+    OnObjectiveReady.Broadcast(RuntimeState.ActiveQuestID, Objective->ObjectiveID);
     if (TryCompleteCurrentObjectiveFromStoryState())
     {
         return;
     }
 
-    if (!Objective->NPCMoveStages.IsEmpty())
+    if (!Objective->NPCMoveStages.IsEmpty()
+        && (Objective->NPCMoveStageActivationConditions.Conditions.IsEmpty()
+            || (StoryStateSubsystem
+                && StoryStateSubsystem->EvaluateConditionSet(Objective->NPCMoveStageActivationConditions))))
     {
         StartActiveObjectiveNPCMoveSequence();
         return;
@@ -1599,7 +1718,27 @@ bool UVHVQuestSubsystem::GetActiveObjectiveNPCReadinessRequirements(
 {
     OutRequirements.Reset();
     const FVHVQuestObjectiveDefinition* Objective = GetActiveObjective();
-    if (!Objective || RuntimeState.ActiveQuestID != FName(TEXT("Q_HBCT_03_ROLE_MODEL")))
+    if (!Objective)
+    {
+        return false;
+    }
+
+    for (const FVHVQuestNPCMoveRequest& Readiness : Objective->ActivationNPCReadiness)
+    {
+        const FName ParticipantID = Readiness.GetEffectiveParticipantID();
+        const FName DestinationID = Readiness.GetEffectiveDestinationID();
+        if (!ParticipantID.IsNone() && !DestinationID.IsNone())
+        {
+            OutRequirements.Emplace(ParticipantID, DestinationID);
+        }
+    }
+
+    if (!OutRequirements.IsEmpty())
+    {
+        return true;
+    }
+
+    if (RuntimeState.ActiveQuestID != FName(TEXT("Q_HBCT_03_ROLE_MODEL")))
     {
         return false;
     }
@@ -1680,6 +1819,11 @@ void UVHVQuestSubsystem::HandleObjectiveNPCReadinessMoveCompleted(
         || !bCurrentObjectiveWaitingOnNPCReadiness
         || bCurrentObjectiveActivated)
     {
+        if (CommandComponent && Command == EVHVNPCQuestCommandType::MoveToTarget)
+        {
+            UE_LOG(LogVHV, Log,
+                TEXT("[VHVQuest] Ignoring stale readiness callback from a skipped or previous objective."));
+        }
         return;
     }
 
@@ -1691,15 +1835,29 @@ void UVHVQuestSubsystem::HandleObjectiveNPCReadinessMoveCompleted(
     }
 
     const uint32 ExpectedActivationSerial = ObjectiveActivationSerial;
+    const FName ExpectedQuestID = RuntimeState.ActiveQuestID;
+    const FVHVQuestObjectiveDefinition* ExpectedObjective = GetActiveObjective();
+    const FName ExpectedObjectiveID = ExpectedObjective ? ExpectedObjective->ObjectiveID : NAME_None;
     if (UWorld* World = GetWorld())
     {
         World->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(
             this,
-            [this, ExpectedActivationSerial]()
+            [this, ExpectedActivationSerial, ExpectedQuestID, ExpectedObjectiveID]()
             {
-                if (ObjectiveActivationSerial == ExpectedActivationSerial
-                    && bCurrentObjectiveWaitingOnNPCReadiness
-                    && !bCurrentObjectiveActivated)
+                const FVHVQuestObjectiveDefinition* CurrentObjective = GetActiveObjective();
+                if (ObjectiveActivationSerial != ExpectedActivationSerial
+                    || RuntimeState.ActiveQuestID != ExpectedQuestID
+                    || !CurrentObjective
+                    || CurrentObjective->ObjectiveID != ExpectedObjectiveID)
+                {
+                    UE_LOG(LogVHV, Log,
+                        TEXT("[VHVQuest] Ignoring stale readiness callback from skipped objective: Quest='%s' Objective='%s'"),
+                        *ExpectedQuestID.ToString(),
+                        *ExpectedObjectiveID.ToString());
+                    return;
+                }
+
+                if (bCurrentObjectiveWaitingOnNPCReadiness && !bCurrentObjectiveActivated)
                 {
                     TryActivateCurrentObjective();
                 }
@@ -1767,6 +1925,22 @@ void UVHVQuestSubsystem::StartActiveObjectiveNPCMoveSequence()
     ActiveObjectiveNPCMoveActivationSerial = ObjectiveActivationSerial;
     bCurrentObjectiveWaitingOnNPCMoves = true;
     StartActiveObjectiveNPCMoveStage();
+}
+
+bool UVHVQuestSubsystem::TryStartActiveObjectiveNPCMoveSequenceFromConditions()
+{
+    const FVHVQuestObjectiveDefinition* Objective = GetActiveObjective();
+    if (!Objective || !bCurrentObjectiveActivated || bCurrentObjectiveWaitingOnNPCMoves
+        || Objective->NPCMoveStages.IsEmpty()
+        || Objective->NPCMoveStageActivationConditions.Conditions.IsEmpty()
+        || !StoryStateSubsystem
+        || !StoryStateSubsystem->EvaluateConditionSet(Objective->NPCMoveStageActivationConditions))
+    {
+        return false;
+    }
+
+    StartActiveObjectiveNPCMoveSequence();
+    return true;
 }
 
 void UVHVQuestSubsystem::StartActiveObjectiveNPCMoveStage()
@@ -1913,6 +2087,21 @@ void UVHVQuestSubsystem::HandleObjectiveNPCMoveCompleted(
         return;
     }
 
+    const FVHVQuestObjectiveDefinition* CurrentObjective = GetActiveObjective();
+    if (!bCurrentObjectiveWaitingOnNPCMoves
+        || !CurrentObjective
+        || RuntimeState.ActiveQuestID != ActiveObjectiveNPCMoveQuestID
+        || CurrentObjective->ObjectiveID != ActiveObjectiveNPCMoveObjectiveID
+        || ObjectiveActivationSerial != ActiveObjectiveNPCMoveActivationSerial)
+    {
+        UE_LOG(LogVHV, Log,
+            TEXT("[VHVQuest] Ignoring stale movement callback from skipped objective: Quest='%s' Objective='%s' Stage=%d"),
+            *ActiveObjectiveNPCMoveQuestID.ToString(),
+            *ActiveObjectiveNPCMoveObjectiveID.ToString(),
+            ActiveObjectiveNPCMoveStageIndex);
+        return;
+    }
+
     const TWeakObjectPtr<UVHVNPCQuestCommandComponent> WeakCommand(CommandComponent);
     const FName* ParticipantID = ActiveObjectiveNPCMoveParticipants.Find(WeakCommand);
     if (!ParticipantID || !PendingObjectiveNPCMoveParticipants.Contains(*ParticipantID))
@@ -1966,7 +2155,13 @@ void UVHVQuestSubsystem::FinishActiveObjectiveNPCMoveStage()
 
     UE_LOG(LogVHV, Log, TEXT("[VHVQuest] Quest '%s' objective '%s' completed all NPC movement stages."),
         *ActiveObjectiveNPCMoveQuestID.ToString(), *ActiveObjectiveNPCMoveObjectiveID.ToString());
+    const bool bCompleteAfterStages = Objective && Objective->bCompleteAfterNPCMoveStages;
     ClearActiveObjectiveNPCMoveTracking(false);
+    if (bCompleteAfterStages)
+    {
+        CompleteCurrentObjective();
+        return;
+    }
     ContinueActiveObjectiveAfterNPCMoves();
 }
 

@@ -52,7 +52,9 @@ bool UVHVNPCDialogueComponent::StartQuestInteraction(
 		return false;
 	}
 
-	bool bHandled = false;
+    bool bHandled = false;
+    UVHVConversationDataAsset* ContextualConversation = nullptr;
+    FName ContextualEntryNodeID;
 	if (const AActor* Owner = GetOwner())
 	{
 		if (UVHVQuestParticipantComponent* QuestParticipant = Owner->FindComponentByClass<UVHVQuestParticipantComponent>())
@@ -61,13 +63,20 @@ bool UVHVNPCDialogueComponent::StartQuestInteraction(
 				? GetWorld()->GetGameInstance()->GetSubsystem<UVHVQuestSubsystem>()
 				: nullptr;
 			FVHVQuestObjectiveDefinition CurrentObjective;
-			const bool bExpectedInteractionStillCurrent = QuestSubsystem
+            const bool bExpectedInteractionStillCurrent = QuestSubsystem
 				&& (ExpectedQuestID.IsNone() || QuestSubsystem->GetRuntimeState().ActiveQuestID == ExpectedQuestID)
 				&& (ExpectedObjectiveID.IsNone()
 					|| (QuestSubsystem->GetCurrentObjective(CurrentObjective) && CurrentObjective.ObjectiveID == ExpectedObjectiveID));
-			bHandled = bExpectedInteractionStillCurrent && QuestParticipant->NotifyInteracted();
-		}
-	}
+            if (bExpectedInteractionStillCurrent && QuestSubsystem)
+            {
+                QuestSubsystem->TryGetCurrentContextualConversation(
+                    QuestParticipant->GetEffectiveParticipantID(),
+                    ContextualConversation,
+                    ContextualEntryNodeID);
+            }
+            bHandled = bExpectedInteractionStillCurrent && QuestParticipant->NotifyInteracted();
+        }
+    }
 
 	if (!bHandled)
 	{
@@ -75,7 +84,20 @@ bool UVHVNPCDialogueComponent::StartQuestInteraction(
 		return false;
 	}
 
-	if (!UIManager->IsConversationSessionActive())
+    if (ContextualConversation)
+    {
+        const bool bStartedContextual = ContextualEntryNodeID.IsNone()
+            ? UIManager->StartConversationFromAsset(ContextualConversation)
+            : UIManager->StartConversationAtNode(
+                ContextualConversation->Conversation, ContextualEntryNodeID.ToString());
+        if (!bStartedContextual)
+        {
+            CancelDialogueSessionBinding();
+            return false;
+        }
+    }
+
+    if (!UIManager->IsConversationSessionActive())
 	{
 		RestoreNPCState();
 	}

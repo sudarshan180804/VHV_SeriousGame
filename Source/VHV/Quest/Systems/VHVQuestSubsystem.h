@@ -57,6 +57,12 @@ public:
     UFUNCTION(BlueprintPure, Category = "VHV|Quest")
     bool GetQuestDefinition(FName QuestID, FVHVQuestDefinition& OutDefinition) const;
 
+    /** Resolve an independently authored conversation for a participant in the active objective. */
+    bool TryGetCurrentContextualConversation(
+        FName ParticipantID,
+        UVHVConversationDataAsset*& OutConversation,
+        FName& OutEntryNodeID) const;
+
     UFUNCTION(BlueprintPure, Category = "VHV|Quest")
     FVHVQuestArcRuntimeState GetRuntimeState() const;
 
@@ -167,6 +173,10 @@ public:
     UPROPERTY(BlueprintAssignable, Category = "VHV|Quest|Events")
     FOnVHVQuestObjectiveEvent OnObjectiveActivationRequested;
 
+    /** Broadcast after activation conditions and NPC readiness gates pass. */
+    UPROPERTY(BlueprintAssignable, Category = "VHV|Quest|Events")
+    FOnVHVQuestObjectiveEvent OnObjectiveReady;
+
     UPROPERTY(BlueprintAssignable, Category = "VHV|Quest|Events")
     FOnVHVTrackedQuestChanged OnTrackedQuestChanged;
 
@@ -212,6 +222,7 @@ private:
     void ClearActiveObjectiveNPCReadinessTracking();
     void ContinueActiveObjectiveAfterNPCMoves();
     void StartActiveObjectiveNPCMoveSequence();
+    bool TryStartActiveObjectiveNPCMoveSequenceFromConditions();
     void StartActiveObjectiveNPCMoveStage();
     void StartActiveObjectiveStageAmbientConversation(const FVHVQuestNPCMoveStage& Stage);
     void FinishActiveObjectiveNPCMoveStage();
@@ -279,6 +290,10 @@ private:
     bool bCurrentObjectiveActivated = false;
     bool bCurrentObjectiveWaitingOnConditions = false;
     bool bCompletingCurrentObjective = false;
+#if !UE_BUILD_SHIPPING
+    /** Guards developer fast-forward across transient cleanup and synchronous objective activation. */
+    bool bDeveloperObjectiveSkipInProgress = false;
+#endif
     uint32 ObjectiveActivationSerial = 0;
 
     using FBehaviorTargetRegistry = TMap<FName, TWeakObjectPtr<AVHVNPCBehaviorTarget>>;

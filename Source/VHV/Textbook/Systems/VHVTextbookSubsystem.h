@@ -71,6 +71,10 @@ public:
     UFUNCTION(BlueprintCallable, Category = "VHV|Textbook")
     bool SubmitMatching(const TArray<FMatchingPair>& SubmittedMatches);
 
+    /** Side-effect-free validation used by specialized presentations of Matching. */
+    UFUNCTION(BlueprintPure, Category = "VHV|Textbook")
+    bool IsMatchingSubmissionCorrect(const TArray<FMatchingPair>& SubmittedMatches) const;
+
     /** Records that the current observation prompt has been reviewed. */
     UFUNCTION(BlueprintCallable, Category = "VHV|Textbook")
     bool SubmitObservation();

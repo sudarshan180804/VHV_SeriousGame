@@ -9,6 +9,9 @@
 #include "UI/VHVMajorQuestStingerWidget.h"
 #include "UI/VHVOrderingWidget.h"
 #include "UI/VHVMatchingWidget.h"
+#include "UI/SocialSupport/VHVSocialSupportHUDWidget.h"
+#include "UI/SocialSupport/VHVSupportNetworkWidget.h"
+#include "UI/SocialSupport/VHVSupportTypeOverlayWidget.h"
 #include "Core/VHVDialogueTypes.h"
 #include "VHV.h"
 #include "GameFramework/PlayerController.h"
@@ -179,6 +182,7 @@ void UVHVUIManagerComponent::BeginPlay()
             }
 
             EnsureObservationWidget();
+            EnsureSocialSupportWidgets();
 
             if (OrderingWidgetClass && !OrderingWidget)
             {
@@ -234,6 +238,7 @@ void UVHVUIManagerComponent::BeginPlay()
         if (QuestSubsystem)
         {
             QuestSubsystem->OnObjectiveActivationRequested.AddDynamic(this, &UVHVUIManagerComponent::HandleQuestObjectiveActivationRequested);
+            QuestSubsystem->OnObjectiveReady.AddDynamic(this, &UVHVUIManagerComponent::HandleQuestObjectiveReady);
             QuestSubsystem->OnQuestStarted.AddDynamic(this, &UVHVUIManagerComponent::HandleQuestStarted);
             QuestSubsystem->OnQuestCompleted.AddDynamic(this, &UVHVUIManagerComponent::HandleQuestCompleted);
             if (QuestTrackerWidget)
@@ -280,6 +285,7 @@ void UVHVUIManagerComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
     if (QuestSubsystem)
     {
         QuestSubsystem->OnObjectiveActivationRequested.RemoveDynamic(this, &UVHVUIManagerComponent::HandleQuestObjectiveActivationRequested);
+        QuestSubsystem->OnObjectiveReady.RemoveDynamic(this, &UVHVUIManagerComponent::HandleQuestObjectiveReady);
         QuestSubsystem->OnQuestStarted.RemoveDynamic(this, &UVHVUIManagerComponent::HandleQuestStarted);
         QuestSubsystem->OnQuestCompleted.RemoveDynamic(this, &UVHVUIManagerComponent::HandleQuestCompleted);
     }
@@ -437,6 +443,26 @@ void UVHVUIManagerComponent::HandleQuestObjectiveActivationRequested(FName Quest
     else
     {
         StartConversationFromAsset(ConversationAsset);
+    }
+}
+
+void UVHVUIManagerComponent::HandleQuestObjectiveReady(
+    const FName QuestID,
+    const FName ObjectiveID)
+{
+    FVHVQuestDefinition Quest;
+    if (!QuestSubsystem || !QuestSubsystem->GetQuestDefinition(QuestID, Quest))
+    {
+        return;
+    }
+    const FVHVQuestObjectiveDefinition* Objective = Quest.Objectives.FindByPredicate(
+        [ObjectiveID](const FVHVQuestObjectiveDefinition& Candidate)
+        {
+            return Candidate.ObjectiveID == ObjectiveID;
+        });
+    if (Objective && Objective->ActivationStinger.IsConfigured())
+    {
+        QueueMajorQuestStinger(Objective->ActivationStinger);
     }
 }
 
@@ -605,6 +631,53 @@ void UVHVUIManagerComponent::EnsureMatchingWidget()
     }
 }
 
+void UVHVUIManagerComponent::EnsureSocialSupportWidgets()
+{
+    if (!MainHUD)
+    {
+        return;
+    }
+    APlayerController* PC = Cast<APlayerController>(GetOwner());
+    UPanelWidget* OverlayLayer = MainHUD->TopLayer
+        ? MainHUD->TopLayer.Get() : MainHUD->TextbookLayer.Get();
+    if (!PC || !OverlayLayer)
+    {
+        return;
+    }
+
+    if (!SupportTypeOverlayWidget)
+    {
+        SupportTypeOverlayWidget = CreateWidget<UVHVSupportTypeOverlayWidget>(
+            PC, UVHVSupportTypeOverlayWidget::StaticClass());
+        if (SupportTypeOverlayWidget)
+        {
+            ApplyPanelSlotLayout(SupportTypeOverlayWidget, OverlayLayer);
+            SupportTypeOverlayWidget->SetVisibility(ESlateVisibility::Collapsed);
+        }
+    }
+    if (!SocialSupportHUDWidget)
+    {
+        SocialSupportHUDWidget = CreateWidget<UVHVSocialSupportHUDWidget>(
+            PC, UVHVSocialSupportHUDWidget::StaticClass());
+        if (SocialSupportHUDWidget)
+        {
+            ApplyPanelSlotLayout(SocialSupportHUDWidget, OverlayLayer);
+            SocialSupportHUDWidget->SetVisibility(ESlateVisibility::Collapsed);
+        }
+    }
+    if (!SupportNetworkWidget && MainHUD->TextbookLayer)
+    {
+        SupportNetworkWidget = CreateWidget<UVHVSupportNetworkWidget>(
+            PC, UVHVSupportNetworkWidget::StaticClass());
+        if (SupportNetworkWidget)
+        {
+            SupportNetworkWidget->SetOwningUIManager(this);
+            ApplyPanelSlotLayout(SupportNetworkWidget, MainHUD->TextbookLayer);
+            SupportNetworkWidget->SetVisibility(ESlateVisibility::Collapsed);
+        }
+    }
+}
+
 UUserWidget* UVHVUIManagerComponent::ResolveModalFocusTarget(const EVHVUIState State) const
 {
     if (State == EVHVUIState::Dialogue)
@@ -625,6 +698,14 @@ UUserWidget* UVHVUIManagerComponent::ResolveModalFocusTarget(const EVHVUIState S
     if (State != EVHVUIState::LearningAsk || !TextbookSubsystem || !TextbookSubsystem->IsActivityActive())
     {
         return QuestionWidget;
+    }
+
+    const EVHVActivityPresentationStyle PresentationStyle =
+        TextbookSubsystem->GetCurrentActivity().PresentationStyle;
+    if (PresentationStyle == EVHVActivityPresentationStyle::SocialSupportNetwork
+        || PresentationStyle == EVHVActivityPresentationStyle::SocialSupportNetworkReadOnly)
+    {
+        return SupportNetworkWidget;
     }
 
     switch (TextbookSubsystem->GetCurrentActivity().ActivityType)
@@ -738,7 +819,11 @@ void UVHVUIManagerComponent::ApplyUIState(EVHVUIState NewState)
 
     if (ObservationWidget)
     {
-        const bool bShouldShowObservation = NewState == EVHVUIState::LearningAsk && TextbookSubsystem && TextbookSubsystem->IsActivityActive() && TextbookSubsystem->GetCurrentActivity().ActivityType == ETextbookActivityType::Observation;
+        const bool bShouldShowObservation = NewState == EVHVUIState::LearningAsk
+            && TextbookSubsystem && TextbookSubsystem->IsActivityActive()
+            && TextbookSubsystem->GetCurrentActivity().ActivityType == ETextbookActivityType::Observation
+            && TextbookSubsystem->GetCurrentActivity().PresentationStyle
+                == EVHVActivityPresentationStyle::Default;
         ObservationWidget->SetVisibility(bShouldShowObservation ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
     }
 
@@ -750,8 +835,24 @@ void UVHVUIManagerComponent::ApplyUIState(EVHVUIState NewState)
 
     if (MatchingWidget)
     {
-        const bool bShouldShowMatching = NewState == EVHVUIState::LearningAsk && TextbookSubsystem && TextbookSubsystem->IsActivityActive() && TextbookSubsystem->GetCurrentActivity().ActivityType == ETextbookActivityType::Matching;
+        const bool bShouldShowMatching = NewState == EVHVUIState::LearningAsk
+            && TextbookSubsystem && TextbookSubsystem->IsActivityActive()
+            && TextbookSubsystem->GetCurrentActivity().ActivityType == ETextbookActivityType::Matching
+            && TextbookSubsystem->GetCurrentActivity().PresentationStyle
+                == EVHVActivityPresentationStyle::Default;
         MatchingWidget->SetVisibility(bShouldShowMatching ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+    }
+
+    if (SupportNetworkWidget)
+    {
+        const bool bShouldShowNetwork = NewState == EVHVUIState::LearningAsk
+            && TextbookSubsystem && TextbookSubsystem->IsActivityActive()
+            && (TextbookSubsystem->GetCurrentActivity().PresentationStyle
+                    == EVHVActivityPresentationStyle::SocialSupportNetwork
+                || TextbookSubsystem->GetCurrentActivity().PresentationStyle
+                    == EVHVActivityPresentationStyle::SocialSupportNetworkReadOnly);
+        SupportNetworkWidget->SetVisibility(bShouldShowNetwork
+            ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
     }
 
     APlayerController* PC = Cast<APlayerController>(GetOwner());
@@ -842,10 +943,31 @@ void UVHVUIManagerComponent::RefreshCurrentAskQuestionUI()
         HideObservationUI();
         HideOrderingUI();
         HideMatchingUI();
+        HideSupportNetworkUI();
         return;
     }
 
     const FTextbookActivityData CurrentActivity = TextbookSubsystem->GetCurrentActivity();
+    if (CurrentActivity.PresentationStyle == EVHVActivityPresentationStyle::SocialSupportNetwork
+        || CurrentActivity.PresentationStyle == EVHVActivityPresentationStyle::SocialSupportNetworkReadOnly)
+    {
+        EnsureSocialSupportWidgets();
+        if (SupportNetworkWidget)
+        {
+            SupportNetworkWidget->SetOwningUIManager(this);
+            SupportNetworkWidget->Configure(CurrentActivity);
+            SupportNetworkWidget->SetVisibility(ESlateVisibility::Visible);
+        }
+        HideQuestionUI();
+        HideObservationUI();
+        HideOrderingUI();
+        HideMatchingUI();
+        HideFeedbackUI();
+        HideTeachUI();
+        if (DialogueWidget) DialogueWidget->SetVisibility(ESlateVisibility::Collapsed);
+        MainHUD->SetInteractionPromptVisible(false);
+        return;
+    }
     if (CurrentActivity.ActivityType == ETextbookActivityType::DialogueChoice)
     {
         HideQuestionUI();
@@ -1150,6 +1272,14 @@ void UVHVUIManagerComponent::SubmitMatchingAnswer(const TArray<FMatchingPair>& S
 bool UVHVUIManagerComponent::SubmitObservation()
 {
     return TextbookSubsystem && TextbookSubsystem->SubmitObservation();
+}
+
+void UVHVUIManagerComponent::HideSupportNetworkUI()
+{
+    if (SupportNetworkWidget)
+    {
+        SupportNetworkWidget->SetVisibility(ESlateVisibility::Collapsed);
+    }
 }
 
 bool UVHVUIManagerComponent::ShowMajorQuestStinger(
@@ -1789,6 +1919,19 @@ bool UVHVUIManagerComponent::StartLinkedLearningActivity(const FTextbookActivity
     return bStarted;
 }
 
+bool UVHVUIManagerComponent::StartQuestManagedLearningActivity(
+    const FTextbookActivityReference& Reference)
+{
+    if (!TextbookSubsystem || bConversationActive || TextbookSubsystem->IsActivityActive())
+    {
+        return false;
+    }
+
+    TextbookSubsystem->SetProgressionMode(EVHVTextbookProgressionMode::QuestManaged);
+    bQuestManagedLearningActivityActive = StartLinkedLearningActivity(Reference);
+    return bQuestManagedLearningActivityActive;
+}
+
 bool UVHVUIManagerComponent::TrySubmitCurrentQuestionAnswer()
 {
     if (!TextbookSubsystem || TextbookSubsystem->GetCurrentPhase() != ELearningPhase::Ask || !QuestionWidget)
@@ -1859,7 +2002,13 @@ bool UVHVUIManagerComponent::HandleActivityInteractionInput()
         }
         break;
     case ETextbookActivityType::Matching:
-        if (MatchingWidget)
+        if (TextbookSubsystem->GetCurrentActivity().PresentationStyle
+                == EVHVActivityPresentationStyle::SocialSupportNetwork
+            && SupportNetworkWidget)
+        {
+            SupportNetworkWidget->ActivateSelectedConnection();
+        }
+        else if (MatchingWidget)
         {
             MatchingWidget->ActivateFocusedSelection();
         }
@@ -1877,6 +2026,69 @@ bool UVHVUIManagerComponent::HandleActivityInteractionInput()
     // LearningAsk owns interaction while modal, including activities without a
     // select operation, so this press cannot also activate a world target.
     return true;
+}
+
+void UVHVUIManagerComponent::ShowSocialSupportObservationProgress(const int32 CompletedCount)
+{
+    EnsureSocialSupportWidgets();
+    if (SocialSupportHUDWidget) SocialSupportHUDWidget->ShowObservationProgress(CompletedCount);
+}
+
+void UVHVUIManagerComponent::ShowSocialSupportSupporterProgress(const int32 CompletedCount)
+{
+    EnsureSocialSupportWidgets();
+    if (SocialSupportHUDWidget) SocialSupportHUDWidget->ShowSupporterProgress(CompletedCount);
+}
+
+void UVHVUIManagerComponent::HideSocialSupportProgress()
+{
+    if (SocialSupportHUDWidget) SocialSupportHUDWidget->SetVisibility(ESlateVisibility::Collapsed);
+}
+
+void UVHVUIManagerComponent::ShowSupportTypeReveal()
+{
+    EnsureSocialSupportWidgets();
+    if (!SupportTypeOverlayWidget) return;
+    SupportTypeOverlayWidget->ShowTypeReveal();
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().SetTimer(
+            SupportTypeOverlayTimer, this,
+            &UVHVUIManagerComponent::HideSupportTypeOverlay, 5.0f, false);
+    }
+}
+
+void UVHVUIManagerComponent::HideSupportTypeOverlay()
+{
+    if (SupportTypeOverlayWidget)
+    {
+        SupportTypeOverlayWidget->SetVisibility(ESlateVisibility::Collapsed);
+    }
+}
+
+bool UVHVUIManagerComponent::IsSupportNetworkSubmissionCorrect(
+    const TArray<FMatchingPair>& Matches) const
+{
+    return TextbookSubsystem && TextbookSubsystem->IsMatchingSubmissionCorrect(Matches);
+}
+
+void UVHVUIManagerComponent::CompleteSupportNetworkPlanning(
+    const TArray<FMatchingPair>& Matches)
+{
+    if (TextbookSubsystem && TextbookSubsystem->IsMatchingSubmissionCorrect(Matches))
+    {
+        TextbookSubsystem->SubmitMatching(Matches);
+    }
+}
+
+void UVHVUIManagerComponent::CompleteSocialSupportNetworkPayoff()
+{
+    if (TextbookSubsystem && TextbookSubsystem->IsActivityActive()
+        && TextbookSubsystem->GetCurrentActivity().PresentationStyle
+            == EVHVActivityPresentationStyle::SocialSupportNetworkReadOnly)
+    {
+        TextbookSubsystem->CompleteCurrentActivity();
+    }
 }
 
 bool UVHVUIManagerComponent::CanAdvanceFromBackgroundClick() const

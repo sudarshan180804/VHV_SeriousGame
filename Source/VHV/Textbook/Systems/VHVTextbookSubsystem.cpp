@@ -451,6 +451,47 @@ bool UVHVTextbookSubsystem::SubmitObservation()
     return true;
 }
 
+bool UVHVTextbookSubsystem::IsMatchingSubmissionCorrect(
+    const TArray<FMatchingPair>& SubmittedMatches) const
+{
+    if (!CurrentLevelData || !RuntimeState.bActivityActive
+        || RuntimeState.CurrentPhase != ELearningPhase::Ask)
+    {
+        return false;
+    }
+
+    const FTextbookActivityData CurrentActivity = GetCurrentActivity();
+    if (!IsValidMatchingDefinition(CurrentActivity)
+        || SubmittedMatches.Num() != CurrentActivity.MatchingPairs.Num())
+    {
+        return false;
+    }
+
+    TMap<FString, FString> SubmittedByLeft;
+    TSet<FString> SubmittedRights;
+    for (const FMatchingPair& SubmittedMatch : SubmittedMatches)
+    {
+        if (SubmittedMatch.LeftText.IsEmpty() || SubmittedMatch.RightText.IsEmpty()
+            || SubmittedByLeft.Contains(SubmittedMatch.LeftText)
+            || SubmittedRights.Contains(SubmittedMatch.RightText))
+        {
+            return false;
+        }
+        SubmittedByLeft.Add(SubmittedMatch.LeftText, SubmittedMatch.RightText);
+        SubmittedRights.Add(SubmittedMatch.RightText);
+    }
+
+    for (const FMatchingPair& AuthoredMatch : CurrentActivity.MatchingPairs)
+    {
+        const FString* SubmittedRight = SubmittedByLeft.Find(AuthoredMatch.LeftText);
+        if (!SubmittedRight || *SubmittedRight != AuthoredMatch.RightText)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool UVHVTextbookSubsystem::IsValidMatchingDefinition(const FTextbookActivityData& Activity) const
 {
     if (Activity.ActivityType != ETextbookActivityType::Matching || Activity.MatchingPairs.Num() == 0)

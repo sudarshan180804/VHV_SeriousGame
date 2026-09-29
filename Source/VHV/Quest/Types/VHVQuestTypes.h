@@ -101,6 +101,30 @@ struct VHV_API FVHVQuestNPCMoveStage
     FGameplayTag AmbientConversationReceiverTag;
 };
 
+/** An independently available participant conversation inside a non-linear objective. */
+USTRUCT(BlueprintType)
+struct VHV_API FVHVQuestContextualConversation
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Contextual Conversation", meta = (Categories = "VHV.Participant"))
+    FGameplayTag ParticipantTag;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Contextual Conversation")
+    TSoftObjectPtr<UVHVConversationDataAsset> Conversation;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Contextual Conversation")
+    FName EntryNodeID;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Contextual Conversation|Story State")
+    FVHVStoryConditionSet AvailabilityConditions;
+
+    FName GetEffectiveParticipantID() const
+    {
+        return VHVAuthoringReferences::ResolveID(ParticipantTag, NAME_None, TEXT("VHV.Participant"));
+    }
+};
+
 USTRUCT(BlueprintType)
 struct VHV_API FVHVQuestObjectiveDefinition
 {
@@ -143,6 +167,10 @@ struct VHV_API FVHVQuestObjectiveDefinition
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective", meta = (EditCondition = "ObjectiveType == EVHVQuestObjectiveType::Conversation || ObjectiveType == EVHVQuestObjectiveType::LearningActivity", EditConditionHides))
     bool bAutoStart = true;
+
+    /** Optional participant-specific conversations used by non-linear objectives. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|Contextual Conversations")
+    TArray<FVHVQuestContextualConversation> ContextualConversations;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|NPC Action", meta = (DisplayName = "Participant", Categories = "VHV.Participant", EditCondition = "ObjectiveType == EVHVQuestObjectiveType::NPCAction", EditConditionHides))
     FGameplayTag NPCParticipantTag;
@@ -198,6 +226,10 @@ struct VHV_API FVHVQuestObjectiveDefinition
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|Story State")
     TArray<FVHVStoryEffect> CompletionEffects;
 
+    /** Lightweight presentation shown when readiness gates have passed and the objective becomes playable. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|Presentation")
+    FVHVMajorQuestStingerData ActivationStinger;
+
     /** Fire-and-forget NPC movement started when this objective completes. It does not become quest UI or block progression. */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|NPC Movement")
     TArray<FVHVQuestNPCMoveRequest> CompletionNPCMoves;
@@ -209,6 +241,18 @@ struct VHV_API FVHVQuestObjectiveDefinition
      */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|NPC Movement")
     TArray<FVHVQuestNPCMoveStage> NPCMoveStages;
+
+    /** Existing moves that must already have reached their targets before this objective becomes playable. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|NPC Movement")
+    TArray<FVHVQuestNPCMoveRequest> ActivationNPCReadiness;
+
+    /** When set, staged movement starts only after these story-state conditions become true. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|NPC Movement")
+    FVHVStoryConditionSet NPCMoveStageActivationConditions;
+
+    /** Complete the objective directly after every authored movement stage succeeds. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|NPC Movement")
+    bool bCompleteAfterNPCMoveStages = false;
 
     /** Free-roam travel blocks quest progression on arrivals while leaving gameplay input and camera control active. */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|NPC Movement")
