@@ -11,6 +11,7 @@ class UBillboardComponent;
 class UBoxComponent;
 class UPrimitiveComponent;
 class UTextRenderComponent;
+class UVHVInteractionComponent;
 class UVHVQuestSubsystem;
 class UVHVStoryStateSubsystem;
 struct FHitResult;
@@ -25,6 +26,7 @@ public:
 
 protected:
     virtual void BeginPlay() override;
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 #if WITH_EDITOR
     virtual void OnConstruction(const FTransform& Transform) override;
@@ -48,9 +50,28 @@ protected:
         UPrimitiveComponent* OtherComponent,
         int32 OtherBodyIndex);
 
+    UFUNCTION()
+    void HandleInteractionRequested();
+
+    UFUNCTION()
+    void HandleQuestStateChanged(FName QuestID);
+
+    UFUNCTION()
+    void HandleObjectiveStateChanged(FName QuestID, FName ObjectiveID);
+
+    UFUNCTION()
+    void HandleStoryFlagChanged(FName FlagID, bool bValue);
+
+    UFUNCTION()
+    void HandleStoryCounterChanged(FName CounterID, int32 NewValue);
+
 public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VHV|Location")
     TObjectPtr<UBoxComponent> BoxComponent;
+
+    /** Optional interaction receiver for world stations authored on this volume. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VHV|Location|Interaction")
+    TObjectPtr<UVHVInteractionComponent> InteractionComponent;
 
     UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "VHV|Location", meta = (DisplayName = "Location", Categories = "VHV.Location"))
     FGameplayTag LocationTag;
@@ -64,6 +85,13 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VHV|Location")
     bool bEnabled = true;
+
+    /** Require the player to press Interact instead of dispatching configured actions on overlap. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|Location|Interaction")
+    bool bRequirePlayerInteraction = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|Location|Interaction", meta = (EditCondition = "bRequirePlayerInteraction", EditConditionHides))
+    FText InteractionPrompt = FText::FromString(TEXT("Interact"));
 
     /** Optionally dispatch a generic WorldAction when the player enters this existing location trigger. */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|Location|World Action")
@@ -102,6 +130,11 @@ public:
     FVHVStoryConditionSet TriggerConditions;
 
 private:
+    bool AreConfiguredGatesSatisfied() const;
+    bool DispatchConfiguredActions();
+    void RefreshInteractionConfiguration();
+    void RefreshInteractionAvailability();
+
 #if WITH_EDITORONLY_DATA
     /** Screen-scaled editor handle that makes large trigger volumes easy to pick. Never cooked. */
     UPROPERTY()

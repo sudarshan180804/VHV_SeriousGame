@@ -7,6 +7,7 @@ production quest defaults on BP_ThirdPersonPlayerController.
 
 import traceback
 import unreal
+import author_objective_location_tracking as objective_tracking
 
 
 ROOT = "/Game/VHV_Stuff/HBCT"
@@ -1843,6 +1844,8 @@ def configure_arc(arc, level, conversations):
         objective("O03_ClassifyModels", "Talk to the Instructor about what you observed", q.CONVERSATION,
                   "VHV.Story.Flag.HBCT.RoleModel.ModelsClassified",
                   participant_tag=tag("VHV.Participant.Instructor"),
+                  location_tag=tag("VHV.Location.HBCT.ExercisePark"),
+                  ensure_participant_present_at_location=True,
                   conversation=conversations["DA_Conversation_HBCT_RoleModel_Reveal"],
                   entry_node_id="RMReveal_Thought", auto_start=False),
         objective("O04_MeetSomchai", "Talk to Uncle Somchai", q.CONVERSATION,
@@ -1854,6 +1857,10 @@ def configure_arc(arc, level, conversations):
                   activity_tag=tag("VHV.Activity.HBCT.RoleModel.SomchaiProfile"), auto_start=True),
         objective("O06_InspectCandidates", "Meet the possible role models", q.CUSTOM_EVENT,
                   custom_event_tag=tag("VHV.CustomEvent.HBCT.RoleModel.CandidatesInspected"),
+                  ensure_participant_present_at_location=True,
+                  activation_npc_readiness=[npc_move(
+                      "VHV.Participant.AuntSaeng",
+                      "VHV.Location.HBCT.RoleModel.SaengCandidate", True)],
                   completion_conditions=completion_condition(
                       "VHV.Story.Counter.HBCT.RoleModel.CandidatesInspected", 3)),
         objective("O07_SelectRoleModel", "Recommend a role model for Somchai", q.LEARNING_ACTIVITY,
@@ -1873,15 +1880,24 @@ def configure_arc(arc, level, conversations):
                   activity_tag=tag("VHV.Activity.HBCT.RoleModel.ReconstructProgression"), auto_start=True),
         objective("O11_PrepareDemonstration", "Prepare Somchai's role-model session", q.CONVERSATION,
                   participant_tag=tag("VHV.Participant.Instructor"),
+                  location_tag=tag("VHV.Location.HBCT.ExercisePark"),
+                  ensure_participant_present_at_location=True,
                   conversation=conversations["DA_Conversation_HBCT_RoleModel_Prepare"],
                   entry_node_id="RMPrepare_01", auto_start=False),
         objective("O12_ObserveSaeng", "Listen to Aunt Saeng's experience", q.CONVERSATION,
                   "VHV.Story.Flag.HBCT.RoleModel.DemonstrationComplete",
                   participant_tag=tag("VHV.Participant.AuntSaeng"),
+                  ensure_participant_present_at_location=True,
+                  activation_npc_readiness=[
+                      npc_move("VHV.Participant.AuntSaeng", "VHV.Location.HBCT.RoleModel.SaengDemo", True),
+                      npc_move("VHV.Participant.UncleSomchai", "VHV.Location.HBCT.RoleModel.SomchaiDemo", True),
+                  ],
                   conversation=conversations["DA_Conversation_HBCT_RoleModel_SaengDemo"],
                   entry_node_id="RMSaeng_01", auto_start=False),
         objective("O13_SupportImitation", "Help Somchai try the behavior", q.CONVERSATION,
                   participant_tag=tag("VHV.Participant.UncleSomchai"),
+                  location_tag=tag("VHV.Location.HBCT.RoleModel.SomchaiDemo"),
+                  ensure_participant_present_at_location=True,
                   conversation=conversations["DA_Conversation_HBCT_RoleModel_MidWalk"],
                   entry_node_id="RMMid_01", auto_start=False),
         objective("O14_PracticeTogether", "Walk with Aunt Saeng and Somchai", q.CONVERSATION,
@@ -1908,9 +1924,17 @@ def configure_arc(arc, level, conversations):
         objective("O16_FinalDebrief", "Talk to the Instructor", q.CONVERSATION,
                   "VHV.Story.Flag.HBCT.RoleModel.Completed",
                   participant_tag=tag("VHV.Participant.Instructor"),
+                  location_tag=tag("VHV.Location.HBCT.ExercisePark"),
+                  ensure_participant_present_at_location=True,
                   conversation=conversations["DA_Conversation_HBCT_RoleModel_FinalDebrief"],
                   entry_node_id="RMFinal_01", auto_start=False),
     ]
+    for tracking_quest_id, tracking_objectives in (
+            ("Q_HBCT_01_MOTIVATION", motivation),
+            ("Q_HBCT_02_GOAL_SETTING", goal_setting),
+            ("Q_HBCT_03_ROLE_MODEL", role_model)):
+        objective_tracking.apply_tracking_metadata_to_objectives(
+            tracking_quest_id, tracking_objectives)
     quests = [
         struct(unreal.VHVQuestDefinition,
                quest_id="Q_HBCT_00_INTRO",
@@ -2256,6 +2280,12 @@ def configure_map(ambient_assets, conversations):
     configure_semantic_npc_location(
         "HBCT_Location_HealthPost", (3000.0, -2500.0, 100.0),
         "VHV.Location.HBCT.HealthPost")
+    configure_semantic_npc_location(
+        "HBCT_Location_GoalSetting_GoodGoalBoard", (3000.0, -2500.0, 100.0),
+        "VHV.Location.HBCT.GoalSetting.GoodGoalBoard")
+    configure_semantic_npc_location(
+        "HBCT_Location_GoalSetting_FinalInstructor", (3000.0, -2500.0, 100.0),
+        "VHV.Location.HBCT.GoalSetting.FinalInstructor")
     spawn_actor(unreal.TargetPoint, "HBCT_OpeningCameraHook", (-1750.0, -2000.0, 180.0),
                 unreal.Rotator(-8.0, 90.0, 0.0), preserve_existing_transform=True)
 
@@ -2370,6 +2400,11 @@ def configure_map(ambient_assets, conversations):
     road_dialogue = road_villager.get_dialogue_component()
     road_dialogue.modify()
     road_dialogue.set_editor_property("default_conversation", None)
+    road_location = road_villager.get_actor_location()
+    configure_semantic_npc_location(
+        "HBCT_Location_GoalSetting_RoadsidePractice",
+        (road_location.x, road_location.y, road_location.z),
+        "VHV.Location.HBCT.GoalSetting.RoadsidePractice")
 
     # Technique 2 uses a deliberately simple linear staging strip. These transforms
     # are production-editable defaults only; no quest logic depends on them.
@@ -2472,7 +2507,7 @@ def configure_map(ambient_assets, conversations):
 
     mali_plan_review_trigger = configure_objective_trigger(
         "HBCT_Trigger_GoalSetting_MaliPlanReview", (8500.0, -2500.0, 100.0),
-        (260.0, 240.0, 220.0), "VHV.Location.HBCT.GoalSetting.MaliCheckIn",
+        (260.0, 240.0, 220.0), "VHV.Location.HBCT.GoalSetting.MaliPlanReview",
         "Q_HBCT_02_GOAL_SETTING", "O15_ReviewGoalPlan")
     place_trigger_with_group_if_disconnected(
         mali_plan_review_trigger, [mali], (180.0, -260.0, 0.0))

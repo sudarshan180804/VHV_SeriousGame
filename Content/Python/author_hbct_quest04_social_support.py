@@ -10,6 +10,7 @@ import traceback
 import unreal
 
 import author_hbct_milestone_01 as hbct
+import author_objective_location_tracking as objective_tracking
 
 
 ROOT = "/Game/VHV_Stuff/HBCT"
@@ -566,6 +567,7 @@ def configure_arc(arc, conversations):
                 participant_tag=tag("VHV.Participant.Instructor"),
                 conversation=conversations["DA_Conversation_HBCT_SocialSupport_InstructorReflection"],
                 entry_node_id="SSReflect_01", auto_start=False,
+                ensure_participant_present_at_location=True,
                 activation_npc_readiness=[npc_move(
                     "VHV.Participant.Instructor",
                     "VHV.Location.HBCT.SocialSupport.SSInstructorCatchup")],
@@ -579,6 +581,8 @@ def configure_arc(arc, conversations):
             objective(
                 "O04_MeetUncleChai", "Talk to Uncle Chai", q.CONVERSATION,
                 participant_tag=tag("VHV.Participant.UncleChai"),
+                location_tag=tag("VHV.Location.HBCT.SocialSupport.SSChaiHome"),
+                ensure_participant_present_at_location=True,
                 conversation=conversations["DA_Conversation_HBCT_SocialSupport_ChaiIntro"],
                 entry_node_id="SSChai_01", auto_start=False,
                 activation_conditions=all_flags(
@@ -586,6 +590,13 @@ def configure_arc(arc, conversations):
             objective(
                 "O05_FindChaiSupporters", "Find people who can help Uncle Chai continue", q.CUSTOM_EVENT,
                 custom_event_tag=tag("VHV.CustomEvent.HBCT.SocialSupport.SupportersComplete"),
+                ensure_participant_present_at_location=True,
+                activation_npc_readiness=[
+                    npc_move("VHV.Participant.ChaiWife", "VHV.Location.HBCT.SocialSupport.SSChaiWifeRecruit"),
+                    npc_move("VHV.Participant.ChaiDaughter", "VHV.Location.HBCT.SocialSupport.SSChaiDaughterRecruit"),
+                    npc_move("VHV.Participant.ChaiWalkingNeighbor", "VHV.Location.HBCT.SocialSupport.SSChaiNeighborRecruit"),
+                    npc_move("VHV.Participant.ChaiClinicNurse", "VHV.Location.HBCT.SocialSupport.SSChaiNurseRecruit"),
+                ],
                 completion_conditions=all_flags(*supporters),
                 completion_npc_moves=[npc_move(
                     "VHV.Participant.Instructor",
@@ -613,6 +624,7 @@ def configure_arc(arc, conversations):
                 world_action_receiver_tag=tag("VHV.WorldReceiver.HBCT.SocialSupport.PlanInAction"),
                 world_action_tag=start_action,
                 world_action_start_policy=unreal.VHVWorldActionStartPolicy.EXPLICIT_TRIGGER,
+                ensure_participant_present_at_location=True,
                 activation_npc_readiness=[
                     npc_move("VHV.Participant.UncleChai", "VHV.Location.HBCT.SocialSupport.SSPlanInAction"),
                     npc_move("VHV.Participant.ChaiWife", "VHV.Location.HBCT.SocialSupport.SSPlanWife"),
@@ -652,6 +664,7 @@ def configure_arc(arc, conversations):
                 world_action_receiver_tag=tag("VHV.WorldReceiver.HBCT.SocialSupport.Disruption"),
                 world_action_tag=start_action,
                 world_action_start_policy=unreal.VHVWorldActionStartPolicy.EXPLICIT_TRIGGER,
+                ensure_participant_present_at_location=True,
                 activation_npc_readiness=[
                     npc_move("VHV.Participant.UncleChai", "VHV.Location.HBCT.SocialSupport.SSDisruption"),
                     npc_move("VHV.Participant.ChaiWalkingNeighbor", "VHV.Location.HBCT.SocialSupport.SSNeighborDisruption"),
@@ -693,12 +706,15 @@ def configure_arc(arc, conversations):
                 participant_tag=tag("VHV.Participant.UncleChai"),
                 conversation=conversations["DA_Conversation_HBCT_SocialSupport_OneMonthLater"],
                 entry_node_id="SSMonth_01", auto_start=False,
+                ensure_participant_present_at_location=True,
                 activation_npc_readiness=[npc_move(
                     "VHV.Participant.UncleChai",
                     "VHV.Location.HBCT.SocialSupport.SSOneMonthLater")]),
             objective(
                 "O12_ProvideAppraisalSupport", "Respond to Uncle Chai's progress", q.CONVERSATION,
                 participant_tag=tag("VHV.Participant.UncleChai"),
+                location_tag=tag("VHV.Location.HBCT.SocialSupport.SSOneMonthLater"),
+                ensure_participant_present_at_location=True,
                 conversation=conversations["DA_Conversation_HBCT_SocialSupport_OneMonthLater"],
                 entry_node_id="SSAppraisal_Activity", auto_start=False,
                 completion_npc_moves=[
@@ -713,6 +729,7 @@ def configure_arc(arc, conversations):
                 participant_tag=tag("VHV.Participant.Instructor"),
                 conversation=conversations["DA_Conversation_HBCT_SocialSupport_FinalDebrief"],
                 entry_node_id="SSFinal_01", auto_start=False,
+                ensure_participant_present_at_location=True,
                 activation_npc_readiness=[
                     npc_move("VHV.Participant.Instructor", "VHV.Location.HBCT.SocialSupport.SSFinalDebrief"),
                     npc_move("VHV.Participant.UncleChai", "VHV.Location.HBCT.SocialSupport.SSFinalChai"),
@@ -722,6 +739,10 @@ def configure_arc(arc, conversations):
                 ],
                 completion_effects=[effect("VHV.Story.Flag.HBCT.SocialSupport.Completed")]),
         ])
+
+    quest4_objectives = list(quest4.get_editor_property("objectives"))
+    objective_tracking.apply_tracking_metadata_to_objectives(QUEST_ID, quest4_objectives)
+    quest4.set_editor_property("objectives", quest4_objectives)
 
     quests = list(arc.get_editor_property("quests"))
     existing_ids = [str(item.get_editor_property("quest_id")) for item in quests]

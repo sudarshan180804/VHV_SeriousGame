@@ -58,6 +58,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Dialogue")
 	TObjectPtr<UInputAction> DialogueExitAction;
 
+	/** Cycles objective location tracking while normal Gameplay UI owns input. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Quest")
+	TObjectPtr<UInputAction> LocateObjectiveAction;
+
 	/** Player UI manager component (owns HUD widgets) */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VHV|UI", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UVHVUIManagerComponent> UIManagerComponent;

@@ -6,6 +6,7 @@
 #include "VHVAmbientConversationActor.generated.h"
 
 class AVHVNPCCharacter;
+class AActor;
 class UVHVAmbientConversationData;
 class UVHVAmbientSpeechComponent;
 class UVHVWorldActionReceiverComponent;
@@ -64,6 +65,14 @@ public:
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VHV|Ambient Conversation")
     TObjectPtr<UVHVWorldActionReceiverComponent> WorldActionReceiver;
+
+    /** Optional world presentation revealed only when this conversation successfully starts. */
+    UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "VHV|Ambient Conversation|Presentation")
+    TArray<TObjectPtr<AActor>> ActorsHiddenUntilConversationStarts;
+
+    /** Optional world presentation hidden when this conversation successfully starts. */
+    UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "VHV|Ambient Conversation|Presentation")
+    TArray<TObjectPtr<AActor>> ActorsHiddenWhenConversationStarts;
 
     UFUNCTION(BlueprintCallable, Category = "VHV|Ambient Conversation")
     bool StartConversation();
@@ -137,6 +146,8 @@ private:
     void ApplyLineFacing(AVHVNPCCharacter* Speaker, bool bEnabled);
     void ClearFacing();
     void UpdateBubbleSeparation();
+    void ResetWorldPresentation();
+    void ApplyStartedWorldPresentation();
     bool IsPlayerOutsideObservationRadius() const;
     AVHVNPCCharacter* FindParticipant(FName SlotID) const;
     FText FindSpeakerName(FName SlotID) const;

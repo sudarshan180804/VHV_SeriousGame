@@ -130,6 +130,12 @@ void AVHVPlayerController::SetupInputComponent()
 			{
 				if (UIManagerComponent)
 				{
+					if (LocateObjectiveAction)
+					{
+						EnhancedInputComponent->BindAction(
+							LocateObjectiveAction.Get(), ETriggerEvent::Started,
+							UIManagerComponent.Get(), &UVHVUIManagerComponent::ToggleObjectiveTracking);
+					}
 					if (DialogueConfirmAction)
 					{
 						EnhancedInputComponent->BindAction(DialogueConfirmAction.Get(), ETriggerEvent::Started, UIManagerComponent.Get(), &UVHVUIManagerComponent::ConfirmChoiceInput);

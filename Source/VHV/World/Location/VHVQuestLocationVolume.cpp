@@ -5,10 +5,12 @@
 #include "Components/TextRenderComponent.h"
 #include "Engine/GameInstance.h"
 #include "EngineUtils.h"
+#include "Player/Components/VHVInteractionComponent.h"
 #include "Quest/Systems/VHVQuestSubsystem.h"
 #include "Story/Systems/VHVStoryStateSubsystem.h"
 #include "VHV.h"
 #include "VHVCharacter.h"
+#include "VHV/Core/VHVCollisionChannels.h"
 #include "World/Components/VHVWorldActionReceiverComponent.h"
 #include "World/Systems/VHVWorldActionSubsystem.h"
 
@@ -30,6 +32,9 @@ AVHVQuestLocationVolume::AVHVQuestLocationVolume()
     BoxComponent->SetCollisionResponseToAllChannels(ECR_Ignore);
     BoxComponent->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
     BoxComponent->SetGenerateOverlapEvents(true);
+
+    InteractionComponent = CreateDefaultSubobject<UVHVInteractionComponent>(TEXT("InteractionComponent"));
+    InteractionComponent->bCanInteract = false;
 
 #if WITH_EDITORONLY_DATA
     // These properties affect only the editor wireframe generated for the
@@ -85,6 +90,165 @@ void AVHVQuestLocationVolume::BeginPlay()
         QuestSubsystem = GameInstance->GetSubsystem<UVHVQuestSubsystem>();
         StoryStateSubsystem = GameInstance->GetSubsystem<UVHVStoryStateSubsystem>();
     }
+
+    if (InteractionComponent)
+    {
+        InteractionComponent->OnInteracted.AddUniqueDynamic(this, &AVHVQuestLocationVolume::HandleInteractionRequested);
+    }
+    if (QuestSubsystem)
+    {
+        QuestSubsystem->OnQuestStarted.AddUniqueDynamic(this, &AVHVQuestLocationVolume::HandleQuestStateChanged);
+        QuestSubsystem->OnQuestUpdated.AddUniqueDynamic(this, &AVHVQuestLocationVolume::HandleQuestStateChanged);
+        QuestSubsystem->OnQuestCompleted.AddUniqueDynamic(this, &AVHVQuestLocationVolume::HandleQuestStateChanged);
+        QuestSubsystem->OnObjectiveChanged.AddUniqueDynamic(this, &AVHVQuestLocationVolume::HandleObjectiveStateChanged);
+        QuestSubsystem->OnObjectiveCompleted.AddUniqueDynamic(this, &AVHVQuestLocationVolume::HandleObjectiveStateChanged);
+    }
+    if (StoryStateSubsystem)
+    {
+        StoryStateSubsystem->OnStoryFlagChanged.AddUniqueDynamic(this, &AVHVQuestLocationVolume::HandleStoryFlagChanged);
+        StoryStateSubsystem->OnStoryCounterChanged.AddUniqueDynamic(this, &AVHVQuestLocationVolume::HandleStoryCounterChanged);
+    }
+
+    RefreshInteractionConfiguration();
+}
+
+void AVHVQuestLocationVolume::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+    if (InteractionComponent)
+    {
+        InteractionComponent->OnInteracted.RemoveDynamic(this, &AVHVQuestLocationVolume::HandleInteractionRequested);
+    }
+    if (QuestSubsystem)
+    {
+        QuestSubsystem->OnQuestStarted.RemoveDynamic(this, &AVHVQuestLocationVolume::HandleQuestStateChanged);
+        QuestSubsystem->OnQuestUpdated.RemoveDynamic(this, &AVHVQuestLocationVolume::HandleQuestStateChanged);
+        QuestSubsystem->OnQuestCompleted.RemoveDynamic(this, &AVHVQuestLocationVolume::HandleQuestStateChanged);
+        QuestSubsystem->OnObjectiveChanged.RemoveDynamic(this, &AVHVQuestLocationVolume::HandleObjectiveStateChanged);
+        QuestSubsystem->OnObjectiveCompleted.RemoveDynamic(this, &AVHVQuestLocationVolume::HandleObjectiveStateChanged);
+    }
+    if (StoryStateSubsystem)
+    {
+        StoryStateSubsystem->OnStoryFlagChanged.RemoveDynamic(this, &AVHVQuestLocationVolume::HandleStoryFlagChanged);
+        StoryStateSubsystem->OnStoryCounterChanged.RemoveDynamic(this, &AVHVQuestLocationVolume::HandleStoryCounterChanged);
+    }
+
+    Super::EndPlay(EndPlayReason);
+}
+
+bool AVHVQuestLocationVolume::AreConfiguredGatesSatisfied() const
+{
+    const FVHVQuestArcRuntimeState QuestRuntime = QuestSubsystem
+        ? QuestSubsystem->GetRuntimeState() : FVHVQuestArcRuntimeState();
+    FVHVQuestObjectiveDefinition CurrentObjective;
+    const bool bHasCurrentObjective = QuestSubsystem
+        && QuestSubsystem->GetCurrentObjective(CurrentObjective);
+    const bool bQuestGatePassed = RequiredActiveQuestID.IsNone()
+        || QuestRuntime.ActiveQuestID == RequiredActiveQuestID;
+    const bool bObjectiveGatePassed = RequiredActiveObjectiveID.IsNone()
+        || (bHasCurrentObjective && CurrentObjective.ObjectiveID == RequiredActiveObjectiveID);
+    const bool bStoryGatePassed = TriggerConditions.Conditions.IsEmpty()
+        || (StoryStateSubsystem && StoryStateSubsystem->EvaluateConditionSet(TriggerConditions));
+    return bQuestGatePassed && bObjectiveGatePassed && bStoryGatePassed;
+}
+
+void AVHVQuestLocationVolume::RefreshInteractionConfiguration()
+{
+    if (BoxComponent)
+    {
+        BoxComponent->SetCollisionObjectType(
+            bRequirePlayerInteraction ? VHV_INTERACTABLE_CHANNEL : ECC_WorldDynamic);
+    }
+    if (InteractionComponent)
+    {
+        InteractionComponent->InteractionPrompt = InteractionPrompt;
+    }
+    RefreshInteractionAvailability();
+}
+
+void AVHVQuestLocationVolume::RefreshInteractionAvailability()
+{
+    if (!InteractionComponent)
+    {
+        return;
+    }
+
+    const bool bHasAvailableObjectiveAction = bActivateCurrentObjective
+        && (!bActivateCurrentObjectiveOnce || !bCurrentObjectiveActivatedByTrigger);
+    const bool bHasAvailableWorldAction = bTriggerWorldAction
+        && (!bTriggerWorldActionOnce || !bWorldActionTriggered);
+    InteractionComponent->bCanInteract = bEnabled
+        && bRequirePlayerInteraction
+        && (bHasAvailableObjectiveAction || bHasAvailableWorldAction)
+        && AreConfiguredGatesSatisfied();
+}
+
+bool AVHVQuestLocationVolume::DispatchConfiguredActions()
+{
+    const bool bCanActivateObjective = bActivateCurrentObjective
+        && (!bActivateCurrentObjectiveOnce || !bCurrentObjectiveActivatedByTrigger);
+    const bool bCanTriggerWorldAction = bTriggerWorldAction
+        && (!bTriggerWorldActionOnce || !bWorldActionTriggered);
+    if ((!bCanActivateObjective && !bCanTriggerWorldAction) || !AreConfiguredGatesSatisfied())
+    {
+        RefreshInteractionAvailability();
+        return false;
+    }
+
+    bool bDispatched = false;
+    if (bCanActivateObjective && QuestSubsystem && QuestSubsystem->RequestCurrentObjectiveActivation())
+    {
+        bCurrentObjectiveActivatedByTrigger = true;
+        bDispatched = true;
+    }
+
+    if (bCanTriggerWorldAction)
+    {
+        const FName ReceiverID = VHVAuthoringReferences::ResolveID(
+            WorldActionReceiverTag, NAME_None, TEXT("VHV.WorldReceiver"));
+        const FName ActionID = VHVAuthoringReferences::ResolveID(
+            WorldActionTag, NAME_None, TEXT("VHV.WorldAction"));
+
+        bool bStarted = bTrackWorldActionAsObjective && QuestSubsystem && QuestSubsystem->RequestExplicitWorldAction(
+            ReceiverID, ActionID, RequiredActiveQuestID, RequiredActiveObjectiveID);
+
+        if (!bStarted && !bTrackWorldActionAsObjective)
+        {
+            FGuid RequestID;
+            UVHVWorldActionSubsystem* WorldActions = GetWorld()
+                ? GetWorld()->GetSubsystem<UVHVWorldActionSubsystem>() : nullptr;
+            const EVHVWorldActionExecutionResult Result = WorldActions
+                ? WorldActions->RequestWorldAction(ReceiverID, ActionID, RequestID)
+                : EVHVWorldActionExecutionResult::Rejected;
+            bStarted = Result != EVHVWorldActionExecutionResult::Rejected;
+        }
+
+        if (!bStarted && bTrackWorldActionAsObjective
+            && RequiredActiveQuestID.IsNone() && RequiredActiveObjectiveID.IsNone())
+        {
+            FGuid RequestID;
+            UVHVWorldActionSubsystem* WorldActions = GetWorld()
+                ? GetWorld()->GetSubsystem<UVHVWorldActionSubsystem>() : nullptr;
+            const EVHVWorldActionExecutionResult Result = WorldActions
+                ? WorldActions->RequestWorldAction(ReceiverID, ActionID, RequestID)
+                : EVHVWorldActionExecutionResult::Rejected;
+            bStarted = Result != EVHVWorldActionExecutionResult::Rejected;
+        }
+
+        if (bStarted)
+        {
+            bWorldActionTriggered = true;
+            bDispatched = true;
+        }
+        else
+        {
+            UE_LOG(LogVHV, Warning,
+                TEXT("[VHVLocation] Trigger '%s' could not dispatch WorldAction '%s' to '%s'."),
+                *GetName(), *ActionID.ToString(), *ReceiverID.ToString());
+        }
+    }
+
+    RefreshInteractionAvailability();
+    return bDispatched;
 }
 
 void AVHVQuestLocationVolume::HandleBoxBeginOverlap(
@@ -114,86 +278,50 @@ void AVHVQuestLocationVolume::HandleBoxBeginOverlap(
     }
 
     PlayersInside.Add(PlayerCharacter);
+    if (bRequirePlayerInteraction)
+    {
+        return;
+    }
+
     if (QuestSubsystem)
     {
         QuestSubsystem->NotifyLocationReached(EffectiveLocationID);
     }
+    DispatchConfiguredActions();
+}
 
-    const bool bCanActivateObjective = bActivateCurrentObjective
-        && (!bActivateCurrentObjectiveOnce || !bCurrentObjectiveActivatedByTrigger);
-    const bool bCanTriggerWorldAction = bTriggerWorldAction
-        && (!bTriggerWorldActionOnce || !bWorldActionTriggered);
-    if (!bCanActivateObjective && !bCanTriggerWorldAction)
+void AVHVQuestLocationVolume::HandleInteractionRequested()
+{
+    if (!bRequirePlayerInteraction || !bEnabled)
     {
         return;
     }
 
-    const FVHVQuestArcRuntimeState QuestRuntime = QuestSubsystem
-        ? QuestSubsystem->GetRuntimeState() : FVHVQuestArcRuntimeState();
-    FVHVQuestObjectiveDefinition CurrentObjective;
-    const bool bHasCurrentObjective = QuestSubsystem
-        && QuestSubsystem->GetCurrentObjective(CurrentObjective);
-    const bool bQuestGatePassed = RequiredActiveQuestID.IsNone()
-        || QuestRuntime.ActiveQuestID == RequiredActiveQuestID;
-    const bool bObjectiveGatePassed = RequiredActiveObjectiveID.IsNone()
-        || (bHasCurrentObjective && CurrentObjective.ObjectiveID == RequiredActiveObjectiveID);
-    const bool bStoryGatePassed = TriggerConditions.Conditions.IsEmpty()
-        || (StoryStateSubsystem && StoryStateSubsystem->EvaluateConditionSet(TriggerConditions));
-    if (!bQuestGatePassed || !bObjectiveGatePassed || !bStoryGatePassed)
+    if (DispatchConfiguredActions())
     {
-        return;
+        UE_LOG(LogVHV, Log, TEXT("[VHVSM] World station '%s' interaction dispatched for objective '%s'."),
+            *GetName(), *RequiredActiveObjectiveID.ToString());
     }
+}
 
-    if (bCanActivateObjective && QuestSubsystem && QuestSubsystem->RequestCurrentObjectiveActivation())
-    {
-        bCurrentObjectiveActivatedByTrigger = true;
-    }
+void AVHVQuestLocationVolume::HandleQuestStateChanged(FName QuestID)
+{
+    RefreshInteractionAvailability();
+}
 
-    if (bCanTriggerWorldAction)
-    {
-        const FName ReceiverID = VHVAuthoringReferences::ResolveID(
-            WorldActionReceiverTag, NAME_None, TEXT("VHV.WorldReceiver"));
-        const FName ActionID = VHVAuthoringReferences::ResolveID(
-            WorldActionTag, NAME_None, TEXT("VHV.WorldAction"));
+void AVHVQuestLocationVolume::HandleObjectiveStateChanged(FName QuestID, FName ObjectiveID)
+{
+    RefreshInteractionAvailability();
+}
 
-        bool bStarted = bTrackWorldActionAsObjective && QuestSubsystem && QuestSubsystem->RequestExplicitWorldAction(
-            ReceiverID, ActionID, RequiredActiveQuestID, RequiredActiveObjectiveID);
+void AVHVQuestLocationVolume::HandleStoryFlagChanged(FName FlagID, bool bValue)
+{
+    RefreshInteractionAvailability();
+}
 
-        if (!bStarted && !bTrackWorldActionAsObjective)
-        {
-            FGuid RequestID;
-            UVHVWorldActionSubsystem* WorldActions = GetWorld()
-                ? GetWorld()->GetSubsystem<UVHVWorldActionSubsystem>() : nullptr;
-            const EVHVWorldActionExecutionResult Result = WorldActions
-                ? WorldActions->RequestWorldAction(ReceiverID, ActionID, RequestID)
-                : EVHVWorldActionExecutionResult::Rejected;
-            bStarted = Result != EVHVWorldActionExecutionResult::Rejected;
-        }
-
-        // Ungated volumes remain available for generic, non-quest WorldActions.
-        if (!bStarted && bTrackWorldActionAsObjective
-            && RequiredActiveQuestID.IsNone() && RequiredActiveObjectiveID.IsNone())
-        {
-            FGuid RequestID;
-            UVHVWorldActionSubsystem* WorldActions = GetWorld()
-                ? GetWorld()->GetSubsystem<UVHVWorldActionSubsystem>() : nullptr;
-            const EVHVWorldActionExecutionResult Result = WorldActions
-                ? WorldActions->RequestWorldAction(ReceiverID, ActionID, RequestID)
-                : EVHVWorldActionExecutionResult::Rejected;
-            bStarted = Result != EVHVWorldActionExecutionResult::Rejected;
-        }
-
-        if (bStarted)
-        {
-            bWorldActionTriggered = true;
-        }
-        else
-        {
-            UE_LOG(LogVHV, Warning,
-                TEXT("[VHVLocation] Trigger '%s' could not dispatch WorldAction '%s' to '%s'."),
-                *GetName(), *ActionID.ToString(), *ReceiverID.ToString());
-        }
-    }
+void AVHVQuestLocationVolume::HandleStoryCounterChanged(FName CounterID, int32 NewValue)
+{
+    RefreshInteractionAvailability();
 }
 
 void AVHVQuestLocationVolume::HandleBoxEndOverlap(
@@ -215,12 +343,14 @@ void AVHVQuestLocationVolume::HandleBoxEndOverlap(
 void AVHVQuestLocationVolume::OnConstruction(const FTransform& Transform)
 {
     Super::OnConstruction(Transform);
+    RefreshInteractionConfiguration();
     RefreshEditorVisualization();
 }
 
 void AVHVQuestLocationVolume::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
     Super::PostEditChangeProperty(PropertyChangedEvent);
+    RefreshInteractionConfiguration();
     RefreshEditorVisualization();
 }
 
@@ -293,6 +423,11 @@ EDataValidationResult AVHVQuestLocationVolume::IsDataValid(FDataValidationContex
                 *Condition.StateTag.ToString(), ExpectedCategory)));
             Result = EDataValidationResult::Invalid;
         }
+    }
+    if (bRequirePlayerInteraction && !bTriggerWorldAction && !bActivateCurrentObjective)
+    {
+        Context.AddError(FText::FromString(TEXT("Interaction-required location volumes need a World Action or objective activation to dispatch.")));
+        Result = EDataValidationResult::Invalid;
     }
     if (bTriggerWorldAction)
     {

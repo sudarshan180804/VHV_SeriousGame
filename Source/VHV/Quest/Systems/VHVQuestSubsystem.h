@@ -10,6 +10,7 @@ class UVHVStoryStateSubsystem;
 class UVHVTextbookSubsystem;
 class UVHVWorldActionSubsystem;
 class AActor;
+class AVHVNPCCharacter;
 class AVHVNPCBehaviorTarget;
 class UVHVNPCQuestCommandComponent;
 class UWorld;
@@ -46,6 +47,15 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "VHV|Quest")
     bool GetCurrentObjective(FVHVQuestObjectiveDefinition& OutObjective) const;
+
+    /** Resolves the current objective's authored semantic destination once for location tracking. */
+    bool ResolveCurrentObjectiveTrackingTarget(
+        const UWorld* World,
+        FName& OutQuestID,
+        FName& OutObjectiveID,
+        FName& OutLocationID,
+        FVector& OutWorldLocation,
+        AActor*& OutTargetActor) const;
 
     UFUNCTION(BlueprintCallable, Category = "VHV|Quest")
     bool CompleteCurrentObjective();
@@ -212,8 +222,16 @@ private:
     bool ValidateQuestArc(const UVHVQuestArcData* QuestArc) const;
     void CompleteCurrentQuest();
     void ActivateCurrentObjective();
+    void ExposeCurrentObjective();
     void TryActivateCurrentObjective();
     void ReevaluateWaitingObjective();
+    bool EnsureRequiredParticipantsPresent(const FVHVQuestObjectiveDefinition& Objective);
+    bool EnsureParticipantPresentAtLocation(
+        const FGameplayTag& ParticipantTag,
+        FName ParticipantID,
+        FName LocationID,
+        FName ObjectiveID,
+        const TSoftClassPtr<AVHVNPCCharacter>& FallbackSpawnClass);
     bool TryCompleteCurrentObjectiveFromStoryState();
     void EnsureStoryStateDelegateBindings();
     bool GetActiveObjectiveNPCReadinessRequirements(TArray<TPair<FName, FName>>& OutRequirements) const;

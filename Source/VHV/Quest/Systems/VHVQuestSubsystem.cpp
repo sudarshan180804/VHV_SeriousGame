@@ -2,7 +2,10 @@
 
 #include "Core/VHVConversationDataAsset.h"
 #include "Quest/Data/VHVQuestArcData.h"
+#include "NPC/VHVNPCCharacter.h"
 #include "NPC/Components/VHVNPCQuestCommandComponent.h"
+#include "NPC/Components/VHVNPCInteractionComponent.h"
+#include "NPC/Components/VHVNPCNameplateComponent.h"
 #include "NPC/Quest/VHVNPCBehaviorTarget.h"
 #include "Quest/Components/VHVQuestParticipantComponent.h"
 #include "Save/VHVSaveTypes.h"
@@ -11,8 +14,11 @@
 #include "Textbook/Systems/VHVTextbookSubsystem.h"
 #include "World/Systems/VHVWorldActionSubsystem.h"
 #include "World/Location/VHVQuestLocationVolume.h"
+#include "Components/BoxComponent.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "TimerManager.h"
 #include "VHV.h"
 
@@ -136,7 +142,6 @@ bool UVHVQuestSubsystem::StartQuest(FName QuestID)
 
     UE_LOG(LogVHV, Log, TEXT("[VHVQuest] Started quest '%s'."), *QuestID.ToString());
     OnQuestStarted.Broadcast(QuestID);
-    OnQuestUpdated.Broadcast(QuestID);
     ActivateCurrentObjective();
     return true;
 }
@@ -170,6 +175,49 @@ bool UVHVQuestSubsystem::GetCurrentObjective(FVHVQuestObjectiveDefinition& OutOb
         return false;
     }
     OutObjective = *Objective;
+    return true;
+}
+
+bool UVHVQuestSubsystem::ResolveCurrentObjectiveTrackingTarget(
+    const UWorld* World,
+    FName& OutQuestID,
+    FName& OutObjectiveID,
+    FName& OutLocationID,
+    FVector& OutWorldLocation,
+    AActor*& OutTargetActor) const
+{
+    OutQuestID = NAME_None;
+    OutObjectiveID = NAME_None;
+    OutLocationID = NAME_None;
+    OutWorldLocation = FVector::ZeroVector;
+    OutTargetActor = nullptr;
+
+    const FVHVQuestObjectiveDefinition* Objective = GetActiveObjective();
+    if (!World || !Objective || !Objective->bEnableLocationTracking)
+    {
+        return false;
+    }
+
+    const FName LocationID = Objective->GetEffectiveTrackingLocationID();
+    if (LocationID.IsNone())
+    {
+        return false;
+    }
+
+    AActor* TargetActor = FindNPCMovementTarget(World, LocationID);
+    if (!TargetActor)
+    {
+        UE_LOG(LogVHV, Warning,
+            TEXT("[VHVTracking] Could not resolve semantic location '%s' for objective '%s'."),
+            *LocationID.ToString(), *Objective->ObjectiveID.ToString());
+        return false;
+    }
+
+    OutQuestID = RuntimeState.ActiveQuestID;
+    OutObjectiveID = Objective->ObjectiveID;
+    OutLocationID = LocationID;
+    OutWorldLocation = TargetActor->GetActorLocation();
+    OutTargetActor = TargetActor;
     return true;
 }
 
@@ -265,7 +313,6 @@ bool UVHVQuestSubsystem::CompleteCurrentObjective()
     OnObjectiveCompleted.Broadcast(QuestID, ObjectiveID);
 
     ++QuestState->CurrentObjectiveIndex;
-    OnQuestUpdated.Broadcast(QuestID);
     bCompletingCurrentObjective = false;
     if (Quest->Objectives.IsValidIndex(QuestState->CurrentObjectiveIndex))
     {
@@ -273,6 +320,7 @@ bool UVHVQuestSubsystem::CompleteCurrentObjective()
     }
     else
     {
+        OnQuestUpdated.Broadcast(QuestID);
         CompleteCurrentQuest();
     }
     return true;
@@ -322,7 +370,8 @@ bool UVHVQuestSubsystem::IsQuestFlowActive() const
 bool UVHVQuestSubsystem::IsCurrentObjectiveWaitingForActivation() const
 {
     return GetActiveObjective()
-        && (bCurrentObjectiveWaitingOnConditions || bCurrentObjectiveWaitingOnNPCReadiness)
+        && (bCurrentObjectiveWaitingOnConditions
+            || bCurrentObjectiveWaitingOnNPCReadiness)
         && !bCurrentObjectiveActivated;
 }
 
@@ -456,7 +505,6 @@ bool UVHVQuestSubsystem::DebugRestartCurrentQuest()
         RuntimeState.TrackedQuestID = QuestID;
         OnTrackedQuestChanged.Broadcast(QuestID);
     }
-    OnQuestUpdated.Broadcast(QuestID);
     ActivateCurrentObjective();
     return true;
 }
@@ -700,7 +748,10 @@ bool UVHVQuestSubsystem::ImportSaveState(const FVHVQuestSaveState& SaveState)
     OnTrackedQuestChanged.Broadcast(RuntimeState.TrackedQuestID);
     for (const FVHVQuestRuntimeState& QuestState : RuntimeState.QuestStates)
     {
-        OnQuestUpdated.Broadcast(QuestState.QuestID);
+        if (QuestState.QuestID != RuntimeState.ActiveQuestID)
+        {
+            OnQuestUpdated.Broadcast(QuestState.QuestID);
+        }
     }
     RestorePersistentNPCMoves();
     if (!RuntimeState.ActiveQuestID.IsNone())
@@ -1387,6 +1438,88 @@ bool UVHVQuestSubsystem::ValidateQuestArc(const UVHVQuestArcData* QuestArc) cons
                     bValid = false;
                 }
             }
+
+            TSet<FName> ReadinessParticipants;
+            for (const FVHVQuestNPCMoveRequest& Requirement : Objective.ActivationNPCReadiness)
+            {
+                const FName ParticipantID = Requirement.GetEffectiveParticipantID();
+                const FName DestinationID = Requirement.GetEffectiveDestinationID();
+                if (!VHVAuthoringReferences::IsValidReferenceTag(Requirement.ParticipantTag, TEXT("VHV.Participant"))
+                    || !VHVAuthoringReferences::IsValidReferenceTag(Requirement.DestinationLocationTag, TEXT("VHV.Location"))
+                    || ParticipantID.IsNone() || DestinationID.IsNone())
+                {
+                    UE_LOG(LogVHV, Warning,
+                        TEXT("[VHVQuest] Quest '%s' objective '%s' has an invalid activation NPC readiness requirement."),
+                        *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString());
+                    bValid = false;
+                }
+                else if (ReadinessParticipants.Contains(ParticipantID))
+                {
+                    UE_LOG(LogVHV, Warning,
+                        TEXT("[VHVQuest] Quest '%s' objective '%s' has multiple activation requirements for participant '%s'."),
+                        *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString(), *ParticipantID.ToString());
+                    bValid = false;
+                }
+                ReadinessParticipants.Add(ParticipantID);
+            }
+
+            if (Objective.bEnsureParticipantPresentAtLocation)
+            {
+                if (!Objective.RequiredParticipantSpawnClass.IsNull()
+                    && !Objective.ParticipantTag.IsValid())
+                {
+                    UE_LOG(LogVHV, Warning,
+                        TEXT("[VHVQuest] Quest '%s' objective '%s' has a participant fallback class but no semantic participant tag."),
+                        *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString());
+                    bValid = false;
+                }
+                if (!Objective.NPCMoveStages.IsEmpty()
+                    || Objective.NPCTravelMode == EVHVQuestNPCTravelMode::FreeRoam)
+                {
+                    UE_LOG(LogVHV, Warning,
+                        TEXT("[VHVQuest] Quest '%s' objective '%s' cannot guarantee stationary participant presence while also owning travel stages."),
+                        *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString());
+                    bValid = false;
+                }
+                if (Objective.ActivationNPCReadiness.IsEmpty())
+                {
+                    ValidateReference(Objective.ParticipantTag, NAME_None, TEXT("VHV.Participant"), TEXT("PresenceParticipant"));
+                    ValidateReference(Objective.LocationTag, NAME_None, TEXT("VHV.Location"), TEXT("PresenceLocation"));
+                    if (Objective.GetEffectiveParticipantID().IsNone()
+                        || Objective.GetEffectiveLocationID().IsNone())
+                    {
+                        UE_LOG(LogVHV, Warning,
+                            TEXT("[VHVQuest] Quest '%s' objective '%s' enables participant presence without a participant/location pair."),
+                            *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString());
+                        bValid = false;
+                    }
+                }
+            }
+
+            if (Objective.bEnableLocationTracking)
+            {
+                if (Objective.TrackingLocationTag.IsValid())
+                {
+                    ValidateReference(
+                        Objective.TrackingLocationTag, NAME_None,
+                        TEXT("VHV.Location"), TEXT("TrackingLocation"));
+                }
+                if (Objective.GetEffectiveTrackingLocationID().IsNone())
+                {
+                    UE_LOG(LogVHV, Warning,
+                        TEXT("[VHVQuest] Quest '%s' objective '%s' enables location tracking without one resolvable authored location."),
+                        *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString());
+                    bValid = false;
+                }
+            }
+            else if (Objective.TrackingLocationTag.IsValid())
+            {
+                UE_LOG(LogVHV, Warning,
+                    TEXT("[VHVQuest] Quest '%s' objective '%s' authors TrackingLocationTag while location tracking is disabled."),
+                    *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString());
+                bValid = false;
+            }
+
             TSet<FName> CompletionMoveParticipants;
             for (const FVHVQuestNPCMoveRequest& Move : Objective.CompletionNPCMoves)
             {
@@ -1589,9 +1722,291 @@ void UVHVQuestSubsystem::ActivateCurrentObjective()
     {
         return;
     }
+
+    const bool bRequiredParticipantsReady = EnsureRequiredParticipantsPresent(*Objective);
+    if (!bRequiredParticipantsReady)
+    {
+        UE_LOG(LogVHV, Error,
+            TEXT("[VHVQuest] Presence preparation failed: Quest='%s' Objective='%s'. Exposing a recoverable failure state instead of hiding the objective."),
+            *RuntimeState.ActiveQuestID.ToString(), *Objective->ObjectiveID.ToString());
+        ExposeCurrentObjective();
+        return;
+    }
+
+    if (Objective->bEnsureParticipantPresentAtLocation)
+    {
+        UE_LOG(LogVHV, Log,
+            TEXT("[VHVQuest] Exposing objective '%s'; required participants ready."),
+            *Objective->ObjectiveID.ToString());
+    }
+    ExposeCurrentObjective();
+}
+
+void UVHVQuestSubsystem::ExposeCurrentObjective()
+{
+    const FVHVQuestObjectiveDefinition* Objective = GetActiveObjective();
+    if (!Objective)
+    {
+        return;
+    }
+
     OnObjectiveChanged.Broadcast(RuntimeState.ActiveQuestID, Objective->ObjectiveID);
     OnQuestUpdated.Broadcast(RuntimeState.ActiveQuestID);
     TryActivateCurrentObjective();
+}
+
+bool UVHVQuestSubsystem::EnsureRequiredParticipantsPresent(
+    const FVHVQuestObjectiveDefinition& Objective)
+{
+    if (!Objective.bEnsureParticipantPresentAtLocation)
+    {
+        return true;
+    }
+
+    if (!Objective.ActivationNPCReadiness.IsEmpty())
+    {
+        bool bAllPresent = true;
+        for (const FVHVQuestNPCMoveRequest& Requirement : Objective.ActivationNPCReadiness)
+        {
+            bAllPresent = EnsureParticipantPresentAtLocation(
+                Requirement.ParticipantTag,
+                Requirement.GetEffectiveParticipantID(),
+                Requirement.GetEffectiveDestinationID(),
+                Objective.ObjectiveID,
+                Objective.RequiredParticipantSpawnClass) && bAllPresent;
+        }
+        return bAllPresent;
+    }
+
+    return EnsureParticipantPresentAtLocation(
+        Objective.ParticipantTag,
+        Objective.GetEffectiveParticipantID(),
+        Objective.GetEffectiveLocationID(),
+        Objective.ObjectiveID,
+        Objective.RequiredParticipantSpawnClass);
+}
+
+bool UVHVQuestSubsystem::EnsureParticipantPresentAtLocation(
+    const FGameplayTag& ParticipantTag,
+    const FName ParticipantID,
+    const FName LocationID,
+    const FName ObjectiveID,
+    const TSoftClassPtr<AVHVNPCCharacter>& FallbackSpawnClass)
+{
+    UWorld* World = GetWorld();
+    if (!World || ParticipantID.IsNone() || LocationID.IsNone())
+    {
+        UE_LOG(LogVHV, Error,
+            TEXT("[VHVQuest] Presence hard failure: Quest='%s' Objective='%s' Participant='%s' Location='%s' Reason='invalid world or authored identity'."),
+            *RuntimeState.ActiveQuestID.ToString(), *ObjectiveID.ToString(),
+            *ParticipantID.ToString(), *LocationID.ToString());
+        return false;
+    }
+
+    UVHVNPCQuestCommandComponent* CommandComponent = FindNPCCommandComponent(World, ParticipantID);
+    AVHVNPCCharacter* ParticipantActor = CommandComponent
+        ? Cast<AVHVNPCCharacter>(CommandComponent->GetOwner())
+        : nullptr;
+    if (ParticipantActor)
+    {
+        UE_LOG(LogVHV, Log,
+            TEXT("[VHVQuest] Required participant '%s' resolved from participant registry."),
+            *ParticipantID.ToString());
+    }
+
+    // Registry misses are exceptional. Search VHV NPCs exactly once for this
+    // objective activation, using semantic participant identity only.
+    if (!ParticipantActor)
+    {
+        AVHVNPCCharacter* WorldMatch = nullptr;
+        for (TActorIterator<AVHVNPCCharacter> It(World); It; ++It)
+        {
+            const UVHVQuestParticipantComponent* Participant = It->GetQuestParticipantComponent();
+            if (!Participant || Participant->GetEffectiveParticipantID() != ParticipantID)
+            {
+                continue;
+            }
+            if (WorldMatch)
+            {
+                UE_LOG(LogVHV, Error,
+                    TEXT("[VHVQuest] Presence hard failure: Quest='%s' Objective='%s' Participant='%s' Location='%s' Reason='multiple matching VHV NPC actors'."),
+                    *RuntimeState.ActiveQuestID.ToString(), *ObjectiveID.ToString(),
+                    *ParticipantID.ToString(), *LocationID.ToString());
+                return false;
+            }
+            WorldMatch = *It;
+        }
+
+        if (WorldMatch)
+        {
+            CommandComponent = WorldMatch->GetQuestCommandComponent();
+            if (!CommandComponent || !RegisterNPCCommandComponent(CommandComponent))
+            {
+                UE_LOG(LogVHV, Error,
+                    TEXT("[VHVQuest] Presence hard failure: Quest='%s' Objective='%s' Participant='%s' Location='%s' Reason='matching world actor could not register'."),
+                    *RuntimeState.ActiveQuestID.ToString(), *ObjectiveID.ToString(),
+                    *ParticipantID.ToString(), *LocationID.ToString());
+                return false;
+            }
+            ParticipantActor = WorldMatch;
+            UE_LOG(LogVHV, Log,
+                TEXT("[VHVQuest] Required participant '%s' missing from registry; recovered existing world actor and re-registered it."),
+                *ParticipantID.ToString());
+        }
+    }
+
+    AVHVQuestLocationVolume* RequiredLocation = nullptr;
+    for (TActorIterator<AVHVQuestLocationVolume> It(World); It; ++It)
+    {
+        if (It->GetEffectiveLocationID() != LocationID)
+        {
+            continue;
+        }
+        if (RequiredLocation)
+        {
+            UE_LOG(LogVHV, Error,
+                TEXT("[VHVQuest] Presence hard failure: Quest='%s' Objective='%s' Participant='%s' Location='%s' Reason='multiple matching location volumes'."),
+                *RuntimeState.ActiveQuestID.ToString(), *ObjectiveID.ToString(),
+                *ParticipantID.ToString(), *LocationID.ToString());
+            return false;
+        }
+        RequiredLocation = *It;
+    }
+
+    if (!RequiredLocation || !RequiredLocation->BoxComponent)
+    {
+        UE_LOG(LogVHV, Error,
+            TEXT("[VHVQuest] Presence hard failure: Quest='%s' Objective='%s' Participant='%s' Location='%s' Reason='required location volume missing'."),
+            *RuntimeState.ActiveQuestID.ToString(), *ObjectiveID.ToString(),
+            *ParticipantID.ToString(), *LocationID.ToString());
+        return false;
+    }
+
+    if (!ParticipantActor)
+    {
+        UClass* SpawnClass = FallbackSpawnClass.LoadSynchronous();
+        if (!SpawnClass || !SpawnClass->IsChildOf(AVHVNPCCharacter::StaticClass()) || !ParticipantTag.IsValid())
+        {
+            UE_LOG(LogVHV, Error,
+                TEXT("[VHVQuest] Presence hard failure: Quest='%s' Objective='%s' Participant='%s' Location='%s' Reason='participant absent and no valid fallback spawn class'."),
+                *RuntimeState.ActiveQuestID.ToString(), *ObjectiveID.ToString(),
+                *ParticipantID.ToString(), *LocationID.ToString());
+            return false;
+        }
+
+        const FTransform SpawnTransform = RequiredLocation->GetActorTransform();
+        ParticipantActor = World->SpawnActorDeferred<AVHVNPCCharacter>(
+            SpawnClass, SpawnTransform, nullptr, nullptr,
+            ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+        if (!ParticipantActor)
+        {
+            UE_LOG(LogVHV, Error,
+                TEXT("[VHVQuest] Presence hard failure: Quest='%s' Objective='%s' Participant='%s' Location='%s' Reason='fallback spawn failed'."),
+                *RuntimeState.ActiveQuestID.ToString(), *ObjectiveID.ToString(),
+                *ParticipantID.ToString(), *LocationID.ToString());
+            return false;
+        }
+
+        UVHVQuestParticipantComponent* Participant = ParticipantActor->GetQuestParticipantComponent();
+        CommandComponent = ParticipantActor->GetQuestCommandComponent();
+        if (!Participant || !CommandComponent)
+        {
+            ParticipantActor->Destroy();
+            UE_LOG(LogVHV, Error,
+                TEXT("[VHVQuest] Presence hard failure: Quest='%s' Objective='%s' Participant='%s' Location='%s' Reason='fallback class lacks required participant/command components'."),
+                *RuntimeState.ActiveQuestID.ToString(), *ObjectiveID.ToString(),
+                *ParticipantID.ToString(), *LocationID.ToString());
+            return false;
+        }
+
+        Participant->ParticipantTag = ParticipantTag;
+        Participant->bQuestParticipationEnabled = true;
+        if (UVHVNPCInteractionComponent* Interaction = ParticipantActor->GetNPCInteractionComponent())
+        {
+            Interaction->bInteractionEnabled = true;
+            Interaction->bUseQuestObjectiveTextAsPrompt = false;
+            Interaction->DefaultInteractionPrompt = NSLOCTEXT("VHVQuest", "FallbackTalkPrompt", "Talk");
+        }
+        if (UVHVNPCNameplateComponent* Nameplate = ParticipantActor->GetNameplateComponent())
+        {
+            FString DisplayName = ParticipantID.ToString();
+            for (int32 Index = DisplayName.Len() - 1; Index > 0; --Index)
+            {
+                if (FChar::IsUpper(DisplayName[Index]) && FChar::IsLower(DisplayName[Index - 1]))
+                {
+                    DisplayName.InsertAt(Index, TEXT(' '));
+                }
+            }
+            Nameplate->NameplateDisplayName = FText::FromString(DisplayName);
+            Nameplate->bShowNameplate = true;
+        }
+
+        ParticipantActor->FinishSpawning(SpawnTransform);
+        if (!RegisterNPCCommandComponent(CommandComponent))
+        {
+            ParticipantActor->Destroy();
+            UE_LOG(LogVHV, Error,
+                TEXT("[VHVQuest] Presence hard failure: Quest='%s' Objective='%s' Participant='%s' Location='%s' Reason='spawned fallback could not register'."),
+                *RuntimeState.ActiveQuestID.ToString(), *ObjectiveID.ToString(),
+                *ParticipantID.ToString(), *LocationID.ToString());
+            return false;
+        }
+        UE_LOG(LogVHV, Warning,
+            TEXT("[VHVQuest] Required participant '%s' absent from registry/world; spawned fallback participant for objective '%s'."),
+            *ParticipantID.ToString(), *ObjectiveID.ToString());
+    }
+
+    const FVector LocalPosition = RequiredLocation->BoxComponent->GetComponentTransform()
+        .InverseTransformPosition(ParticipantActor->GetActorLocation());
+    const FVector Extent = RequiredLocation->BoxComponent->GetUnscaledBoxExtent();
+    const bool bInside = FMath::Abs(LocalPosition.X) <= Extent.X
+        && FMath::Abs(LocalPosition.Y) <= Extent.Y
+        && FMath::Abs(LocalPosition.Z) <= Extent.Z;
+    if (bInside)
+    {
+        UE_LOG(LogVHV, Log,
+            TEXT("[VHVQuest] Required participant '%s' already present for objective '%s'."),
+            *ParticipantID.ToString(), *ObjectiveID.ToString());
+        return true;
+    }
+
+    UE_LOG(LogVHV, Log,
+        TEXT("[VHVQuest] Relocating required participant '%s' to '%s' before exposing objective '%s'."),
+        *ParticipantID.ToString(), *LocationID.ToString(), *ObjectiveID.ToString());
+
+    // ObjectiveActivationSerial has already advanced and objective-owned delegates were
+    // detached by ActivateCurrentObjective. Cancelling here therefore cannot let the old
+    // request's synchronous or late completion mutate this newly selected objective.
+    CommandComponent->CancelQuestCommand();
+    if (ACharacter* Character = Cast<ACharacter>(ParticipantActor))
+    {
+        if (UCharacterMovementComponent* Movement = Character->GetCharacterMovement())
+        {
+            Movement->StopMovementImmediately();
+        }
+    }
+
+    const bool bRelocated = ParticipantActor->SetActorLocationAndRotation(
+        RequiredLocation->GetActorLocation(),
+        RequiredLocation->GetActorRotation(),
+        false,
+        nullptr,
+        ETeleportType::TeleportPhysics);
+    if (bRelocated)
+    {
+        ParticipantActor->ForceNetUpdate();
+        UE_LOG(LogVHV, Log,
+            TEXT("[VHVQuest] Relocated required participant '%s' to '%s' before exposing objective."),
+            *ParticipantID.ToString(), *LocationID.ToString());
+    }
+    else
+    {
+        UE_LOG(LogVHV, Error,
+            TEXT("[VHVQuest] Presence hard failure: Quest='%s' Objective='%s' Participant='%s' Location='%s' Reason='relocation failed'."),
+            *RuntimeState.ActiveQuestID.ToString(), *ObjectiveID.ToString(),
+            *ParticipantID.ToString(), *LocationID.ToString());
+    }
+    return bRelocated;
 }
 
 void UVHVQuestSubsystem::TryActivateCurrentObjective()
@@ -1723,6 +2138,14 @@ bool UVHVQuestSubsystem::GetActiveObjectiveNPCReadinessRequirements(
         return false;
     }
 
+    // Opted-in stationary objectives use these same authored pairs as immediate
+    // presence requirements. They were already verified or relocated before the
+    // objective was exposed, so they must not enter the asynchronous move wait.
+    if (Objective->bEnsureParticipantPresentAtLocation)
+    {
+        return false;
+    }
+
     for (const FVHVQuestNPCMoveRequest& Readiness : Objective->ActivationNPCReadiness)
     {
         const FName ParticipantID = Readiness.GetEffectiveParticipantID();
@@ -1733,33 +2156,6 @@ bool UVHVQuestSubsystem::GetActiveObjectiveNPCReadinessRequirements(
         }
     }
 
-    if (!OutRequirements.IsEmpty())
-    {
-        return true;
-    }
-
-    if (RuntimeState.ActiveQuestID != FName(TEXT("Q_HBCT_03_ROLE_MODEL")))
-    {
-        return false;
-    }
-
-    // Quest 3 dispatches these routes from earlier objectives. These gates only
-    // observe the existing commands; they never issue, restart, or cancel movement.
-    if (Objective->ObjectiveID == FName(TEXT("O06_InspectCandidates")))
-    {
-        OutRequirements.Emplace(
-            FName(TEXT("AuntSaeng")),
-            FName(TEXT("SaengCandidate")));
-    }
-    else if (Objective->ObjectiveID == FName(TEXT("O12_ObserveSaeng")))
-    {
-        OutRequirements.Emplace(
-            FName(TEXT("AuntSaeng")),
-            FName(TEXT("SaengDemo")));
-        OutRequirements.Emplace(
-            FName(TEXT("UncleSomchai")),
-            FName(TEXT("SomchaiDemo")));
-    }
     return !OutRequirements.IsEmpty();
 }
 
@@ -2441,7 +2837,9 @@ bool UVHVQuestSubsystem::BuildJournalEntry(const FVHVQuestDefinition& Definition
     OutEntry.CurrentObjectiveIndex = State.CurrentObjectiveIndex;
     OutEntry.TotalObjectiveCount = Definition.Objectives.Num();
     OutEntry.bTracked = RuntimeState.TrackedQuestID == Definition.QuestID;
-    OutEntry.CurrentObjectiveText = Definition.Objectives.IsValidIndex(State.CurrentObjectiveIndex) ? Definition.Objectives[State.CurrentObjectiveIndex].ObjectiveText : FText::GetEmpty();
+    OutEntry.CurrentObjectiveText = Definition.Objectives.IsValidIndex(State.CurrentObjectiveIndex)
+        ? Definition.Objectives[State.CurrentObjectiveIndex].ObjectiveText
+        : FText::GetEmpty();
     return true;
 }
 

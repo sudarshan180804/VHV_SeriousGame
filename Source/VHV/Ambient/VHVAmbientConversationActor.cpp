@@ -47,6 +47,7 @@ AVHVAmbientConversationActor::AVHVAmbientConversationActor()
 void AVHVAmbientConversationActor::BeginPlay()
 {
     Super::BeginPlay();
+    ResetWorldPresentation();
     WorldActionReceiver->OnWorldActionRequested.AddUniqueDynamic(this,
         &AVHVAmbientConversationActor::HandleWorldActionRequested);
     if (bAutoStartOnBeginPlay && GetWorld())
@@ -122,6 +123,7 @@ void AVHVAmbientConversationActor::ResetConversation()
     if (bPlaying) CompleteConversation(false);
     bHasPlayed = false;
     CurrentLineIndex = INDEX_NONE;
+    ResetWorldPresentation();
 }
 
 AVHVNPCCharacter* AVHVAmbientConversationActor::GetCurrentSpeaker() const
@@ -202,6 +204,8 @@ bool AVHVAmbientConversationActor::StartConversationInternal(const FGuid WorldAc
         return false;
     }
 
+    ApplyStartedWorldPresentation();
+
     ActiveWorldActionRequestID = WorldActionRequestID;
     if (ActiveWorldActionRequestID.IsValid())
     {
@@ -224,6 +228,42 @@ bool AVHVAmbientConversationActor::StartConversationInternal(const FGuid WorldAc
         Participants.Num(), ResolvedParticipants.Num());
     AdvanceSequence();
     return true;
+}
+
+void AVHVAmbientConversationActor::ResetWorldPresentation()
+{
+    for (AActor* Actor : ActorsHiddenUntilConversationStarts)
+    {
+        if (IsValid(Actor))
+        {
+            Actor->SetActorHiddenInGame(true);
+        }
+    }
+    for (AActor* Actor : ActorsHiddenWhenConversationStarts)
+    {
+        if (IsValid(Actor))
+        {
+            Actor->SetActorHiddenInGame(false);
+        }
+    }
+}
+
+void AVHVAmbientConversationActor::ApplyStartedWorldPresentation()
+{
+    for (AActor* Actor : ActorsHiddenUntilConversationStarts)
+    {
+        if (IsValid(Actor))
+        {
+            Actor->SetActorHiddenInGame(false);
+        }
+    }
+    for (AActor* Actor : ActorsHiddenWhenConversationStarts)
+    {
+        if (IsValid(Actor))
+        {
+            Actor->SetActorHiddenInGame(true);
+        }
+    }
 }
 
 bool AVHVAmbientConversationActor::ResolveAndValidateParticipants(FString& OutError)

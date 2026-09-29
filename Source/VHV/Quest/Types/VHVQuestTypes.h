@@ -7,6 +7,7 @@
 #include "VHVQuestTypes.generated.h"
 
 class UVHVConversationDataAsset;
+class AVHVNPCCharacter;
 
 UENUM(BlueprintType)
 enum class EVHVQuestStatus : uint8
@@ -139,11 +140,32 @@ struct VHV_API FVHVQuestObjectiveDefinition
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective")
     EVHVQuestObjectiveType ObjectiveType = EVHVQuestObjectiveType::Interact;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|References", meta = (DisplayName = "Participant", Categories = "VHV.Participant", EditCondition = "ObjectiveType == EVHVQuestObjectiveType::Talk || ObjectiveType == EVHVQuestObjectiveType::Conversation || ObjectiveType == EVHVQuestObjectiveType::LearningActivity || ObjectiveType == EVHVQuestObjectiveType::Interact", EditConditionHides))
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|References", meta = (DisplayName = "Participant", Categories = "VHV.Participant", EditCondition = "ObjectiveType == EVHVQuestObjectiveType::Talk || ObjectiveType == EVHVQuestObjectiveType::Conversation || ObjectiveType == EVHVQuestObjectiveType::LearningActivity || ObjectiveType == EVHVQuestObjectiveType::Interact || bEnsureParticipantPresentAtLocation", EditConditionHides))
     FGameplayTag ParticipantTag;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|References", meta = (DisplayName = "Location", Categories = "VHV.Location", EditCondition = "ObjectiveType == EVHVQuestObjectiveType::ReachLocation", EditConditionHides))
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|References", meta = (DisplayName = "Location", Categories = "VHV.Location", EditCondition = "ObjectiveType == EVHVQuestObjectiveType::ReachLocation || bEnsureParticipantPresentAtLocation", EditConditionHides))
     FGameplayTag LocationTag;
+
+    /**
+     * Before exposing this objective, ensure its required participant is physically
+     * inside the authored semantic location volume. When ActivationNPCReadiness is
+     * populated, every participant/location pair in that array is guaranteed instead.
+     * Keep disabled for visible travel and movement-stage objectives.
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|NPC Presence")
+    bool bEnsureParticipantPresentAtLocation = false;
+
+    /** Optional last-resort class used only after registry and one-time world recovery both fail. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|NPC Presence", meta = (EditCondition = "bEnsureParticipantPresentAtLocation", EditConditionHides))
+    TSoftClassPtr<AVHVNPCCharacter> RequiredParticipantSpawnClass;
+
+    /** Allows the player to locate this objective's stable world destination. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|Location Tracking")
+    bool bEnableLocationTracking = false;
+
+    /** Optional destination override. LocationTag remains the default when this is unset. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|Location Tracking", meta = (Categories = "VHV.Location", EditCondition = "bEnableLocationTracking", EditConditionHides))
+    FGameplayTag TrackingLocationTag;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|References", meta = (DisplayName = "Custom Event", Categories = "VHV.CustomEvent", EditCondition = "ObjectiveType == EVHVQuestObjectiveType::CustomEvent", EditConditionHides))
     FGameplayTag CustomEventTag;
@@ -271,7 +293,24 @@ struct VHV_API FVHVQuestObjectiveDefinition
         return VHVAuthoringReferences::ResolveID(ParticipantTag, TargetID, TEXT("VHV.Participant"));
     }
 
+    FName GetEffectiveParticipantID() const { return VHVAuthoringReferences::ResolveID(ParticipantTag, NAME_None, TEXT("VHV.Participant")); }
     FName GetEffectiveActivityID() const { return VHVAuthoringReferences::ResolveID(ActivityTag, ActivityID, TEXT("VHV.Activity")); }
+    FName GetEffectiveLocationID() const { return VHVAuthoringReferences::ResolveID(LocationTag, NAME_None, TEXT("VHV.Location")); }
+    FName GetEffectiveTrackingLocationID() const
+    {
+        if (TrackingLocationTag.IsValid())
+        {
+            return VHVAuthoringReferences::ResolveID(TrackingLocationTag, NAME_None, TEXT("VHV.Location"));
+        }
+        const FName ObjectiveLocationID = GetEffectiveLocationID();
+        if (!ObjectiveLocationID.IsNone())
+        {
+            return ObjectiveLocationID;
+        }
+        return ActivationNPCReadiness.Num() == 1
+            ? ActivationNPCReadiness[0].GetEffectiveDestinationID()
+            : NAME_None;
+    }
     FName GetEffectiveNPCParticipantID() const { return VHVAuthoringReferences::ResolveID(NPCParticipantTag, NPCParticipantID, TEXT("VHV.Participant")); }
     FName GetEffectiveNPCTargetID() const { return VHVAuthoringReferences::ResolveID(NPCBehaviorTargetTag, NPCTargetID, TEXT("VHV.BehaviorTarget")); }
     FName GetEffectiveNPCActionID() const { return VHVAuthoringReferences::ResolveID(NPCActionTag, NPCActionID, TEXT("VHV.NPCAction")); }

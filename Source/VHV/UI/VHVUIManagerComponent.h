@@ -23,12 +23,16 @@ class UVHVMatchingCardWidget;
 class UVHVTextbookSubsystem;
 class UVHVQuestSubsystem;
 class UVHVQuestTrackerWidget;
+class UVHVObjectiveDirectionWidget;
 class UVHVMajorQuestStingerWidget;
 class UVHVStoryStateSubsystem;
 class UVHVSupportTypeOverlayWidget;
 class UVHVSupportNetworkWidget;
 class UVHVSocialSupportHUDWidget;
 class UUserWidget;
+class AVHVObjectiveTrackingMarker;
+class AVHVQuestLocationVolume;
+class AActor;
 struct FVHVDialogueCheckpointSaveState;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnVHVConversationSessionEnded);
@@ -43,6 +47,14 @@ enum class EVHVUIState : uint8
     LearningFeedback,
     LearningTeach,
     MajorStinger
+};
+
+UENUM(BlueprintType)
+enum class EVHVObjectiveTrackingMode : uint8
+{
+    Off,
+    WorldMarker,
+    WorldMarkerAndDirection
 };
 
 UCLASS(ClassGroup=(VHV), meta=(BlueprintSpawnableComponent))
@@ -269,6 +281,9 @@ public:
     /** Development-only teardown used before skipping the current quest objective. */
     bool PrepareForDeveloperObjectiveSkip();
 
+    /** Enhanced Input entry point for the Off -> beam -> beam+arrow cycle. */
+    void ToggleObjectiveTracking();
+
     void ShowSocialSupportObservationProgress(int32 CompletedCount);
     void ShowSocialSupportSupporterProgress(int32 CompletedCount);
     void HideSocialSupportProgress();
@@ -295,6 +310,31 @@ protected:
     UPROPERTY()
     TObjectPtr<UVHVStoryStateSubsystem> StoryStateSubsystem;
 
+    UPROPERTY(Transient)
+    TObjectPtr<AVHVObjectiveTrackingMarker> ObjectiveTrackingMarker;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UVHVObjectiveDirectionWidget> ObjectiveDirectionWidget;
+
+    UPROPERTY(Transient)
+    EVHVObjectiveTrackingMode ObjectiveTrackingMode = EVHVObjectiveTrackingMode::Off;
+
+    FName TrackedLocationQuestID;
+    FName TrackedLocationObjectiveID;
+    FName TrackedLocationID;
+    FName TrackedParticipantID;
+    FVector TrackedLocation = FVector::ZeroVector;
+    TWeakObjectPtr<AActor> TrackedLocationActor;
+    TWeakObjectPtr<AVHVQuestLocationVolume> TrackedLocationVolume;
+    FTimerHandle ObjectiveTrackingProximityTimer;
+    FTimerHandle ObjectiveTrackingTemporaryRevealTimer;
+    bool bObjectiveTrackingProximitySuppressed = false;
+    bool bObjectiveTrackingTemporaryReveal = false;
+
+    static constexpr float ObjectiveTrackingFallbackArrivalDistance = 300.0f;
+    static constexpr float ObjectiveTrackingProximityCheckInterval = 0.10f;
+    static constexpr float ObjectiveTrackingTemporaryRevealDuration = 2.5f;
+
     bool bCurrentDialogueNodeCompleted = false;
     bool bAwaitingContinuousTeachingResult = false;
     bool bStartingMajorStingerActivity = false;
@@ -316,6 +356,8 @@ protected:
     UFUNCTION()
     void HandleQuestObjectiveReady(FName QuestID, FName ObjectiveID);
     UFUNCTION()
+    void HandleQuestObjectiveChanged(FName QuestID, FName ObjectiveID);
+    UFUNCTION()
     void HandleQuestStarted(FName QuestID);
     UFUNCTION()
     void HandleQuestCompleted(FName QuestID);
@@ -330,6 +372,15 @@ protected:
     void EnsureOrderingWidget();
     void EnsureMatchingWidget();
     void EnsureSocialSupportWidgets();
+    bool EnsureObjectiveTrackingPresentation();
+    bool IsPlayerAtObjectiveTrackingTarget() const;
+    void UpdateObjectiveTrackingProximity();
+    void ApplyObjectiveTrackingVisualState();
+    void BeginObjectiveTrackingTemporaryReveal();
+    void EndObjectiveTrackingTemporaryReveal();
+    void ClearObjectiveTracking(bool bObjectiveChanged = false);
+    void StageSelfMonitoringParticipants(FName ObjectiveID);
+    bool StageQuestParticipantAtLocation(FName ParticipantID, FName LocationID);
     void RefreshInteractionPrompt();
     void RefreshCurrentAskQuestionUI();
     void RefreshCurrentHintUI();

@@ -12,13 +12,19 @@
 #include "UI/SocialSupport/VHVSocialSupportHUDWidget.h"
 #include "UI/SocialSupport/VHVSupportNetworkWidget.h"
 #include "UI/SocialSupport/VHVSupportTypeOverlayWidget.h"
+#include "UI/Quest/VHVObjectiveDirectionWidget.h"
+#include "World/Tracking/VHVObjectiveTrackingMarker.h"
 #include "Core/VHVDialogueTypes.h"
 #include "VHV.h"
 #include "GameFramework/PlayerController.h"
+#include "EngineUtils.h"
+#include "Quest/Components/VHVQuestParticipantComponent.h"
+#include "World/Location/VHVQuestLocationVolume.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
+#include "Components/BoxComponent.h"
 #include "Components/HorizontalBoxSlot.h"
 #include "Components/SizeBoxSlot.h"
 #include "Components/VerticalBoxSlot.h"
@@ -115,6 +121,14 @@ void UVHVUIManagerComponent::BeginPlay()
     if (!PC)
     {
         return;
+    }
+
+    ObjectiveDirectionWidget = CreateWidget<UVHVObjectiveDirectionWidget>(
+        PC, UVHVObjectiveDirectionWidget::StaticClass());
+    if (ObjectiveDirectionWidget)
+    {
+        ObjectiveDirectionWidget->AddToPlayerScreen(40);
+        ObjectiveDirectionWidget->HideDirection();
     }
 
     if (MainHUDClass)
@@ -239,6 +253,7 @@ void UVHVUIManagerComponent::BeginPlay()
         {
             QuestSubsystem->OnObjectiveActivationRequested.AddDynamic(this, &UVHVUIManagerComponent::HandleQuestObjectiveActivationRequested);
             QuestSubsystem->OnObjectiveReady.AddDynamic(this, &UVHVUIManagerComponent::HandleQuestObjectiveReady);
+            QuestSubsystem->OnObjectiveChanged.AddDynamic(this, &UVHVUIManagerComponent::HandleQuestObjectiveChanged);
             QuestSubsystem->OnQuestStarted.AddDynamic(this, &UVHVUIManagerComponent::HandleQuestStarted);
             QuestSubsystem->OnQuestCompleted.AddDynamic(this, &UVHVUIManagerComponent::HandleQuestCompleted);
             if (QuestTrackerWidget)
@@ -266,6 +281,13 @@ void UVHVUIManagerComponent::BeginPlay()
 
 void UVHVUIManagerComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+    ClearObjectiveTracking();
+    if (ObjectiveTrackingMarker)
+    {
+        ObjectiveTrackingMarker->Destroy();
+        ObjectiveTrackingMarker = nullptr;
+    }
+
     if (MajorQuestStingerWidget)
     {
         MajorQuestStingerWidget->OnStingerFinished.RemoveAll(this);
@@ -286,6 +308,7 @@ void UVHVUIManagerComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
     {
         QuestSubsystem->OnObjectiveActivationRequested.RemoveDynamic(this, &UVHVUIManagerComponent::HandleQuestObjectiveActivationRequested);
         QuestSubsystem->OnObjectiveReady.RemoveDynamic(this, &UVHVUIManagerComponent::HandleQuestObjectiveReady);
+        QuestSubsystem->OnObjectiveChanged.RemoveDynamic(this, &UVHVUIManagerComponent::HandleQuestObjectiveChanged);
         QuestSubsystem->OnQuestStarted.RemoveDynamic(this, &UVHVUIManagerComponent::HandleQuestStarted);
         QuestSubsystem->OnQuestCompleted.RemoveDynamic(this, &UVHVUIManagerComponent::HandleQuestCompleted);
     }
@@ -297,6 +320,10 @@ void UVHVUIManagerComponent::HandleInteractionTargetChanged(UVHVInteractionCompo
 {
     CurrentInteractionTarget = NewTarget;
     RefreshInteractionPrompt();
+    if (ObjectiveTrackingMode != EVHVObjectiveTrackingMode::Off)
+    {
+        UpdateObjectiveTrackingProximity();
+    }
 }
 
 void UVHVUIManagerComponent::HandleLearningPhaseChanged(ELearningPhase NewPhase)
@@ -463,6 +490,125 @@ void UVHVUIManagerComponent::HandleQuestObjectiveReady(
     if (Objective && Objective->ActivationStinger.IsConfigured())
     {
         QueueMajorQuestStinger(Objective->ActivationStinger);
+    }
+}
+
+void UVHVUIManagerComponent::HandleQuestObjectiveChanged(
+    const FName QuestID,
+    const FName ObjectiveID)
+{
+    ClearObjectiveTracking(true);
+    if (QuestID == FName(TEXT("Q_HBCT_05_SELF_MONITORING")))
+    {
+        StageSelfMonitoringParticipants(ObjectiveID);
+    }
+}
+
+bool UVHVUIManagerComponent::StageQuestParticipantAtLocation(
+    const FName ParticipantID,
+    const FName LocationID)
+{
+    UWorld* World = GetWorld();
+    if (!World || !QuestSubsystem) return false;
+
+    AActor* ParticipantActor = nullptr;
+    AActor* DestinationActor = nullptr;
+    for (TActorIterator<AActor> It(World); It; ++It)
+    {
+        if (const UVHVQuestParticipantComponent* Participant =
+            It->FindComponentByClass<UVHVQuestParticipantComponent>())
+        {
+            if (Participant->GetEffectiveParticipantID() == ParticipantID)
+            {
+                if (ParticipantActor)
+                {
+                    UE_LOG(LogVHV, Warning,
+                        TEXT("[VHVQuest] Quest 5 staging rejected duplicate participant '%s'."),
+                        *ParticipantID.ToString());
+                    return false;
+                }
+                ParticipantActor = *It;
+            }
+        }
+        if (const AVHVQuestLocationVolume* Location = Cast<AVHVQuestLocationVolume>(*It))
+        {
+            if (Location->GetEffectiveLocationID() == LocationID)
+            {
+                DestinationActor = *It;
+            }
+        }
+    }
+
+    if (!ParticipantActor || !DestinationActor)
+    {
+        UE_LOG(LogVHV, Warning,
+            TEXT("[VHVQuest] Quest 5 staging could not resolve participant '%s' or location '%s'."),
+            *ParticipantID.ToString(), *LocationID.ToString());
+        return false;
+    }
+
+    QuestSubsystem->CancelNPCQuestCommand(ParticipantID);
+    return ParticipantActor->SetActorLocationAndRotation(
+        DestinationActor->GetActorLocation(), DestinationActor->GetActorRotation(),
+        false, nullptr, ETeleportType::TeleportPhysics);
+}
+
+void UVHVUIManagerComponent::StageSelfMonitoringParticipants(const FName ObjectiveID)
+{
+    const auto Stage = [this](const TCHAR* Participant, const TCHAR* Location)
+    {
+        if (!StageQuestParticipantAtLocation(FName(Participant), FName(Location)))
+        {
+            UE_LOG(LogVHV, Warning,
+                TEXT("[VHVQuest] Quest 5 objective staging failed: participant='%s' location='%s'."),
+                Participant, Location);
+        }
+    };
+
+    if (ObjectiveID == FName(TEXT("O01_CheckInWithChai"))) Stage(TEXT("UncleChai"), TEXT("SMChaiHome"));
+    else if (ObjectiveID == FName(TEXT("O02_LearnWhyRecordsMatter")))
+    {
+        Stage(TEXT("Instructor"), TEXT("SMInstructorLesson"));
+        Stage(TEXT("UncleChai"), TEXT("SMInstructorLessonChai"));
+    }
+    else if (ObjectiveID == FName(TEXT("O03_IdentifyTargetBehavior"))) Stage(TEXT("UncleChai"), TEXT("SMTargetBehaviorArea"));
+    else if (ObjectiveID == FName(TEXT("O04_BuildMonitoringProcess"))) Stage(TEXT("Instructor"), TEXT("SMMonitoringProcess"));
+    else if (ObjectiveID == FName(TEXT("O05_ChooseMonitoringMethod"))) Stage(TEXT("UncleChai"), TEXT("SMMethodChai"));
+    else if (ObjectiveID == FName(TEXT("O06_PrepareChaiTracker"))) Stage(TEXT("UncleChai"), TEXT("SMTrackerChai"));
+    else if (ObjectiveID == FName(TEXT("O07_RecordBreakfast"))) Stage(TEXT("UncleChai"), TEXT("SMBreakfast"));
+    else if (ObjectiveID == FName(TEXT("O08_RecordAfternoon")))
+    {
+        Stage(TEXT("UncleChai"), TEXT("SMAfternoon"));
+        Stage(TEXT("SelfMonitoringFriend"), TEXT("SMAfternoonFriend"));
+    }
+    else if (ObjectiveID == FName(TEXT("O09_RecordEveningWalk"))) Stage(TEXT("UncleChai"), TEXT("SMChaiWalkStart"));
+    else if (ObjectiveID == FName(TEXT("O10_ReviewFirstDay")))
+    {
+        Stage(TEXT("UncleChai"), TEXT("SMFirstDayReview"));
+        Stage(TEXT("Instructor"), TEXT("SMFirstDayInstructor"));
+    }
+    else if (ObjectiveID == FName(TEXT("O11_OneWeekLater")))
+    {
+        Stage(TEXT("UncleChai"), TEXT("SMOneWeekLater"));
+        Stage(TEXT("Instructor"), TEXT("SMOneWeekInstructor"));
+    }
+    else if (ObjectiveID == FName(TEXT("O13_AdjustThePlan"))) Stage(TEXT("Instructor"), TEXT("SMAdjustment"));
+    else if (ObjectiveID == FName(TEXT("O14_PracticeAdjustedRoutine"))) Stage(TEXT("UncleChai"), TEXT("SMAdjustedWalkStart"));
+    else if (ObjectiveID == FName(TEXT("O15_BuildProgressGraph")))
+    {
+        Stage(TEXT("UncleChai"), TEXT("SMProgressGraphChai"));
+        Stage(TEXT("Instructor"), TEXT("SMProgressGraphInstructor"));
+    }
+    else if (ObjectiveID == FName(TEXT("O16_SetSelfReminder"))) Stage(TEXT("UncleChai"), TEXT("SMSelfReminder"));
+    else if (ObjectiveID == FName(TEXT("O17_WatchChaiSelfMonitor")))
+    {
+        Stage(TEXT("UncleChai"), TEXT("SMSelfMonitorPayoff"));
+        Stage(TEXT("Instructor"), TEXT("SMSelfMonitorInstructor"));
+    }
+    else if (ObjectiveID == FName(TEXT("O18_FinalDebrief")))
+    {
+        Stage(TEXT("Instructor"), TEXT("SMFinalDebrief"));
+        Stage(TEXT("UncleChai"), TEXT("SMFinalChai"));
     }
 }
 
@@ -1453,6 +1599,7 @@ void UVHVUIManagerComponent::ReconcileUIStateAfterMajorStinger()
 
 void UVHVUIManagerComponent::HandleQuestStarted(const FName QuestID)
 {
+    ClearObjectiveTracking(true);
     FVHVQuestDefinition Quest;
     if (QuestSubsystem && QuestSubsystem->GetQuestDefinition(QuestID, Quest)
         && Quest.StartStinger.IsConfigured())
@@ -1463,6 +1610,7 @@ void UVHVUIManagerComponent::HandleQuestStarted(const FName QuestID)
 
 void UVHVUIManagerComponent::HandleQuestCompleted(const FName QuestID)
 {
+    ClearObjectiveTracking(true);
     FVHVQuestDefinition Quest;
     if (QuestSubsystem && QuestSubsystem->GetQuestDefinition(QuestID, Quest)
         && Quest.CompletionStinger.IsConfigured())
@@ -2154,11 +2302,266 @@ bool UVHVUIManagerComponent::PrepareForDeveloperObjectiveSkip()
         return false;
     }
 
+    ClearObjectiveTracking();
     ExitConversation();
     return true;
 #else
     return false;
 #endif
+}
+
+bool UVHVUIManagerComponent::EnsureObjectiveTrackingPresentation()
+{
+    APlayerController* PlayerController = Cast<APlayerController>(GetOwner());
+    UWorld* World = GetWorld();
+    if (!PlayerController || !World)
+    {
+        return false;
+    }
+
+    if (!ObjectiveDirectionWidget)
+    {
+        ObjectiveDirectionWidget = CreateWidget<UVHVObjectiveDirectionWidget>(
+            PlayerController, UVHVObjectiveDirectionWidget::StaticClass());
+        if (ObjectiveDirectionWidget)
+        {
+            ObjectiveDirectionWidget->AddToPlayerScreen(40);
+            ObjectiveDirectionWidget->HideDirection();
+        }
+    }
+
+    if (!ObjectiveTrackingMarker)
+    {
+        FActorSpawnParameters SpawnParameters;
+        SpawnParameters.Name = TEXT("VHV_ObjectiveTrackingMarker");
+        SpawnParameters.ObjectFlags |= RF_Transient;
+        SpawnParameters.SpawnCollisionHandlingOverride =
+            ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+        ObjectiveTrackingMarker = World->SpawnActor<AVHVObjectiveTrackingMarker>(
+            AVHVObjectiveTrackingMarker::StaticClass(),
+            FTransform::Identity,
+            SpawnParameters);
+    }
+
+    return ObjectiveTrackingMarker && ObjectiveDirectionWidget;
+}
+
+void UVHVUIManagerComponent::ToggleObjectiveTracking()
+{
+    if (CurrentUIState != EVHVUIState::Gameplay)
+    {
+        return;
+    }
+
+    if (ObjectiveTrackingMode == EVHVObjectiveTrackingMode::Off)
+    {
+        FName QuestID;
+        FName ObjectiveID;
+        FName LocationID;
+        FVector WorldLocation;
+        AActor* TargetActor = nullptr;
+        if (!QuestSubsystem || !QuestSubsystem->ResolveCurrentObjectiveTrackingTarget(
+            GetWorld(), QuestID, ObjectiveID, LocationID, WorldLocation, TargetActor))
+        {
+            UE_LOG(LogVHV, Log,
+                TEXT("[VHVTracking] Current objective has no trackable location."));
+            return;
+        }
+        if (!EnsureObjectiveTrackingPresentation())
+        {
+            UE_LOG(LogVHV, Warning,
+                TEXT("[VHVTracking] Could not create objective tracking presentation."));
+            return;
+        }
+
+        TrackedLocationQuestID = QuestID;
+        TrackedLocationObjectiveID = ObjectiveID;
+        TrackedLocationID = LocationID;
+        TrackedLocation = WorldLocation;
+        TrackedLocationActor = TargetActor;
+        TrackedLocationVolume = Cast<AVHVQuestLocationVolume>(TargetActor);
+        FVHVQuestObjectiveDefinition Objective;
+        TrackedParticipantID = QuestSubsystem->GetCurrentObjective(Objective)
+            ? Objective.GetEffectiveParticipantID()
+            : NAME_None;
+        ObjectiveTrackingMarker->SetTrackingLocation(TrackedLocation);
+        ObjectiveTrackingMode = EVHVObjectiveTrackingMode::WorldMarker;
+        bObjectiveTrackingProximitySuppressed = false;
+        bObjectiveTrackingTemporaryReveal = false;
+        GetWorld()->GetTimerManager().SetTimer(
+            ObjectiveTrackingProximityTimer,
+            this,
+            &UVHVUIManagerComponent::UpdateObjectiveTrackingProximity,
+            ObjectiveTrackingProximityCheckInterval,
+            true);
+        UpdateObjectiveTrackingProximity();
+        ApplyObjectiveTrackingVisualState();
+        UE_LOG(LogVHV, Log,
+            TEXT("[VHVTracking] Tracking objective '%s' at '%s'; mode=WorldMarker."),
+            *TrackedLocationObjectiveID.ToString(), *TrackedLocationID.ToString());
+        return;
+    }
+
+    if (!bObjectiveTrackingProximitySuppressed && IsPlayerAtObjectiveTrackingTarget())
+    {
+        bObjectiveTrackingProximitySuppressed = true;
+        ApplyObjectiveTrackingVisualState();
+    }
+    if (bObjectiveTrackingProximitySuppressed)
+    {
+        BeginObjectiveTrackingTemporaryReveal();
+        return;
+    }
+
+    if (ObjectiveTrackingMode == EVHVObjectiveTrackingMode::WorldMarker)
+    {
+        ObjectiveTrackingMode = EVHVObjectiveTrackingMode::WorldMarkerAndDirection;
+        ApplyObjectiveTrackingVisualState();
+        UE_LOG(LogVHV, Log,
+            TEXT("[VHVTracking] mode=WorldMarkerAndDirection."));
+        return;
+    }
+
+    ClearObjectiveTracking();
+    UE_LOG(LogVHV, Log, TEXT("[VHVTracking] Tracking disabled."));
+}
+
+bool UVHVUIManagerComponent::IsPlayerAtObjectiveTrackingTarget() const
+{
+    const APlayerController* PlayerController = Cast<APlayerController>(GetOwner());
+    const APawn* PlayerPawn = PlayerController ? PlayerController->GetPawn() : nullptr;
+    if (!PlayerPawn)
+    {
+        return false;
+    }
+
+    if (const AVHVQuestLocationVolume* Volume = TrackedLocationVolume.Get())
+    {
+        return Volume->BoxComponent
+            && Volume->BoxComponent->Bounds.GetBox().IsInsideOrOn(PlayerPawn->GetActorLocation());
+    }
+
+    if (!TrackedParticipantID.IsNone() && CurrentInteractionTarget
+        && CurrentInteractionTarget->CanInteract())
+    {
+        const AActor* InteractionOwner = CurrentInteractionTarget->GetOwner();
+        const UVHVQuestParticipantComponent* Participant = InteractionOwner
+            ? InteractionOwner->FindComponentByClass<UVHVQuestParticipantComponent>()
+            : nullptr;
+        if (Participant && Participant->GetEffectiveParticipantID() == TrackedParticipantID)
+        {
+            return true;
+        }
+    }
+
+    return FVector::DistSquared(PlayerPawn->GetActorLocation(), TrackedLocation)
+        <= FMath::Square(ObjectiveTrackingFallbackArrivalDistance);
+}
+
+void UVHVUIManagerComponent::UpdateObjectiveTrackingProximity()
+{
+    if (ObjectiveTrackingMode == EVHVObjectiveTrackingMode::Off)
+    {
+        return;
+    }
+
+    const bool bArrived = IsPlayerAtObjectiveTrackingTarget();
+    if (bObjectiveTrackingProximitySuppressed == bArrived)
+    {
+        return;
+    }
+
+    bObjectiveTrackingProximitySuppressed = bArrived;
+    if (!bArrived)
+    {
+        bObjectiveTrackingTemporaryReveal = false;
+        if (UWorld* World = GetWorld())
+        {
+            World->GetTimerManager().ClearTimer(ObjectiveTrackingTemporaryRevealTimer);
+        }
+    }
+    ApplyObjectiveTrackingVisualState();
+}
+
+void UVHVUIManagerComponent::ApplyObjectiveTrackingVisualState()
+{
+    const bool bTracking = ObjectiveTrackingMode != EVHVObjectiveTrackingMode::Off;
+    const bool bSuppressed = bObjectiveTrackingProximitySuppressed
+        && !bObjectiveTrackingTemporaryReveal;
+    const bool bShowMarker = bTracking && !bSuppressed;
+    const bool bShowDirection = bShowMarker
+        && ObjectiveTrackingMode == EVHVObjectiveTrackingMode::WorldMarkerAndDirection;
+
+    if (ObjectiveTrackingMarker)
+    {
+        ObjectiveTrackingMarker->SetTrackingVisible(bShowMarker);
+    }
+    if (ObjectiveDirectionWidget)
+    {
+        if (bShowDirection)
+        {
+            ObjectiveDirectionWidget->ShowDirectionTo(TrackedLocation);
+        }
+        else
+        {
+            ObjectiveDirectionWidget->HideDirection();
+        }
+    }
+}
+
+void UVHVUIManagerComponent::BeginObjectiveTrackingTemporaryReveal()
+{
+    UWorld* World = GetWorld();
+    if (!World || ObjectiveTrackingMode == EVHVObjectiveTrackingMode::Off
+        || !bObjectiveTrackingProximitySuppressed)
+    {
+        return;
+    }
+
+    bObjectiveTrackingTemporaryReveal = true;
+    ApplyObjectiveTrackingVisualState();
+    World->GetTimerManager().SetTimer(
+        ObjectiveTrackingTemporaryRevealTimer,
+        this,
+        &UVHVUIManagerComponent::EndObjectiveTrackingTemporaryReveal,
+        ObjectiveTrackingTemporaryRevealDuration,
+        false);
+    UE_LOG(LogVHV, Log,
+        TEXT("[VHVTracking] Temporarily revealing arrived target for %.1f seconds."),
+        ObjectiveTrackingTemporaryRevealDuration);
+}
+
+void UVHVUIManagerComponent::EndObjectiveTrackingTemporaryReveal()
+{
+    bObjectiveTrackingTemporaryReveal = false;
+    UpdateObjectiveTrackingProximity();
+    ApplyObjectiveTrackingVisualState();
+}
+
+void UVHVUIManagerComponent::ClearObjectiveTracking(const bool bObjectiveChanged)
+{
+    const bool bWasTracking = ObjectiveTrackingMode != EVHVObjectiveTrackingMode::Off;
+    ObjectiveTrackingMode = EVHVObjectiveTrackingMode::Off;
+    TrackedLocationQuestID = NAME_None;
+    TrackedLocationObjectiveID = NAME_None;
+    TrackedLocationID = NAME_None;
+    TrackedParticipantID = NAME_None;
+    TrackedLocation = FVector::ZeroVector;
+    TrackedLocationActor.Reset();
+    TrackedLocationVolume.Reset();
+    bObjectiveTrackingProximitySuppressed = false;
+    bObjectiveTrackingTemporaryReveal = false;
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(ObjectiveTrackingProximityTimer);
+        World->GetTimerManager().ClearTimer(ObjectiveTrackingTemporaryRevealTimer);
+    }
+    ApplyObjectiveTrackingVisualState();
+    if (bObjectiveChanged && bWasTracking)
+    {
+        UE_LOG(LogVHV, Log,
+            TEXT("[VHVTracking] Objective changed; clearing previous tracking target."));
+    }
 }
 
 void UVHVUIManagerComponent::SelectNextChoice()
