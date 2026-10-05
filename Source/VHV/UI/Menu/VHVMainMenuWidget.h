@@ -58,7 +58,7 @@ private:
     void HandleConfirmationHovered(int32 Index);
     FReply HandleConfirmationClicked(int32 Index);
 
-    FName GameplayMapName = TEXT("/Game/ThirdPerson/Lvl_ThirdPerson");
+    FName GameplayMapName = TEXT("/Game/VHV_Stuff/Maps/Lvl_Village_Main");
     int32 SelectedOption = 0;
     int32 ConfirmationSelection = 0;
     bool bSaveSlotExists = false;

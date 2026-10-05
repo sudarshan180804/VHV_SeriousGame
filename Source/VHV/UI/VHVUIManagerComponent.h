@@ -245,6 +245,7 @@ protected:
     void EnsureOrderingWidget();
     void EnsureMatchingWidget();
     void RefreshInteractionPrompt();
+    FText GetInteractKeyLabel() const;
     void RefreshCurrentAskQuestionUI();
     void RefreshCurrentHintUI();
     void RefreshCurrentFeedbackUI();

@@ -13,7 +13,10 @@
 
 namespace
 {
-    constexpr int32 CurrentSaveVersion = 1;
+    // 2: gameplay moved to Lvl_Village_Main; version-1 saves restore quests in the old maps.
+    // Keep UVHVSaveGame::SaveVersion's default at 1: save files omit values equal to the
+    // default, so old saves must keep reading back as 1 to be rejected.
+    constexpr int32 CurrentSaveVersion = 2;
     constexpr int32 SaveUserIndex = 0;
 }
 

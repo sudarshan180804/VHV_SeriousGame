@@ -42,3 +42,4 @@ Thumbs.db
 
 .idea/
 .vsconfig
+__pycache__/

@@ -69,6 +69,9 @@ public:
 	/** Constructor */
 	AVHVCharacter();
 
+	/** Interact input action, used by the UI to show which key starts an interaction. */
+	UInputAction* GetInteractAction() const { return InteractAction; }
+
 protected:
 
 	/** Initialize input action bindings */

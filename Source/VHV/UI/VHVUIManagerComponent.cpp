@@ -28,6 +28,9 @@
 #include "Save/VHVSaveTypes.h"
 #include "Story/Systems/VHVStoryStateSubsystem.h"
 #include "UI/Quest/VHVQuestTrackerWidget.h"
+#include "VHVCharacter.h"
+#include "EnhancedInputSubsystems.h"
+#include "Engine/LocalPlayer.h"
 
 namespace
 {
@@ -745,13 +748,39 @@ void UVHVUIManagerComponent::RefreshInteractionPrompt()
     const bool bGameplayActive = CurrentUIState == EVHVUIState::Gameplay && !bConversationActive && (!TextbookSubsystem || !TextbookSubsystem->IsActivityActive());
     if (CurrentInteractionTarget && CurrentInteractionTarget->CanInteract() && bGameplayActive)
     {
-        MainHUD->SetInteractionPrompt(CurrentInteractionTarget->GetInteractionPrompt());
+        // Keep the key hint from WBP_MainHUD's design text ("[E] Interact") when the prompt is replaced
+        // by the target's text, e.g. "[E] Talk to the Instructor".
+        MainHUD->SetInteractionPrompt(FText::Format(
+            NSLOCTEXT("VHVUI", "InteractionPromptFormat", "[{0}] {1}"),
+            GetInteractKeyLabel(),
+            CurrentInteractionTarget->GetInteractionPrompt()));
         MainHUD->SetInteractionPromptVisible(true);
     }
     else
     {
         MainHUD->SetInteractionPromptVisible(false);
     }
+}
+
+FText UVHVUIManagerComponent::GetInteractKeyLabel() const
+{
+    const APlayerController* PlayerController = Cast<APlayerController>(GetOwner());
+    const AVHVCharacter* Character = PlayerController ? Cast<AVHVCharacter>(PlayerController->GetPawn()) : nullptr;
+    const ULocalPlayer* LocalPlayer = PlayerController ? PlayerController->GetLocalPlayer() : nullptr;
+    const UEnhancedInputLocalPlayerSubsystem* InputSubsystem = LocalPlayer
+        ? LocalPlayer->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>()
+        : nullptr;
+    if (Character && Character->GetInteractAction() && InputSubsystem)
+    {
+        for (const FKey& Key : InputSubsystem->QueryKeysMappedToAction(Character->GetInteractAction()))
+        {
+            if (!Key.IsGamepadKey())
+            {
+                return Key.GetDisplayName(false);
+            }
+        }
+    }
+    return NSLOCTEXT("VHVUI", "InteractKeyFallback", "E");
 }
 
 void UVHVUIManagerComponent::RefreshCurrentAskQuestionUI()

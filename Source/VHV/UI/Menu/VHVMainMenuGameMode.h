@@ -25,7 +25,7 @@ private:
     TSubclassOf<UVHVMainMenuWidget> MainMenuWidgetClass;
 
     UPROPERTY(EditDefaultsOnly, Category = "VHV|Main Menu")
-    FName GameplayMapName = TEXT("/Game/ThirdPerson/Lvl_ThirdPerson");
+    FName GameplayMapName = TEXT("/Game/VHV_Stuff/Maps/Lvl_Village_Main");
 
     UPROPERTY(Transient)
     TObjectPtr<UVHVMainMenuWidget> MainMenuWidget;

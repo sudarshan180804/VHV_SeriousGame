@@ -745,7 +745,7 @@ def spawn_actor(actor_class, label, location, rotation=None):
 
 
 def spawn_npc(npc_class, label, location, yaw, participant_tag=""):
-    actor = spawn_actor(npc_class, label, location, unreal.Rotator(0.0, yaw, 0.0))
+    actor = spawn_actor(npc_class, label, location, unreal.Rotator(roll=0.0, pitch=0.0, yaw=yaw))
     component = actor.get_quest_participant_component()
     component.modify()
     component.set_editor_property("quest_participation_enabled", bool(participant_tag))
@@ -828,7 +828,7 @@ def configure_map(ambient_assets):
             instructor.set_actor_label("HBCT_Intro_Instructor")
     if instructor:
         instructor.set_actor_location(unreal.Vector(-1710.0, -1800.0, 100.0), False, True)
-        instructor.set_actor_rotation(unreal.Rotator(0.0, -90.0, 0.0), False)
+        instructor.set_actor_rotation(unreal.Rotator(roll=0.0, pitch=0.0, yaw=-90.0), False)
         participant = instructor.get_quest_participant_component()
         participant.set_editor_properties({
             "quest_participation_enabled": True,
@@ -836,7 +836,7 @@ def configure_map(ambient_assets):
         })
     else:
         instructor = spawn_npc(npc_class, "HBCT_Intro_Instructor", (-1710.0, -1800.0, 100.0), -90.0, "VHV.Participant.Instructor")
-    spawn_actor(unreal.TargetPoint, "HBCT_OpeningCameraHook", (-1750.0, -2000.0, 180.0), unreal.Rotator(-8.0, 90.0, 0.0))
+    spawn_actor(unreal.TargetPoint, "HBCT_OpeningCameraHook", (-1750.0, -2000.0, 180.0), unreal.Rotator(roll=0.0, pitch=-8.0, yaw=90.0))
 
     market_positions = {
         "Buyer": (-950.0, -1650.0, 100.0, 0.0, "HBCT_Market_SugarDrinkShopper"),
