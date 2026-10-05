@@ -28,6 +28,8 @@
 #include "Save/VHVSaveTypes.h"
 #include "Story/Systems/VHVStoryStateSubsystem.h"
 #include "UI/Quest/VHVQuestTrackerWidget.h"
+#include "UI/Quest/VHVObjectiveMarkerWidget.h"
+#include "UI/Quest/VHVNavigationTrail.h"
 #include "VHVCharacter.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
@@ -110,6 +112,30 @@ void UVHVUIManagerComponent::BeginPlay()
         {
             MainHUD->AddToViewport();
             MainHUD->SetInteractionPromptVisible(false);
+
+            if (bShowObjectiveMarker && !ObjectiveMarkerWidget)
+            {
+                ObjectiveMarkerWidget = CreateWidget<UVHVObjectiveMarkerWidget>(PC, UVHVObjectiveMarkerWidget::StaticClass());
+                if (ObjectiveMarkerWidget)
+                {
+                    ObjectiveMarkerWidget->SetUIManager(this);
+                    ObjectiveMarkerWidget->SetVisibility(ESlateVisibility::HitTestInvisible);
+                    // Below MainHUD (Z-order 0) so dialogue and learning panels always cover it.
+                    ObjectiveMarkerWidget->AddToViewport(-1);
+                }
+            }
+
+            if (bShowNavigationTrail && ObjectiveMarkerWidget && !NavigationTrail && GetWorld())
+            {
+                FActorSpawnParameters SpawnParameters;
+                SpawnParameters.Owner = PC;
+                SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+                NavigationTrail = GetWorld()->SpawnActor<AVHVNavigationTrail>(SpawnParameters);
+                if (NavigationTrail)
+                {
+                    NavigationTrail->SetObjectiveMarker(ObjectiveMarkerWidget);
+                }
+            }
 
             if (DialogueWidgetClass && !DialogueWidget)
             {
@@ -247,6 +273,12 @@ void UVHVUIManagerComponent::BeginPlay()
 
 void UVHVUIManagerComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+    if (NavigationTrail)
+    {
+        NavigationTrail->Destroy();
+        NavigationTrail = nullptr;
+    }
+
     if (PlayerInteractionComponent)
     {
         PlayerInteractionComponent->OnInteractionTargetChanged.RemoveDynamic(this, &UVHVUIManagerComponent::HandleInteractionTargetChanged);

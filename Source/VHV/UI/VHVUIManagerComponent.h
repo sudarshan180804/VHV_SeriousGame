@@ -22,6 +22,8 @@ class UVHVMatchingCardWidget;
 class UVHVTextbookSubsystem;
 class UVHVQuestSubsystem;
 class UVHVQuestTrackerWidget;
+class UVHVObjectiveMarkerWidget;
+class AVHVNavigationTrail;
 class UVHVStoryStateSubsystem;
 class UUserWidget;
 struct FVHVDialogueCheckpointSaveState;
@@ -112,6 +114,20 @@ public:
 
     UPROPERTY()
     TObjectPtr<UVHVQuestTrackerWidget> QuestTrackerWidget;
+
+    /** Shows a floating marker over the current objective's person or place. */
+    UPROPERTY(EditAnywhere, Category = "VHV|UI")
+    bool bShowObjectiveMarker = true;
+
+    UPROPERTY()
+    TObjectPtr<UVHVObjectiveMarkerWidget> ObjectiveMarkerWidget;
+
+    /** Shows glowing arrows on the ground along the walking route to the objective marker's target. */
+    UPROPERTY(EditAnywhere, Category = "VHV|UI")
+    bool bShowNavigationTrail = true;
+
+    UPROPERTY()
+    TObjectPtr<AVHVNavigationTrail> NavigationTrail;
 
     UPROPERTY()
     TObjectPtr<UVHVInteractionComponent> CurrentInteractionTarget;

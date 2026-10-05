@@ -10,11 +10,19 @@ Safe to rerun: actors are found by label and moved, never duplicated. It does
 not touch the HBCT data assets; author_hbct_milestone_01.py still owns those.
 """
 
+import importlib
 import traceback
 import unreal
 
 import author_hbct_milestone_01 as hbct
 import village_layout as layout
+import vhv_geometry
+
+# Unreal keeps imported modules cached between runs in the editor; reload so edits are picked up.
+for _module in (hbct, layout, vhv_geometry):
+    importlib.reload(_module)
+
+from vhv_geometry import smooth  # noqa: E402
 
 
 MAIN_MAP_PATH = "/Game/VHV_Stuff/Maps/Lvl_Village_Main"
@@ -166,7 +174,8 @@ def stage_saeng(npc_class):
     saeng = place_npc(npc_class, "HBCT_Motivation_Saeng", at(s, 100.0, 0.0, NPC_Z), 180.0,
                       "VHV.Participant.AuntSaeng")
     saeng_vhv = place_npc(npc_class, "HBCT_Motivation_SaengVHV", at(s, -90.0, 0.0, NPC_Z), 0.0)
-    location_volume("HBCT_Location_SaengHouse", at(s, 0.0, -180.0, NPC_Z), "VHV.Location.HBCT.SaengHouse")
+    # Over the front yard and towards the road, so a player on the village walk passes through it.
+    location_volume("HBCT_Location_SaengHouse", at(s, 0.0, 60.0, NPC_Z), "VHV.Location.HBCT.SaengHouse")
     ambient_scene(
         "HBCT_Motivation_SaengConversation", at(s, 0.0, 0.0, NPC_Z),
         "DA_Ambient_HBCT_SaengAppreciation", "VHV.WorldReceiver.HBCT.Motivation.Saeng",
@@ -181,6 +190,26 @@ def stage_mali(npc_class):
     story_table("HBCT_Prop_Mali_Table", m, 40.0, 120.0, -75.0, 10.0)
     story_prop("HBCT_Prop_Mali_IcedMilkTea", at(m, 60.0, -50.0, 55.0), (0.08, 0.08, 0.25), "MI_PH_Skirting")
     story_prop("HBCT_Prop_Mali_Sweets", at(m, 90.0, -15.0, 48.0), (0.28, 0.18, 0.06), "MI_PH_RoofOrange")
+
+
+def validate_walk_through_locations():
+    """Every Reach Location volume must sit on the village walk, so following the path completes it.
+
+    Requires the walk's centreline to enter each box (a player on either half of the path then overlaps
+    it). Raises before the map is saved, naming the volume to move the VILLAGE_WALK points towards.
+    """
+    walk = smooth(layout.VILLAGE_WALK)
+    samples = [walk[-1]]
+    for (ax, ay), (bx, by) in zip(walk, walk[1:]):
+        samples.extend((ax + (bx - ax) * k / 10.0, ay + (by - ay) * k / 10.0) for k in range(10))
+    for actor in unreal.get_editor_subsystem(unreal.EditorActorSubsystem).get_all_level_actors():
+        if not isinstance(actor, unreal.VHVQuestLocationVolume):
+            continue
+        centre = actor.get_actor_location()
+        extent = actor.get_editor_property("box_component").get_scaled_box_extent()
+        if not any(abs(x - centre.x) <= extent.x and abs(y - centre.y) <= extent.y for x, y in samples):
+            raise RuntimeError("{} is not on the village walk; move the VILLAGE_WALK points in "
+                               "village_layout.py through it".format(actor.get_actor_label()))
 
 
 def main():
@@ -198,6 +227,7 @@ def main():
     stage_demo(npc_class)
     stage_saeng(npc_class)
     stage_mali(npc_class)
+    validate_walk_through_locations()
 
     world = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_editor_world()
     if not unreal.EditorLoadingAndSavingUtils.save_map(world, MAIN_MAP_PATH):

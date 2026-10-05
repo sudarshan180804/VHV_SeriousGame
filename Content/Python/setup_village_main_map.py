@@ -221,7 +221,8 @@ def configure_lighting():
     sky_light = spawn_actor(unreal.SkyLight, "SkyLight", (0.0, 0.0, 1000.0))
     sky_component = sky_light.get_editor_property("light_component")
     sky_component.set_mobility(unreal.ComponentMobility.MOVABLE)
-    sky_component.set_editor_property("real_time_capture", True)
+    # Captured once at load: the sun never moves, so a real-time capture would only cost GPU time.
+    sky_component.set_editor_property("real_time_capture", False)
 
     lighting = [
         sun,
@@ -268,11 +269,52 @@ def build_main_map():
     unreal.log("{} Created {}".format(LOG, MAIN_MAP_PATH))
 
 
+# Rendering budget for low-end PCs. Profiling at Medium quality showed the volumetric clouds taking
+# about 45% of GPU time, and the real-time sky capture re-rendering the sky every frame.
+CLOUD_SAMPLE_SCALES = {
+    "view_sample_count_scale": 0.35,
+    "reflection_view_sample_count_scale_value": 0.25,
+    "shadow_view_sample_count_scale": 0.35,
+    "shadow_reflection_view_sample_count_scale_value": 0.25,
+}
+
+
+def tune_lighting_actors(actors):
+    """Cheaper cloud sampling and a sky light captured once (the sun never moves). True if anything changed."""
+    changed = False
+    for actor in actors:
+        if isinstance(actor, unreal.VolumetricCloud):
+            component = actor.get_editor_property("volumetric_cloud_component")
+            for prop, value in CLOUD_SAMPLE_SCALES.items():
+                if abs(component.get_editor_property(prop) - value) > 1e-4:
+                    component.set_editor_property(prop, value)
+                    changed = True
+        elif isinstance(actor, unreal.SkyLight):
+            component = actor.get_editor_property("light_component")
+            if component.get_editor_property("real_time_capture"):
+                component.set_editor_property("real_time_capture", False)
+                changed = True
+    return changed
+
+
+def tune_main_map_lighting():
+    """Apply the lighting budget to an existing Lvl_Village_Main (saved only when something changed)."""
+    if not unreal.EditorAssetLibrary.does_asset_exist(MAIN_MAP_PATH):
+        return
+    if not unreal.EditorLoadingAndSavingUtils.load_map(MAIN_MAP_PATH):
+        raise RuntimeError("Could not load {}".format(MAIN_MAP_PATH))
+    if tune_lighting_actors(editor_actors().get_all_level_actors()):
+        world = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_editor_world()
+        save_map(world, MAIN_MAP_PATH)
+        unreal.log_warning("{} Tuned lighting in {}".format(LOG, MAIN_MAP_PATH))
+
+
 def main():
     master = build_master_material()
     instances = build_material_instances(master)
     build_environment_map(instances["MI_Env_Ground"])
     build_main_map()
+    tune_main_map_lighting()
     unreal.log("{} Done".format(LOG))
 
 

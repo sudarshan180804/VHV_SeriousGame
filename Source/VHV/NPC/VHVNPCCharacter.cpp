@@ -1,6 +1,7 @@
 #include "NPC/VHVNPCCharacter.h"
 
 #include "Components/CapsuleComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "NPC/Components/VHVNPCBehaviorComponent.h"
 #include "NPC/Components/VHVAmbientSpeechComponent.h"
@@ -30,6 +31,14 @@ AVHVNPCCharacter::AVHVNPCCharacter()
 	MovementComponent->RotationRate = FRotator(0.0f, 500.0f, 0.0f);
 	MovementComponent->MaxWalkSpeed = 300.0f;
 	MovementComponent->BrakingDecelerationWalking = 2000.0f;
+
+	// Most villagers are off-screen at any moment: skip their pose update while unseen (montages keep
+	// advancing, so gestures and ambient scenes keep their timing) and update distant ones less often.
+	if (USkeletalMeshComponent* MeshComponent = GetMesh())
+	{
+		MeshComponent->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickMontagesWhenNotRendered;
+		MeshComponent->bEnableUpdateRateOptimizations = true;
+	}
 
 	AIControllerClass = AVHVNPCAIController::StaticClass();
 	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;

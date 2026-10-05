@@ -14,11 +14,17 @@ Model conventions: centimetres, origin at the centre of the footprint on the
 ground, front (door side) facing -Y.
 """
 
+import importlib
 import math
 import traceback
 import unreal
 
-from vhv_meshkit import MeshKit, ensure_material_instance
+import vhv_meshkit
+
+# Unreal keeps imported modules cached between runs in the editor; reload so edits are picked up.
+importlib.reload(vhv_meshkit)
+
+from vhv_meshkit import MeshKit, ensure_material_instance  # noqa: E402
 
 
 PLACEHOLDER_DIR = "/Game/VHV_Stuff/Environment/Placeholders"
@@ -47,6 +53,8 @@ PALETTE = {
     "Clay": ((160, 86, 50), 0.8),
     "BikeRed": ((170, 30, 30), 0.4),
     "Soil": ((90, 66, 44), 1.0),
+    "PaintWhite": ((235, 235, 228), 0.6),
+    "PaintRed": ((196, 38, 34), 0.6),
 }
 
 
@@ -302,6 +310,20 @@ def electric_pole(k):
         k.cylinder("Glass", (0, y, 855), 5, 14, steps=6)
 
 
+def road_barrier(k):
+    """3 m striped barrier along X, closing a road where it leaves the play area."""
+    for x in (-140.0, 140.0):
+        k.box_from("PaintWhite", x - 6, x + 6, -6, 6, 0, 110)
+    stripe = 40.0
+    for z in (55.0, 90.0):
+        x = -150.0
+        index = 0
+        while x < 150.0:
+            k.box_from("PaintRed" if index % 2 == 0 else "PaintWhite", x, min(x + stripe, 150.0), -4, 4, z, z + 18)
+            x += stripe
+            index += 1
+
+
 def garden_bed(k):
     k.box_from("Soil", -200, 200, -100, 100, 0, 15)
     for y in (-60.0, -20.0, 20.0, 60.0):
@@ -324,6 +346,7 @@ MODELS = (
     ("SM_Motorbike", motorbike, True),
     ("SM_ElectricPole", electric_pole, True),
     ("SM_GardenBed", garden_bed, False),
+    ("SM_RoadBarrier", road_barrier, True),
 )
 
 

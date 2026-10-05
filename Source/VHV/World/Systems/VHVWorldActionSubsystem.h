@@ -35,6 +35,13 @@ public:
     void UnregisterReceiver(UVHVWorldActionReceiverComponent* Receiver);
     bool CompleteWorldActionForReceiver(FGuid RequestID, bool bSuccess, const UVHVWorldActionReceiverComponent* Receiver);
 
+    /** The receiver that world actions for this ID are sent to (the first one registered), or null. */
+    const UVHVWorldActionReceiverComponent* GetRegisteredReceiver(FName ReceiverID) const
+    {
+        const TWeakObjectPtr<UVHVWorldActionReceiverComponent>* Receiver = Receivers.Find(ReceiverID);
+        return Receiver ? Receiver->Get() : nullptr;
+    }
+
 private:
     struct FPendingWorldAction
     {

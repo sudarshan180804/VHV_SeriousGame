@@ -54,11 +54,15 @@ All layout values live in `Content/Python/village_layout.py`:
 
 The HBCT quest data assumes compact staging, so keep these when moving story anchors:
 
-- **No quest markers exist.** Players find the next place by sight, so every story place stays in the village-centre story district, visible from the health-centre plaza (walks of roughly 20–70 m).
+- **Keep the story compact and in sight.** The objective marker and ground trail guide players, but first-time players still orient by sight, so every story place stays in the village-centre story district, visible from the health-centre plaza (walks of roughly 20–70 m).
 - **The Instructor stays at the plaza.** Lesson conversations (`O05_IntroLesson`, `O03_LearnMotivation`) auto-start wherever the player is, and the arc ends by walking back to him.
 - **Ambient scenes cancel if the player is more than 18 m from their NPCs** (`observation_radius` 1800), and play only once. Market, Prasert, and Saeng scenes are safe because a Reach Location objective comes first. The sala demo has none, so `DEMO` must stay within 18 m of Prasert's yard.
 - **Talking needs the player within about 1 m of the NPC, looking at it.** The interaction trace starts at the camera (4 m behind the player) and reaches 5 m. Keep 2–3 m of open ground in front of every Talk NPC, and keep their location volume where the player naturally arrives.
-- **Invisible walls (`GEN_Boundary_*`) keep the player inside ±108 m.** The hills beyond are walkable and the terrain ends at ±160 m, so never remove the walls; move them with `BOUNDARY_HALF_SIZE` if the village grows.
+- **Semi-open play area.** Players walk only inside `PLAY_AREA` (the village centre, about 120 m × 93 m). Boundary fences and red-and-white road barriers close it off, backed by invisible walls (`GEN_Boundary_*`); the rest of the village is scenery. Keep every story place inside it, and never remove the walls (the terrain beyond is walkable hills that end at ±160 m).
+- **The village walk.** A brick path (`VILLAGE_WALK`) links the story places in playthrough order as a loop, with zebra crossings where it crosses the main road. It must pass through each Reach Location volume, so a player who follows it triggers them. If you move an anchor, move the path points next to it; `place_village_story_actors.py` stops with an error naming any volume the path misses.
+- **Signposts and flags.** `SIGNPOSTS` name the story places at each decision point (arrows update automatically from positions); `FLAGS` mark story houses so they can be recognised from a distance. `build_village_environment.py` stops with an error if a signpost or flag would stand on a road, track, or the village walk.
+- **Objective marker.** A floating marker (`UVHVObjectiveMarkerWidget`, created by the player's UI manager) shows the distance to the next person or place, sits on the screen edge when it is off-screen, and hides during dialogue, learning activities, and auto-starting lessons, within 3.5 m of a person or scene (the interaction prompt takes over), and while a target scene is already playing. Places keep their marker until the player is inside the volume. Turn it off with `bShowObjectiveMarker` on the UI manager component.
+- **Ground trail.** Glowing arrows on the ground (`AVHVNavigationTrail`) follow the walking route from the player to the marker's target, recomputed on the navmesh as the player moves, so they bend around houses and fences. It shows and hides with the marker. Its arrow mesh and material (`/Game/VHV_Stuff/Navigation/SM_NavChevron`, `M_NavTrail`) come from `build_navigation_assets.py`; keep those names, since the C++ loads them by path. Turn it off with `bShowNavigationTrail` on the UI manager component. The trail needs a built navmesh: after changing the map, run Build Paths and save.
 - Keep each scene's orientation (Instructor facing south towards the arriving player, Prasert and Saeng in front yards with houses behind, Mali facing west with her house behind).
 
 Then rebuild with the editor closed, or from **Tools → Execute Python Script** with the editor open:
@@ -84,7 +88,8 @@ Then run Build Paths and save `Lvl_Village_Main`.
 |---|---|
 | `setup_village_main_map.py` | One-time creation of both maps and the master material. Never overwrites an existing map. |
 | `build_placeholder_models.py` | Creates missing placeholder models and their `MI_PH_*` materials. |
-| `build_village_environment.py` | Builds the environment from the layout. |
+| `build_village_environment.py` | Builds the environment from the layout: terrain, roads, village walk, crossings, play-area boundary, signposts, flags, buildings, scatter. |
+| `build_navigation_assets.py` | Creates the ground trail's arrow mesh and glow material (only when missing). |
 | `place_village_story_actors.py` | Stages the HBCT story in `Lvl_Village_Main` using the same labels and tags as the blockout map, then runs the HBCT map validation. |
 | `optimize_environment_assets.py` | Caps texture sizes and enables Nanite on imported art. |
 | `village_layout.py`, `vhv_meshkit.py` | Shared layout values and mesh-building helpers. |

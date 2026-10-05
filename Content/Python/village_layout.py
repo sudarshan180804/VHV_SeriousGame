@@ -7,18 +7,18 @@ Fixed parts: roads, story scene anchors, and the story buildings around them.
 Random parts: neighbour houses, yard props, and vegetation are scattered with a
 fixed SEED, so every run gives the same village. Change SEED for a new variation.
 
-Units are centimetres. Ground top is Z = 0 inside the village (the walkable
-200 m x 200 m square, -10000..10000); hills rise outside it. +X east, +Y north.
+Units are centimetres. Ground top is Z = 0 across the village (-10900..10900) and hills rise
+beyond it; players walk only inside PLAY_AREA, the village centre. +X east, +Y north.
 """
 
 SEED = 20260930
 
 # Story scene anchors, in playthrough order. place_village_story_actors.py stages NPCs around these.
 #
-# The story district sits in the village centre. The game has no quest markers, the Instructor
-# speaks the lesson conversations wherever the player is, and the arc ends by walking back to
-# him, so every story place is kept within sight of the health-centre plaza (about 20-70 m
-# walks, matching the compact staging of Lvl_Village_Blockout). Each scene keeps the blockout's
+# The story district sits in the village centre. The Instructor speaks the lesson conversations
+# wherever the player is and the arc ends by walking back to him, so every story place is kept
+# within sight of the health-centre plaza (about 20-70 m walks, matching the compact staging of
+# Lvl_Village_Blockout); the objective marker and ground trail guide players between them. Each scene keeps the blockout's
 # orientation: the Instructor faces south towards the arriving player, Prasert and Saeng stand
 # in front yards with their houses to the south, and Mali faces west with her house to the east.
 INSTRUCTOR = (-4200.0, 1300.0)       # health-centre plaza, north side of the main road
@@ -99,12 +99,53 @@ ROADSIDE_PALM_SPACING = 2400.0
 # Terrain: flat village square, hills beyond it.
 TERRAIN_SIZE = 32000.0
 TERRAIN_STEP = 400.0
-# Flat beyond the boundary walls and the road ends (+/-10600), so roads never sink into the hills.
+# Flat out past the road ends (+/-10600), so roads never sink into the hills.
 FLAT_HALF_SIZE = 10900.0
 HILL_RAMP = 5000.0
 HILL_HEIGHT = (500.0, 1300.0)
 
-# Invisible walls keeping the player inside the village (the hills are walkable and the terrain
-# ends at +/-16000, so without them the player can walk off the world). Just past the road ends.
-BOUNDARY_HALF_SIZE = 10800.0
+# ---------------------------------------------------------------------------
+# Guided, semi-open play
+# ---------------------------------------------------------------------------
+# Players are village health volunteers, many new to games, so the walkable area is the village
+# centre around the story places (about 120 m x 93 m). Fences and road barriers close it off
+# naturally, backed by invisible walls; the rest of the village stays visible as scenery.
+PLAY_AREA = (-6500.0, 5500.0, -4500.0, 4800.0)       # (x0, x1, y0, y1)
 BOUNDARY_HEIGHT = 6000.0
+
+# The village walk: one brick path linking the story places in playthrough order as a loop:
+# health-centre plaza -> across the road to Prasert -> sala -> Saeng -> back across the road
+# -> Mali -> west past the market -> plaza. It must pass through each Reach Location volume;
+# place_village_story_actors.py checks this and stops with an error if a volume is missed.
+VILLAGE_WALK = (
+    (-3400.0, 1000.0), (-3000.0, 600.0), (-3000.0, -400.0), (-2600.0, -1050.0),
+    (-2000.0, -1500.0),                                  # Prasert's front yard
+    (-1200.0, -1300.0), (-650.0, -1250.0),               # community sala
+    (300.0, -1450.0), (1300.0, -1640.0),                 # Saeng's front yard
+    (1900.0, -1000.0), (1900.0, -400.0), (1950.0, 500.0), (2100.0, 1300.0), (2200.0, 2300.0),
+    (2480.0, 2800.0),                                    # Mali's front yard
+    (1500.0, 2300.0), (500.0, 1700.0), (-100.0, 1600.0),
+    (-1300.0, 1600.0),                                   # through the market aisle
+    (-2650.0, 1600.0), (-3300.0, 1300.0), (-3600.0, 1150.0),
+)
+VILLAGE_WALK_WIDTH = 260.0
+VILLAGE_WALK_TOP = 3.5          # above dirt (2), concrete (3) and the plaza; below asphalt (4)
+
+# Zebra crossings are painted automatically wherever the village walk crosses the main road.
+
+# Signposts at decision points: (position, [(label, destination), ...]).
+SIGNPOSTS = (
+    ((-3750.0, 760.0), (("Market", MARKET), ("Uncle Prasert", PRASERT), ("Health Centre", INSTRUCTOR))),
+    ((-2450.0, -700.0), (("Uncle Prasert", PRASERT), ("Community Sala", DEMO), ("Aunt Saeng", SAENG),
+                         ("Health Centre", INSTRUCTOR))),
+    ((2250.0, -900.0), (("Aunt Mali", MALI), ("Aunt Saeng", SAENG), ("Health Centre", INSTRUCTOR))),
+    ((1150.0, 2550.0), (("Market", MARKET), ("Health Centre", INSTRUCTOR), ("Aunt Mali", MALI))),
+)
+
+# Landmark flags beside story places, visible over roofs: (position, sRGB colour).
+FLAGS = (
+    ((-1300.0, 2650.0), (58, 110, 170)),       # market: blue
+    ((-1300.0, -2250.0), (235, 190, 40)),      # Prasert: yellow
+    ((1950.0, -2250.0), (220, 110, 160)),      # Saeng: pink
+    ((2850.0, 3450.0), (235, 130, 40)),        # Mali: orange
+)
