@@ -254,6 +254,8 @@ void UVHVUIManagerComponent::BeginPlay()
             QuestSubsystem->OnObjectiveActivationRequested.AddDynamic(this, &UVHVUIManagerComponent::HandleQuestObjectiveActivationRequested);
             QuestSubsystem->OnObjectiveReady.AddDynamic(this, &UVHVUIManagerComponent::HandleQuestObjectiveReady);
             QuestSubsystem->OnObjectiveChanged.AddDynamic(this, &UVHVUIManagerComponent::HandleQuestObjectiveChanged);
+            QuestSubsystem->OnObjectiveTrackingTargetChanged.AddDynamic(
+                this, &UVHVUIManagerComponent::HandleQuestObjectiveTrackingTargetChanged);
             QuestSubsystem->OnQuestStarted.AddDynamic(this, &UVHVUIManagerComponent::HandleQuestStarted);
             QuestSubsystem->OnQuestCompleted.AddDynamic(this, &UVHVUIManagerComponent::HandleQuestCompleted);
             if (QuestTrackerWidget)
@@ -309,6 +311,8 @@ void UVHVUIManagerComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
         QuestSubsystem->OnObjectiveActivationRequested.RemoveDynamic(this, &UVHVUIManagerComponent::HandleQuestObjectiveActivationRequested);
         QuestSubsystem->OnObjectiveReady.RemoveDynamic(this, &UVHVUIManagerComponent::HandleQuestObjectiveReady);
         QuestSubsystem->OnObjectiveChanged.RemoveDynamic(this, &UVHVUIManagerComponent::HandleQuestObjectiveChanged);
+        QuestSubsystem->OnObjectiveTrackingTargetChanged.RemoveDynamic(
+            this, &UVHVUIManagerComponent::HandleQuestObjectiveTrackingTargetChanged);
         QuestSubsystem->OnQuestStarted.RemoveDynamic(this, &UVHVUIManagerComponent::HandleQuestStarted);
         QuestSubsystem->OnQuestCompleted.RemoveDynamic(this, &UVHVUIManagerComponent::HandleQuestCompleted);
     }
@@ -501,6 +505,16 @@ void UVHVUIManagerComponent::HandleQuestObjectiveChanged(
     if (QuestID == FName(TEXT("Q_HBCT_05_SELF_MONITORING")))
     {
         StageSelfMonitoringParticipants(ObjectiveID);
+    }
+}
+
+void UVHVUIManagerComponent::HandleQuestObjectiveTrackingTargetChanged(
+    const FName QuestID,
+    const FName ObjectiveID)
+{
+    if (ObjectiveTrackingMode != EVHVObjectiveTrackingMode::Off)
+    {
+        RefreshActiveObjectiveTrackingTarget(QuestID, ObjectiveID);
     }
 }
 
@@ -2344,6 +2358,52 @@ bool UVHVUIManagerComponent::EnsureObjectiveTrackingPresentation()
     }
 
     return ObjectiveTrackingMarker && ObjectiveDirectionWidget;
+}
+
+bool UVHVUIManagerComponent::RefreshActiveObjectiveTrackingTarget(
+    const FName QuestID,
+    const FName ObjectiveID)
+{
+    FName ResolvedQuestID;
+    FName ResolvedObjectiveID;
+    FName LocationID;
+    FVector WorldLocation;
+    AActor* TargetActor = nullptr;
+    if (!QuestSubsystem || !QuestSubsystem->ResolveCurrentObjectiveTrackingTarget(
+            GetWorld(), ResolvedQuestID, ResolvedObjectiveID, LocationID, WorldLocation, TargetActor)
+        || ResolvedQuestID != QuestID || ResolvedObjectiveID != ObjectiveID)
+    {
+        ClearObjectiveTracking();
+        return false;
+    }
+
+    TrackedLocationQuestID = ResolvedQuestID;
+    TrackedLocationObjectiveID = ResolvedObjectiveID;
+    TrackedLocationID = LocationID;
+    TrackedLocation = WorldLocation;
+    TrackedLocationActor = TargetActor;
+    TrackedLocationVolume = Cast<AVHVQuestLocationVolume>(TargetActor);
+    FVHVQuestObjectiveDefinition Objective;
+    TrackedParticipantID = QuestSubsystem->GetCurrentObjective(Objective)
+        ? Objective.GetEffectiveParticipantID()
+        : NAME_None;
+    if (ObjectiveTrackingMarker)
+    {
+        ObjectiveTrackingMarker->SetTrackingLocation(TrackedLocation);
+    }
+
+    bObjectiveTrackingProximitySuppressed = false;
+    bObjectiveTrackingTemporaryReveal = false;
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(ObjectiveTrackingTemporaryRevealTimer);
+    }
+    UpdateObjectiveTrackingProximity();
+    ApplyObjectiveTrackingVisualState();
+    UE_LOG(LogVHV, Log,
+        TEXT("[VHVTracking] Objective '%s' advanced to semantic destination '%s'."),
+        *ObjectiveID.ToString(), *LocationID.ToString());
+    return true;
 }
 
 void UVHVUIManagerComponent::ToggleObjectiveTracking()

@@ -358,6 +358,8 @@ protected:
     UFUNCTION()
     void HandleQuestObjectiveChanged(FName QuestID, FName ObjectiveID);
     UFUNCTION()
+    void HandleQuestObjectiveTrackingTargetChanged(FName QuestID, FName ObjectiveID);
+    UFUNCTION()
     void HandleQuestStarted(FName QuestID);
     UFUNCTION()
     void HandleQuestCompleted(FName QuestID);
@@ -373,6 +375,7 @@ protected:
     void EnsureMatchingWidget();
     void EnsureSocialSupportWidgets();
     bool EnsureObjectiveTrackingPresentation();
+    bool RefreshActiveObjectiveTrackingTarget(FName QuestID, FName ObjectiveID);
     bool IsPlayerAtObjectiveTrackingTarget() const;
     void UpdateObjectiveTrackingProximity();
     void ApplyObjectiveTrackingVisualState();

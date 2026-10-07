@@ -198,7 +198,7 @@ bool UVHVQuestSubsystem::ResolveCurrentObjectiveTrackingTarget(
         return false;
     }
 
-    const FName LocationID = Objective->GetEffectiveTrackingLocationID();
+    const FName LocationID = GetFirstIncompleteTrackingLocationID(*Objective);
     if (LocationID.IsNone())
     {
         return false;
@@ -219,6 +219,64 @@ bool UVHVQuestSubsystem::ResolveCurrentObjectiveTrackingTarget(
     OutWorldLocation = TargetActor->GetActorLocation();
     OutTargetActor = TargetActor;
     return true;
+}
+
+FName UVHVQuestSubsystem::GetFirstIncompleteTrackingLocationID(
+    const FVHVQuestObjectiveDefinition& Objective) const
+{
+    if (!Objective.TrackingDestinations.IsEmpty())
+    {
+        for (const FVHVQuestTrackingDestination& Destination : Objective.TrackingDestinations)
+        {
+            const bool bComplete = StoryStateSubsystem
+                && StoryStateSubsystem->EvaluateConditionSet(Destination.CompletionConditions);
+            if (!bComplete)
+            {
+                return Destination.GetEffectiveLocationID();
+            }
+        }
+        return NAME_None;
+    }
+    return Objective.GetEffectiveTrackingLocationID();
+}
+
+bool UVHVQuestSubsystem::DoesTrackingDestinationReferenceState(
+    const FVHVQuestObjectiveDefinition& Objective,
+    const FName StateID) const
+{
+    if (StateID.IsNone())
+    {
+        return false;
+    }
+    for (const FVHVQuestTrackingDestination& Destination : Objective.TrackingDestinations)
+    {
+        for (const FVHVStoryCondition& Condition : Destination.CompletionConditions.Conditions)
+        {
+            if (Condition.GetEffectiveStateID() == StateID)
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+int32 UVHVQuestSubsystem::CountCompletedTrackingDestinations(
+    const FVHVQuestObjectiveDefinition& Objective) const
+{
+    if (!StoryStateSubsystem)
+    {
+        return 0;
+    }
+    int32 CompletedCount = 0;
+    for (const FVHVQuestTrackingDestination& Destination : Objective.TrackingDestinations)
+    {
+        if (StoryStateSubsystem->EvaluateConditionSet(Destination.CompletionConditions))
+        {
+            ++CompletedCount;
+        }
+    }
+    return CompletedCount;
 }
 
 bool UVHVQuestSubsystem::GetQuestDefinition(
@@ -1208,18 +1266,38 @@ void UVHVQuestSubsystem::HandleTextbookActivityCompleted()
 
 void UVHVQuestSubsystem::HandleStoryFlagChanged(const FName FlagID, const bool bValue)
 {
-    (void)FlagID;
     (void)bValue;
+    const FVHVQuestObjectiveDefinition* Objective = GetActiveObjective();
+    const bool bTrackingTargetMayHaveChanged = Objective
+        && DoesTrackingDestinationReferenceState(*Objective, FlagID);
     TryStartActiveObjectiveNPCMoveSequenceFromConditions();
-    if (!TryCompleteCurrentObjectiveFromStoryState()) ReevaluateWaitingObjective();
+    if (!TryCompleteCurrentObjectiveFromStoryState())
+    {
+        if (bTrackingTargetMayHaveChanged && Objective)
+        {
+            OnObjectiveTrackingTargetChanged.Broadcast(RuntimeState.ActiveQuestID, Objective->ObjectiveID);
+            OnQuestUpdated.Broadcast(RuntimeState.ActiveQuestID);
+        }
+        ReevaluateWaitingObjective();
+    }
 }
 
 void UVHVQuestSubsystem::HandleStoryCounterChanged(const FName CounterID, const int32 NewValue)
 {
-    (void)CounterID;
     (void)NewValue;
+    const FVHVQuestObjectiveDefinition* Objective = GetActiveObjective();
+    const bool bTrackingTargetMayHaveChanged = Objective
+        && DoesTrackingDestinationReferenceState(*Objective, CounterID);
     TryStartActiveObjectiveNPCMoveSequenceFromConditions();
-    if (!TryCompleteCurrentObjectiveFromStoryState()) ReevaluateWaitingObjective();
+    if (!TryCompleteCurrentObjectiveFromStoryState())
+    {
+        if (bTrackingTargetMayHaveChanged && Objective)
+        {
+            OnObjectiveTrackingTargetChanged.Broadcast(RuntimeState.ActiveQuestID, Objective->ObjectiveID);
+            OnQuestUpdated.Broadcast(RuntimeState.ActiveQuestID);
+        }
+        ReevaluateWaitingObjective();
+    }
 }
 
 bool UVHVQuestSubsystem::ValidateQuestArc(const UVHVQuestArcData* QuestArc) const
@@ -1504,18 +1582,38 @@ bool UVHVQuestSubsystem::ValidateQuestArc(const UVHVQuestArcData* QuestArc) cons
                         Objective.TrackingLocationTag, NAME_None,
                         TEXT("VHV.Location"), TEXT("TrackingLocation"));
                 }
-                if (Objective.GetEffectiveTrackingLocationID().IsNone())
+                if (Objective.GetEffectiveTrackingLocationID().IsNone()
+                    && Objective.TrackingDestinations.IsEmpty())
                 {
                     UE_LOG(LogVHV, Warning,
                         TEXT("[VHVQuest] Quest '%s' objective '%s' enables location tracking without one resolvable authored location."),
                         *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString());
                     bValid = false;
                 }
+                TSet<FName> TrackingLocationIDs;
+                for (const FVHVQuestTrackingDestination& Destination : Objective.TrackingDestinations)
+                {
+                    const FName DestinationID = Destination.GetEffectiveLocationID();
+                    if (!VHVAuthoringReferences::IsValidReferenceTag(
+                            Destination.DestinationLocationTag, TEXT("VHV.Location"))
+                        || DestinationID.IsNone()
+                        || Destination.CompletionConditions.Conditions.IsEmpty()
+                        || TrackingLocationIDs.Contains(DestinationID))
+                    {
+                        UE_LOG(LogVHV, Warning,
+                            TEXT("[VHVQuest] Quest '%s' objective '%s' has an invalid or duplicate ordered tracking destination '%s'."),
+                            *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString(),
+                            *Destination.DestinationLocationTag.ToString());
+                        bValid = false;
+                    }
+                    TrackingLocationIDs.Add(DestinationID);
+                }
             }
-            else if (Objective.TrackingLocationTag.IsValid())
+            else if (Objective.TrackingLocationTag.IsValid()
+                || !Objective.TrackingDestinations.IsEmpty())
             {
                 UE_LOG(LogVHV, Warning,
-                    TEXT("[VHVQuest] Quest '%s' objective '%s' authors TrackingLocationTag while location tracking is disabled."),
+                    TEXT("[VHVQuest] Quest '%s' objective '%s' authors tracking destinations while location tracking is disabled."),
                     *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString());
                 bValid = false;
             }
@@ -2837,9 +2935,20 @@ bool UVHVQuestSubsystem::BuildJournalEntry(const FVHVQuestDefinition& Definition
     OutEntry.CurrentObjectiveIndex = State.CurrentObjectiveIndex;
     OutEntry.TotalObjectiveCount = Definition.Objectives.Num();
     OutEntry.bTracked = RuntimeState.TrackedQuestID == Definition.QuestID;
-    OutEntry.CurrentObjectiveText = Definition.Objectives.IsValidIndex(State.CurrentObjectiveIndex)
-        ? Definition.Objectives[State.CurrentObjectiveIndex].ObjectiveText
-        : FText::GetEmpty();
+    OutEntry.CurrentObjectiveText = FText::GetEmpty();
+    if (Definition.Objectives.IsValidIndex(State.CurrentObjectiveIndex))
+    {
+        const FVHVQuestObjectiveDefinition& Objective = Definition.Objectives[State.CurrentObjectiveIndex];
+        OutEntry.CurrentObjectiveText = Objective.ObjectiveText;
+        if (!Objective.TrackingDestinations.IsEmpty())
+        {
+            OutEntry.CurrentObjectiveText = FText::Format(
+                NSLOCTEXT("VHVQuest", "MultiDestinationObjectiveProgress", "{0} ({1}/{2})"),
+                Objective.ObjectiveText,
+                FText::AsNumber(CountCompletedTrackingDestinations(Objective)),
+                FText::AsNumber(Objective.TrackingDestinations.Num()));
+        }
+    }
     return true;
 }
 

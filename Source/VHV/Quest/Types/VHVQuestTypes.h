@@ -126,6 +126,25 @@ struct VHV_API FVHVQuestContextualConversation
     }
 };
 
+/** An ordered semantic tracking destination that remains active until its story conditions pass. */
+USTRUCT(BlueprintType)
+struct VHV_API FVHVQuestTrackingDestination
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|Location Tracking", meta = (Categories = "VHV.Location"))
+    FGameplayTag DestinationLocationTag;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|Location Tracking")
+    FVHVStoryConditionSet CompletionConditions;
+
+    FName GetEffectiveLocationID() const
+    {
+        return VHVAuthoringReferences::ResolveID(
+            DestinationLocationTag, NAME_None, TEXT("VHV.Location"));
+    }
+};
+
 USTRUCT(BlueprintType)
 struct VHV_API FVHVQuestObjectiveDefinition
 {
@@ -166,6 +185,10 @@ struct VHV_API FVHVQuestObjectiveDefinition
     /** Optional destination override. LocationTag remains the default when this is unset. */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|Location Tracking", meta = (Categories = "VHV.Location", EditCondition = "bEnableLocationTracking", EditConditionHides))
     FGameplayTag TrackingLocationTag;
+
+    /** Ordered tracking preference for objectives with independently completable world destinations. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|Location Tracking", meta = (EditCondition = "bEnableLocationTracking", EditConditionHides))
+    TArray<FVHVQuestTrackingDestination> TrackingDestinations;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|References", meta = (DisplayName = "Custom Event", Categories = "VHV.CustomEvent", EditCondition = "ObjectiveType == EVHVQuestObjectiveType::CustomEvent", EditConditionHides))
     FGameplayTag CustomEventTag;

@@ -1546,7 +1546,8 @@ def create_ambient_assets():
                 ambient_line("Model", "Try this part first.", 2.5, look_at=True),
                 ambient_line("Observer", "All right. I can start with that.", 2.8, look_at=True),
             ], "show_names": True,
-            "effects": [counter_effect("VHV.Story.Counter.HBCT.RoleModel.Observations")],
+            "effects": [effect("VHV.Story.Flag.HBCT.RoleModel.ExerciseObserved"),
+                        counter_effect("VHV.Story.Counter.HBCT.RoleModel.Observations")],
         },
         "DA_Ambient_HBCT_RoleModel_SimilarExperience": {
             "id": "HBCT_RoleModel_SimilarExperience",
@@ -1560,7 +1561,8 @@ def create_ambient_assets():
                 ambient_line("Experience", "Very similar.", 2.0, look_at=True),
                 ambient_line("Listener", "Then maybe I could try what you did.", 3.0, look_at=True),
             ], "show_names": True,
-            "effects": [counter_effect("VHV.Story.Counter.HBCT.RoleModel.Observations")],
+            "effects": [effect("VHV.Story.Flag.HBCT.RoleModel.SimilarExperienceObserved"),
+                        counter_effect("VHV.Story.Counter.HBCT.RoleModel.Observations")],
         },
         "DA_Ambient_HBCT_RoleModel_Family": {
             "id": "HBCT_RoleModel_Family",
@@ -1570,7 +1572,8 @@ def create_ambient_assets():
                 ambient_line("Parent", "I'll choose water instead of a sugary drink.", 3.0, look_at=True),
                 ambient_line("Younger", "I'll have water too.", 2.4, look_at=True),
             ], "show_names": True,
-            "effects": [counter_effect("VHV.Story.Counter.HBCT.RoleModel.Observations")],
+            "effects": [effect("VHV.Story.Flag.HBCT.RoleModel.FamilyObserved"),
+                        counter_effect("VHV.Story.Counter.HBCT.RoleModel.Observations")],
         },
         "DA_Ambient_HBCT_RoleModel_Symbolic": {
             "id": "HBCT_RoleModel_Symbolic",
@@ -1578,7 +1581,8 @@ def create_ambient_assets():
             "lines": [
                 ambient_line("Observer", "That looks amazing. I want to become strong too.", 3.4),
             ], "show_names": True,
-            "effects": [counter_effect("VHV.Story.Counter.HBCT.RoleModel.Observations")],
+            "effects": [effect("VHV.Story.Flag.HBCT.RoleModel.SymbolicObserved"),
+                        counter_effect("VHV.Story.Counter.HBCT.RoleModel.Observations")],
         },
         "DA_Ambient_HBCT_RoleModel_SymbolicCandidate": {
             "id": "HBCT_RoleModel_SymbolicCandidate",
@@ -1587,7 +1591,8 @@ def create_ambient_assets():
                 ambient_line("Observer", "Fitness celebrity — intensive daily training program.", 3.4),
                 ambient_line("Observer", "Healthy and successful... but would Somchai see this as something he could realistically do?", 4.8, thought=True),
             ], "show_names": False,
-            "effects": [counter_effect("VHV.Story.Counter.HBCT.RoleModel.CandidatesInspected")],
+            "effects": [effect("VHV.Story.Flag.HBCT.RoleModel.CandidateSymbolicInspected"),
+                        counter_effect("VHV.Story.Counter.HBCT.RoleModel.CandidatesInspected")],
         },
         "DA_Ambient_HBCT_RoleModel_TimelineBefore": {
             "id": "HBCT_RoleModel_TimelineBefore",
@@ -2618,6 +2623,10 @@ def configure_map(ambient_assets, conversations):
     somchai = set_actor_folder(spawn_npc(
         npc_class, "HBCT_RoleModel_UncleSomchai", (8450.0, -1500.0, 100.0), 180.0,
         "VHV.Participant.UncleSomchai", preserve_existing_transform=True), role_root + "/Somchai")
+    configure_semantic_npc_location(
+        "HBCT_Location_RoleModel_SomchaiIntro", (0.0, 4100.0, 100.0),
+        "VHV.Location.HBCT.RoleModel.SomchaiIntro")
+    set_actor_folder(find_actor("HBCT_Location_RoleModel_SomchaiIntro"), role_root + "/Somchai")
     athlete = set_actor_folder(spawn_npc(
         npc_class, "HBCT_RoleModel_YoungAthlete", (8750.0, -1800.0, 100.0), 180.0,
         "VHV.Participant.RoleModel.YoungAthlete", preserve_existing_transform=True), role_root + "/Candidates")
@@ -2637,6 +2646,10 @@ def configure_map(ambient_assets, conversations):
     configure_semantic_npc_location(
         "HBCT_Location_RoleModel_SaengCandidate", (9050.0, -1800.0, 100.0),
         "VHV.Location.HBCT.RoleModel.SaengCandidate")
+    configure_semantic_npc_location(
+        "HBCT_Location_RoleModel_AthleteCandidate", (700.0, 3900.0, 100.0),
+        "VHV.Location.HBCT.RoleModel.AthleteCandidate")
+    set_actor_folder(find_actor("HBCT_Location_RoleModel_AthleteCandidate"), role_root + "/Candidates")
     set_actor_folder(find_actor("HBCT_Location_RoleModel_SaengCandidate"), role_root + "/Candidates")
     symbolic_candidate_observer = set_actor_folder(spawn_npc(
         npc_class, "HBCT_RoleModel_SymbolicCandidateObserver", (9250.0, -1350.0, 100.0), 180.0,

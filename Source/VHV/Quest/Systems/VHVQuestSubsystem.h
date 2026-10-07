@@ -187,6 +187,10 @@ public:
     UPROPERTY(BlueprintAssignable, Category = "VHV|Quest|Events")
     FOnVHVQuestObjectiveEvent OnObjectiveReady;
 
+    /** Emitted when story state changes the first incomplete semantic destination of the active objective. */
+    UPROPERTY(BlueprintAssignable, Category = "VHV|Quest|Events")
+    FOnVHVQuestObjectiveEvent OnObjectiveTrackingTargetChanged;
+
     UPROPERTY(BlueprintAssignable, Category = "VHV|Quest|Events")
     FOnVHVTrackedQuestChanged OnTrackedQuestChanged;
 
@@ -257,6 +261,9 @@ private:
     void DebugCancelActiveObjectiveExecution();
 #endif
     bool BuildJournalEntry(const FVHVQuestDefinition& Definition, const FVHVQuestRuntimeState& State, FVHVQuestJournalEntry& OutEntry) const;
+    FName GetFirstIncompleteTrackingLocationID(const FVHVQuestObjectiveDefinition& Objective) const;
+    bool DoesTrackingDestinationReferenceState(const FVHVQuestObjectiveDefinition& Objective, FName StateID) const;
+    int32 CountCompletedTrackingDestinations(const FVHVQuestObjectiveDefinition& Objective) const;
     FName GetRequiredConversationID(const FVHVQuestObjectiveDefinition& Objective) const;
     const FVHVQuestDefinition* FindQuestDefinition(FName QuestID) const;
     FVHVQuestRuntimeState* FindQuestState(FName QuestID);

@@ -750,11 +750,12 @@ def configure_arc(arc, conversations):
             "Q_HBCT_00_INTRO", "Q_HBCT_01_MOTIVATION",
             "Q_HBCT_02_GOAL_SETTING", "Q_HBCT_03_ROLE_MODEL"]:
         raise RuntimeError("Unexpected Quest 0-3 ordering; refusing to rewrite the arc")
+    existing_index = existing_ids.index(QUEST_ID) if QUEST_ID in existing_ids else len(quests)
     quests = [item for item in quests if str(item.get_editor_property("quest_id")) != QUEST_ID]
     role_model = next(item for item in quests
                       if str(item.get_editor_property("quest_id")) == "Q_HBCT_03_ROLE_MODEL")
     role_model.set_editor_property("auto_start_next_quest", True)
-    quests.append(quest4)
+    quests.insert(min(existing_index, len(quests)), quest4)
     arc.set_editor_property("quests", quests)
     arc.set_editor_property(
         "quest_arc_description",
@@ -897,7 +898,7 @@ def spawn_trigger(label, location, location_tag, objective_id, extent=(280.0, 28
 
 
 def spawn_ambient(label, location, asset, receiver_tag, bindings, folder_path,
-                  preserve_behavior=False, requires_explicit_trigger=True):
+                  preserve_behavior=False, requires_explicit_trigger=True, play_once=True):
     actor = spawn_actor(
         unreal.VHVAmbientConversationActor, label, location, 0.0, folder_path)
     actor.set_editor_properties({
@@ -905,7 +906,7 @@ def spawn_ambient(label, location, asset, receiver_tag, bindings, folder_path,
         "participants": bindings,
         "auto_start_on_begin_play": False,
         "requires_explicit_trigger": requires_explicit_trigger,
-        "play_once": True,
+        "play_once": play_once,
         "preserve_participant_behavior": preserve_behavior,
         "player_leave_policy": (unreal.VHVAmbientConversationLeavePolicy.CONTINUE
                                 if preserve_behavior else unreal.VHVAmbientConversationLeavePolicy.CANCEL),
@@ -1024,22 +1025,26 @@ def configure_map(ambient_assets):
         "HBCT_SS_Ambient_RoomEmotional", (5200, 1540, 100),
         ambient_assets["DA_Ambient_HBCT_SocialSupport_RoomEmotional"],
         "VHV.WorldReceiver.HBCT.SocialSupport.RoomEmotional",
-        [bind("Patient", emotional_patient), bind("Family", emotional_family)], house_folder)
+        [bind("Patient", emotional_patient), bind("Family", emotional_family)], house_folder,
+        play_once=False)
     ambient["room_informational"] = spawn_ambient(
         "HBCT_SS_Ambient_RoomInformational", (6000, 1540, 100),
         ambient_assets["DA_Ambient_HBCT_SocialSupport_RoomInformational"],
         "VHV.WorldReceiver.HBCT.SocialSupport.RoomInformational",
-        [bind("Patient", info_patient), bind("VHV", info_vhv)], house_folder)
+        [bind("Patient", info_patient), bind("VHV", info_vhv)], house_folder,
+        play_once=False)
     ambient["room_instrumental"] = spawn_ambient(
         "HBCT_SS_Ambient_RoomInstrumental", (5200, 2340, 100),
         ambient_assets["DA_Ambient_HBCT_SocialSupport_RoomInstrumental"],
         "VHV.WorldReceiver.HBCT.SocialSupport.RoomInstrumental",
-        [bind("Patient", instrumental_patient), bind("Family", instrumental_family)], house_folder)
+        [bind("Patient", instrumental_patient), bind("Family", instrumental_family)], house_folder,
+        play_once=False)
     ambient["room_appraisal"] = spawn_ambient(
         "HBCT_SS_Ambient_RoomAppraisal", (6000, 2340, 100),
         ambient_assets["DA_Ambient_HBCT_SocialSupport_RoomAppraisal"],
         "VHV.WorldReceiver.HBCT.SocialSupport.RoomAppraisal",
-        [bind("Patient", appraisal_patient), bind("VHV", appraisal_vhv)], house_folder)
+        [bind("Patient", appraisal_patient), bind("VHV", appraisal_vhv)], house_folder,
+        play_once=False)
     ambient["rooms_complete"] = spawn_ambient(
         "HBCT_SS_Ambient_RoomsComplete", (6400, 1800, 100),
         ambient_assets["DA_Ambient_HBCT_SocialSupport_RoomsComplete"],
@@ -1401,6 +1406,9 @@ def validate_map(authored):
             "HBCT_SS_Trigger_RoomInstrumental", "HBCT_SS_Trigger_RoomAppraisal"):
         if find_actor(room_label).get_editor_property("trigger_world_action_once"):
             raise RuntimeError("{} must allow a room retry after an incorrect activity".format(room_label))
+    for room_key in ("room_emotional", "room_informational", "room_instrumental", "room_appraisal"):
+        if authored["ambient"][room_key].get_editor_property("play_once"):
+            raise RuntimeError("{} must remain replayable until its classification flag is set".format(room_key))
 
     chai_intro = find_actor("HBCT_SS_Trigger_ChaiIntro")
     chai_intro_location = chai_intro.get_actor_location()

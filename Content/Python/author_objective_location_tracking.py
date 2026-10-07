@@ -49,8 +49,9 @@ TRACKING_LOCATIONS = {
         "O01_ReachExercisePark": "VHV.Location.HBCT.RoleModel.Entry",
         "O02_DiscoverRoleModels": "VHV.Location.HBCT.RoleModel.ExerciseObservation",
         "O03_ClassifyModels": "VHV.Location.HBCT.ExercisePark",
-        "O04_MeetSomchai": "VHV.Location.HBCT.ExercisePark",
-        "O06_InspectCandidates": "VHV.Location.HBCT.RoleModel.SaengCandidate",
+        "O04_MeetSomchai": "VHV.Location.HBCT.RoleModel.SomchaiIntro",
+        "O06_InspectCandidates": "VHV.Location.HBCT.RoleModel.AthleteCandidate",
+        "O09_SeeChangeOverTime": "VHV.Location.HBCT.RoleModel.Timeline.Before",
         "O11_PrepareDemonstration": "VHV.Location.HBCT.ExercisePark",
         "O12_ObserveSaeng": "VHV.Location.HBCT.RoleModel.SaengDemo",
         "O13_SupportImitation": "VHV.Location.HBCT.RoleModel.SomchaiDemo",
@@ -94,6 +95,61 @@ TRACKING_LOCATIONS = {
     },
 }
 
+
+# Ordered preference only; gameplay remains non-linear wherever the authored
+# triggers already allow it. Each entry is skipped as soon as its condition passes.
+MULTI_TRACKING_DESTINATIONS = {
+    "Q_HBCT_03_ROLE_MODEL": {
+        "O02_DiscoverRoleModels": [
+            ("VHV.Location.HBCT.RoleModel.ExerciseObservation", "flag", "VHV.Story.Flag.HBCT.RoleModel.ExerciseObserved", 0),
+            ("VHV.Location.HBCT.RoleModel.SimilarExperience", "flag", "VHV.Story.Flag.HBCT.RoleModel.SimilarExperienceObserved", 0),
+            ("VHV.Location.HBCT.RoleModel.Family", "flag", "VHV.Story.Flag.HBCT.RoleModel.FamilyObserved", 0),
+            ("VHV.Location.HBCT.RoleModel.Symbolic", "flag", "VHV.Story.Flag.HBCT.RoleModel.SymbolicObserved", 0),
+        ],
+        "O06_InspectCandidates": [
+            ("VHV.Location.HBCT.RoleModel.AthleteCandidate", "flag", "VHV.Story.Flag.HBCT.RoleModel.CandidateAthleteInspected", 0),
+            ("VHV.Location.HBCT.RoleModel.SaengCandidate", "flag", "VHV.Story.Flag.HBCT.RoleModel.CandidateSaengInspected", 0),
+            ("VHV.Location.HBCT.RoleModel.SymbolicCandidate", "flag", "VHV.Story.Flag.HBCT.RoleModel.CandidateSymbolicInspected", 0),
+        ],
+        "O09_SeeChangeOverTime": [
+            ("VHV.Location.HBCT.RoleModel.Timeline.Before", "counter", "VHV.Story.Counter.HBCT.RoleModel.TimelineStationsObserved", 1),
+            ("VHV.Location.HBCT.RoleModel.Timeline.FindsModel", "counter", "VHV.Story.Counter.HBCT.RoleModel.TimelineStationsObserved", 2),
+            ("VHV.Location.HBCT.RoleModel.Timeline.FirstAttempt", "counter", "VHV.Story.Counter.HBCT.RoleModel.TimelineStationsObserved", 3),
+            ("VHV.Location.HBCT.RoleModel.Timeline.Repetition", "counter", "VHV.Story.Counter.HBCT.RoleModel.TimelineStationsObserved", 4),
+            ("VHV.Location.HBCT.RoleModel.Timeline.NewRoutine", "counter", "VHV.Story.Counter.HBCT.RoleModel.TimelineStationsObserved", 5),
+        ],
+    },
+    "Q_HBCT_04_SOCIAL_SUPPORT": {
+        "O01_ObserveVillageSupport": [
+            ("VHV.Location.HBCT.SocialSupport.SSMealScene", "flag", "VHV.Story.Flag.HBCT.SocialSupport.SSObservedMeal", 0),
+            ("VHV.Location.HBCT.SocialSupport.SSWalkingPartnerScene", "flag", "VHV.Story.Flag.HBCT.SocialSupport.SSObservedWalkingPartner", 0),
+            ("VHV.Location.HBCT.SocialSupport.SSEncouragementScene", "flag", "VHV.Story.Flag.HBCT.SocialSupport.SSObservedEncouragement", 0),
+            ("VHV.Location.HBCT.SocialSupport.SSHealthGuidanceScene", "flag", "VHV.Story.Flag.HBCT.SocialSupport.SSObservedGuidance", 0),
+        ],
+        "O03_ExploreSupportHouse": [
+            ("VHV.Location.HBCT.SocialSupport.SSRoomEmotional", "flag", "VHV.Story.Flag.HBCT.SocialSupport.SSRoomEmotionalComplete", 0),
+            ("VHV.Location.HBCT.SocialSupport.SSRoomInformational", "flag", "VHV.Story.Flag.HBCT.SocialSupport.SSRoomInformationalComplete", 0),
+            ("VHV.Location.HBCT.SocialSupport.SSRoomInstrumental", "flag", "VHV.Story.Flag.HBCT.SocialSupport.SSRoomInstrumentalComplete", 0),
+            ("VHV.Location.HBCT.SocialSupport.SSRoomAppraisal", "flag", "VHV.Story.Flag.HBCT.SocialSupport.SSRoomAppraisalComplete", 0),
+        ],
+        "O05_FindChaiSupporters": [
+            ("VHV.Location.HBCT.SocialSupport.SSChaiWifeRecruit", "flag", "VHV.Story.Flag.HBCT.SocialSupport.SSWifeRecruited", 0),
+            ("VHV.Location.HBCT.SocialSupport.SSChaiDaughterRecruit", "flag", "VHV.Story.Flag.HBCT.SocialSupport.SSDaughterRecruited", 0),
+            ("VHV.Location.HBCT.SocialSupport.SSChaiNeighborRecruit", "flag", "VHV.Story.Flag.HBCT.SocialSupport.SSNeighborRecruited", 0),
+            ("VHV.Location.HBCT.SocialSupport.SSChaiNurseRecruit", "flag", "VHV.Story.Flag.HBCT.SocialSupport.SSNurseRecruited", 0),
+        ],
+    },
+}
+
+
+ROLE_MODEL_COMPLETION_FLAGS = {
+    "DA_Ambient_HBCT_RoleModel_Exercise": "VHV.Story.Flag.HBCT.RoleModel.ExerciseObserved",
+    "DA_Ambient_HBCT_RoleModel_SimilarExperience": "VHV.Story.Flag.HBCT.RoleModel.SimilarExperienceObserved",
+    "DA_Ambient_HBCT_RoleModel_Family": "VHV.Story.Flag.HBCT.RoleModel.FamilyObserved",
+    "DA_Ambient_HBCT_RoleModel_Symbolic": "VHV.Story.Flag.HBCT.RoleModel.SymbolicObserved",
+    "DA_Ambient_HBCT_RoleModel_SymbolicCandidate": "VHV.Story.Flag.HBCT.RoleModel.CandidateSymbolicInspected",
+}
+
 # The saved map currently lacks these Quest 5 semantic anchors. They are created
 # only when missing, at the production staging coordinates, with trigger behavior
 # disabled. A later full Quest 5 authoring pass can replace them with its normal
@@ -134,6 +190,21 @@ def gameplay_tag(name):
     if not value.import_text(name):
         raise RuntimeError("Gameplay Tag is not registered: {}".format(name))
     return value
+
+
+def tracking_destination(location_name, condition_kind, state_name, compare_value):
+    condition_type = (unreal.VHVStoryConditionType.FLAG_SET
+                      if condition_kind == "flag"
+                      else unreal.VHVStoryConditionType.COUNTER_GREATER_OR_EQUAL)
+    condition = unreal.VHVStoryCondition(
+        condition_type=condition_type,
+        state_tag=gameplay_tag(state_name),
+        compare_value=compare_value)
+    return unreal.VHVQuestTrackingDestination(
+        destination_location_tag=gameplay_tag(location_name),
+        completion_conditions=unreal.VHVStoryConditionSet(
+            match_mode=unreal.VHVStoryConditionMatch.ALL,
+            conditions=[condition]))
 
 
 def load_or_create_input_action():
@@ -214,9 +285,11 @@ def apply_tracking_metadata_to_objectives(quest_id, objectives):
         location_name = authored.get(objective_id)
         if not location_name:
             continue
+        multi_specs = MULTI_TRACKING_DESTINATIONS.get(quest_id, {}).get(objective_id, [])
         objective.set_editor_properties({
             "enable_location_tracking": True,
             "tracking_location_tag": gameplay_tag(location_name),
+            "tracking_destinations": [tracking_destination(*spec) for spec in multi_specs],
         })
         found.add(objective_id)
     if found != set(authored):
@@ -259,6 +332,11 @@ def validate_tracking_locations():
         for objectives in TRACKING_LOCATIONS.values()
         for location_name in objectives.values()
     }
+    required_ids.update(
+        location_name.rsplit(".", 1)[-1]
+        for objectives in MULTI_TRACKING_DESTINATIONS.values()
+        for destinations in objectives.values()
+        for location_name, _, _, _ in destinations)
     matches = {location_id: [] for location_id in required_ids}
     actor_subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
     for actor in actor_subsystem.get_all_level_actors():
@@ -395,12 +473,84 @@ def ensure_missing_location_anchors():
         LOG, created))
 
 
+def ensure_role_model_tracking_anchors():
+    if not unreal.EditorLoadingAndSavingUtils.load_map(MAP_PATH):
+        raise RuntimeError("Could not load {}".format(MAP_PATH))
+    actor_subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+    by_label = {actor.get_actor_label(): actor
+                for actor in actor_subsystem.get_all_level_actors()}
+    changed = False
+
+    for label, source_label, tag_name in (
+            ("HBCT_Location_RoleModel_SomchaiIntro", "HBCT_RoleModel_UncleSomchai",
+             "VHV.Location.HBCT.RoleModel.SomchaiIntro"),
+            ("HBCT_Location_RoleModel_AthleteCandidate", "HBCT_RoleModel_YoungAthlete",
+             "VHV.Location.HBCT.RoleModel.AthleteCandidate")):
+        source = by_label.get(source_label)
+        if not source:
+            raise RuntimeError("Missing interaction actor {}".format(source_label))
+        anchor = by_label.get(label)
+        if anchor and not isinstance(anchor, unreal.VHVQuestLocationVolume):
+            raise RuntimeError("{} is not a semantic location volume".format(label))
+        if not anchor:
+            anchor = actor_subsystem.spawn_actor_from_class(
+                unreal.VHVQuestLocationVolume,
+                source.get_actor_location(), source.get_actor_rotation())
+            if not anchor:
+                raise RuntimeError("Could not create {}".format(label))
+            anchor.set_actor_label(label)
+            anchor.set_folder_path("04_RoleModel/Locations")
+            anchor.get_editor_property("box_component").set_box_extent(
+                unreal.Vector(180.0, 180.0, 180.0), True)
+            by_label[label] = anchor
+            changed = True
+        anchor.modify()
+        anchor.set_editor_properties({
+            "location_tag": gameplay_tag(tag_name),
+            "enabled": False,
+            "trigger_world_action": False,
+            "activate_current_objective": False,
+            "required_active_quest_id": "",
+            "required_active_objective_id": "",
+        })
+        delta = anchor.get_actor_location() - source.get_actor_location()
+        if delta.x * delta.x + delta.y * delta.y + delta.z * delta.z > 0.01:
+            anchor.set_actor_location(source.get_actor_location(), False, False)
+            anchor.set_actor_rotation(source.get_actor_rotation(), False)
+            changed = True
+
+    if changed and not unreal.EditorLevelLibrary.save_current_level():
+        raise RuntimeError("Could not save {}".format(MAP_PATH))
+
+
+def ensure_role_model_completion_flags():
+    for asset_name, flag_name in ROLE_MODEL_COMPLETION_FLAGS.items():
+        path = "/Game/VHV_Stuff/HBCT/Ambient/" + asset_name
+        asset = unreal.EditorAssetLibrary.load_asset(path)
+        if not asset:
+            raise RuntimeError("Missing {}".format(path))
+        effects = list(asset.get_editor_property("completion_effects"))
+        existing = {
+            str(unreal.GameplayTagLibrary.get_tag_name(effect.get_editor_property("state_tag")))
+            for effect in effects
+        }
+        if flag_name not in existing:
+            effects.append(unreal.VHVStoryEffect(
+                effect_type=unreal.VHVStoryEffectType.SET_FLAG,
+                state_tag=gameplay_tag(flag_name)))
+            asset.modify()
+            asset.set_editor_property("completion_effects", effects)
+            save(asset)
+
+
 def run():
     action = load_or_create_input_action()
     configure_input(action)
     load_or_create_beam_material()
     configure_quest_metadata()
     ensure_quest12_tracking_anchors()
+    ensure_role_model_tracking_anchors()
+    ensure_role_model_completion_flags()
     ensure_missing_location_anchors()
     validate_tracking_locations()
     unreal.log("{} Authored X input, beam material, controller binding, and Quest 1-5 metadata.".format(LOG))
