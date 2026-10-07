@@ -826,6 +826,13 @@ bool UVHVQuestSubsystem::RequestCurrentObjectiveActivation()
     {
         return false;
     }
+    if (!Objective->NPCMoveStages.IsEmpty()
+        && !Objective->NPCMoveStageActivationConditions.Conditions.IsEmpty()
+        && (!StoryStateSubsystem
+            || !StoryStateSubsystem->EvaluateConditionSet(Objective->NPCMoveStageActivationConditions)))
+    {
+        return false;
+    }
     OnObjectiveActivationRequested.Broadcast(RuntimeState.ActiveQuestID, Objective->ObjectiveID);
     return true;
 }
@@ -1543,6 +1550,13 @@ bool UVHVQuestSubsystem::ValidateQuestArc(const UVHVQuestArcData* QuestArc) cons
 
             if (Objective.bEnsureParticipantPresentAtLocation)
             {
+                if (Objective.bPrepareActivationNPCReadinessBeforeExposure)
+                {
+                    UE_LOG(LogVHV, Warning,
+                        TEXT("[VHVQuest] Quest '%s' objective '%s' cannot combine stationary participant presence with one-time activation readiness preparation."),
+                        *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString());
+                    bValid = false;
+                }
                 if (!Objective.RequiredParticipantSpawnClass.IsNull()
                     && !Objective.ParticipantTag.IsValid())
                 {
@@ -1572,6 +1586,23 @@ bool UVHVQuestSubsystem::ValidateQuestArc(const UVHVQuestArcData* QuestArc) cons
                         bValid = false;
                     }
                 }
+            }
+            else if (Objective.bPrepareActivationNPCReadinessBeforeExposure
+                && Objective.ActivationNPCReadiness.IsEmpty())
+            {
+                UE_LOG(LogVHV, Warning,
+                    TEXT("[VHVQuest] Quest '%s' objective '%s' enables activation readiness preparation without any readiness requirements."),
+                    *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString());
+                bValid = false;
+            }
+            else if (Objective.bPrepareActivationNPCReadinessBeforeExposure
+                && !Objective.NPCMoveStages.IsEmpty()
+                && Objective.NPCMoveStageActivationConditions.Conditions.IsEmpty())
+            {
+                UE_LOG(LogVHV, Warning,
+                    TEXT("[VHVQuest] Quest '%s' objective '%s' prepares activation readiness before exposure but has ungated travel stages."),
+                    *Quest.QuestID.ToString(), *Objective.ObjectiveID.ToString());
+                bValid = false;
             }
 
             if (Objective.bEnableLocationTracking)
@@ -1831,7 +1862,8 @@ void UVHVQuestSubsystem::ActivateCurrentObjective()
         return;
     }
 
-    if (Objective->bEnsureParticipantPresentAtLocation)
+    if (Objective->bEnsureParticipantPresentAtLocation
+        || Objective->bPrepareActivationNPCReadinessBeforeExposure)
     {
         UE_LOG(LogVHV, Log,
             TEXT("[VHVQuest] Exposing objective '%s'; required participants ready."),
@@ -1856,7 +1888,8 @@ void UVHVQuestSubsystem::ExposeCurrentObjective()
 bool UVHVQuestSubsystem::EnsureRequiredParticipantsPresent(
     const FVHVQuestObjectiveDefinition& Objective)
 {
-    if (!Objective.bEnsureParticipantPresentAtLocation)
+    if (!Objective.bEnsureParticipantPresentAtLocation
+        && !Objective.bPrepareActivationNPCReadinessBeforeExposure)
     {
         return true;
     }
@@ -1874,6 +1907,11 @@ bool UVHVQuestSubsystem::EnsureRequiredParticipantsPresent(
                 Objective.RequiredParticipantSpawnClass) && bAllPresent;
         }
         return bAllPresent;
+    }
+
+    if (Objective.bPrepareActivationNPCReadinessBeforeExposure)
+    {
+        return false;
     }
 
     return EnsureParticipantPresentAtLocation(
@@ -2158,12 +2196,14 @@ void UVHVQuestSubsystem::TryActivateCurrentObjective()
         return;
     }
 
-    if (!Objective->NPCMoveStages.IsEmpty()
-        && (Objective->NPCMoveStageActivationConditions.Conditions.IsEmpty()
-            || (StoryStateSubsystem
-                && StoryStateSubsystem->EvaluateConditionSet(Objective->NPCMoveStageActivationConditions))))
+    if (!Objective->NPCMoveStages.IsEmpty())
     {
-        StartActiveObjectiveNPCMoveSequence();
+        if (Objective->NPCMoveStageActivationConditions.Conditions.IsEmpty()
+            || (StoryStateSubsystem
+                && StoryStateSubsystem->EvaluateConditionSet(Objective->NPCMoveStageActivationConditions)))
+        {
+            StartActiveObjectiveNPCMoveSequence();
+        }
         return;
     }
 
@@ -2236,10 +2276,10 @@ bool UVHVQuestSubsystem::GetActiveObjectiveNPCReadinessRequirements(
         return false;
     }
 
-    // Opted-in stationary objectives use these same authored pairs as immediate
-    // presence requirements. They were already verified or relocated before the
-    // objective was exposed, so they must not enter the asynchronous move wait.
-    if (Objective->bEnsureParticipantPresentAtLocation)
+    // Stationary-presence and one-time scene-preparation objectives consume these
+    // pairs before exposure, so they must not enter the asynchronous move wait.
+    if (Objective->bEnsureParticipantPresentAtLocation
+        || Objective->bPrepareActivationNPCReadinessBeforeExposure)
     {
         return false;
     }
@@ -2817,6 +2857,7 @@ bool UVHVQuestSubsystem::RequestExplicitWorldAction(
     const FVHVQuestObjectiveDefinition* Objective = GetActiveObjective();
     if (!Objective
         || !bCurrentObjectiveActivated
+        || bCurrentObjectiveWaitingOnNPCMoves
         || Objective->ObjectiveType != EVHVQuestObjectiveType::WorldAction
         || Objective->WorldActionStartPolicy != EVHVWorldActionStartPolicy::ExplicitTrigger
         || ActiveWorldActionRequestID.IsValid())

@@ -1,7 +1,7 @@
 """Idempotent production authoring for the central objective-location tracker.
 
 Owns only IA_LocateObjective, its X mapping, the beam material, the player
-controller action reference, and tracking metadata on Quest 1-5 objectives.
+controller action reference, and tracking metadata on Quest 1-6 objectives.
 """
 
 import traceback
@@ -93,6 +93,17 @@ TRACKING_LOCATIONS = {
         "O17_WatchChaiSelfMonitor": "VHV.Location.HBCT.SelfMonitoring.SMSelfMonitorPayoff",
         "O18_FinalDebrief": "VHV.Location.HBCT.SelfMonitoring.SMFinalDebrief",
     },
+    "Q_HBCT_06_POSITIVE_REINFORCEMENT": {
+        "O01_NoticeSuccess": "VHV.Location.HBCT.PositiveReinforcement.PRHealthParkIntro",
+        "O02_UnderstandReinforcement": "VHV.Location.HBCT.PositiveReinforcement.PRInstructorLesson",
+        "O03_ExploreHealthFair": "VHV.Location.HBCT.PositiveReinforcement.PRHealthFairCenter",
+        "O05_ChooseMeaningfulReinforcement": "VHV.Location.HBCT.PositiveReinforcement.PRPreferenceArea",
+        "O06_TestReinforcementTiming": "VHV.Location.HBCT.PositiveReinforcement.PRTimingArea",
+        "O08_CheckInWithChai": "VHV.Location.HBCT.PositiveReinforcement.PRChaiHome",
+        "O12_JoinWalkingChallenge": "VHV.Location.HBCT.PositiveReinforcement.PRWalkingChallengeBoard",
+        "O14_SeeFeedbackReinforcement": "VHV.Location.HBCT.PositiveReinforcement.PRHealthPostFeedback",
+        "O15_FinalDebrief": "VHV.Location.HBCT.PositiveReinforcement.PRFinalDebrief",
+    },
 }
 
 
@@ -137,6 +148,20 @@ MULTI_TRACKING_DESTINATIONS = {
             ("VHV.Location.HBCT.SocialSupport.SSChaiDaughterRecruit", "flag", "VHV.Story.Flag.HBCT.SocialSupport.SSDaughterRecruited", 0),
             ("VHV.Location.HBCT.SocialSupport.SSChaiNeighborRecruit", "flag", "VHV.Story.Flag.HBCT.SocialSupport.SSNeighborRecruited", 0),
             ("VHV.Location.HBCT.SocialSupport.SSChaiNurseRecruit", "flag", "VHV.Story.Flag.HBCT.SocialSupport.SSNurseRecruited", 0),
+        ],
+    },
+    "Q_HBCT_06_POSITIVE_REINFORCEMENT": {
+        "O03_ExploreHealthFair": [
+            ("VHV.Location.HBCT.PositiveReinforcement.PRHealthFairSocial", "flag", "VHV.Story.Flag.HBCT.PositiveReinforcement.PRSocialStationSeen", 0),
+            ("VHV.Location.HBCT.PositiveReinforcement.PRHealthFairMaterial", "flag", "VHV.Story.Flag.HBCT.PositiveReinforcement.PRMaterialStationSeen", 0),
+            ("VHV.Location.HBCT.PositiveReinforcement.PRHealthFairActivity", "flag", "VHV.Story.Flag.HBCT.PositiveReinforcement.PRActivityStationSeen", 0),
+            ("VHV.Location.HBCT.PositiveReinforcement.PRHealthFairToken", "flag", "VHV.Story.Flag.HBCT.PositiveReinforcement.PRTokenStationSeen", 0),
+            ("VHV.Location.HBCT.PositiveReinforcement.PRHealthFairFeedback", "flag", "VHV.Story.Flag.HBCT.PositiveReinforcement.PRFeedbackStationSeen", 0),
+        ],
+        "O05_ChooseMeaningfulReinforcement": [
+            ("VHV.Location.HBCT.PositiveReinforcement.PRPreferencePraise", "flag", "VHV.Story.Flag.HBCT.PositiveReinforcement.PRPreferencePraiseObserved", 0),
+            ("VHV.Location.HBCT.PositiveReinforcement.PRPreferenceActivity", "flag", "VHV.Story.Flag.HBCT.PositiveReinforcement.PRPreferenceActivityObserved", 0),
+            ("VHV.Location.HBCT.PositiveReinforcement.PRPreferenceToken", "flag", "VHV.Story.Flag.HBCT.PositiveReinforcement.PRPreferenceTokenObserved", 0),
         ],
     },
 }
@@ -277,7 +302,7 @@ def load_or_create_beam_material():
 
 
 def apply_tracking_metadata_to_objectives(quest_id, objectives):
-    """Shared source-of-truth helper used by the Quest 3-5 authoring scripts."""
+    """Shared source-of-truth helper used by the Quest 3-6 authoring scripts."""
     authored = TRACKING_LOCATIONS.get(quest_id, {})
     found = set()
     for objective in objectives:

@@ -174,8 +174,16 @@ struct VHV_API FVHVQuestObjectiveDefinition
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|NPC Presence")
     bool bEnsureParticipantPresentAtLocation = false;
 
+    /**
+     * Place every ActivationNPCReadiness participant at its semantic destination
+     * before exposing the objective. This is one-time scene preparation, not a
+     * stationary-presence guarantee, so later condition-gated travel is allowed.
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|NPC Presence")
+    bool bPrepareActivationNPCReadinessBeforeExposure = false;
+
     /** Optional last-resort class used only after registry and one-time world recovery both fail. */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|NPC Presence", meta = (EditCondition = "bEnsureParticipantPresentAtLocation", EditConditionHides))
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|NPC Presence", meta = (EditCondition = "bEnsureParticipantPresentAtLocation || bPrepareActivationNPCReadinessBeforeExposure", EditConditionHides))
     TSoftClassPtr<AVHVNPCCharacter> RequiredParticipantSpawnClass;
 
     /** Allows the player to locate this objective's stable world destination. */
