@@ -200,7 +200,54 @@ bool UVHVQuestSubsystem::ResolveCurrentObjectiveTrackingTarget(
     OutTargetActor = nullptr;
 
     const FVHVQuestObjectiveDefinition* Objective = GetActiveObjective();
-    if (!World || !Objective || !Objective->bEnableLocationTracking)
+    if (!World || !Objective)
+    {
+        return false;
+    }
+
+    // Q3's final application is an interaction with the placed roadside
+    // villager, not a static semantic volume. Resolve the exact full participant
+    // tag so this cannot alias the separate Goal Setting RoadVillager whose tag
+    // currently has the same leaf name.
+    static const FName RoleModelQuestID(TEXT("Q_HBCT_03_ROLE_MODEL"));
+    static const FName FinalApplicationObjectiveID(TEXT("O15_FinalApplication"));
+    if (RuntimeState.ActiveQuestID == RoleModelQuestID
+        && Objective->ObjectiveID == FinalApplicationObjectiveID)
+    {
+        AVHVNPCCharacter* ExactParticipant = nullptr;
+        for (TActorIterator<AVHVNPCCharacter> It(World); It; ++It)
+        {
+            const UVHVQuestParticipantComponent* Participant = It->GetQuestParticipantComponent();
+            if (!Participant || Participant->ParticipantTag != Objective->ParticipantTag)
+            {
+                continue;
+            }
+            if (ExactParticipant)
+            {
+                UE_LOG(LogVHV, Error,
+                    TEXT("[VHVTracking] Q3 O15 has multiple NPCs with participant tag '%s'."),
+                    *Objective->ParticipantTag.ToString());
+                return false;
+            }
+            ExactParticipant = *It;
+        }
+        if (!ExactParticipant)
+        {
+            UE_LOG(LogVHV, Warning,
+                TEXT("[VHVTracking] Q3 O15 roadside villager '%s' is unavailable."),
+                *Objective->ParticipantTag.ToString());
+            return false;
+        }
+
+        OutQuestID = RuntimeState.ActiveQuestID;
+        OutObjectiveID = Objective->ObjectiveID;
+        OutLocationID = Objective->GetEffectiveParticipantID();
+        OutWorldLocation = ExactParticipant->GetActorLocation();
+        OutTargetActor = ExactParticipant;
+        return true;
+    }
+
+    if (!Objective->bEnableLocationTracking)
     {
         return false;
     }
