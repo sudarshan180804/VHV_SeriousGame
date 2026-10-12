@@ -17,6 +17,7 @@ public class VHV : ModuleRules
 			"EnhancedInput",
 			"GameplayTags",
 			"AIModule",
+			"NavigationSystem",
 			"StateTreeModule",
 			"GameplayStateTreeModule",
 			"UMG",

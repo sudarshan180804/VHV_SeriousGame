@@ -36,6 +36,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "VHV|NPC|Quest Commands")
 	bool MoveToTarget(FName TargetID, bool bFaceDestinationRotation = false, float MoveSpeedOverride = 0.0f);
 
+	/** Use the normal queued quest-movement pipeline for a validated runtime location. */
+	UFUNCTION(BlueprintCallable, Category = "VHV|NPC|Quest Commands")
+	bool MoveToLocation(
+		FVector Destination,
+		float AcceptanceRadius = 90.0f,
+		bool bFaceDestinationRotation = false,
+		FRotator DestinationRotation = FRotator::ZeroRotator,
+		float MoveSpeedOverride = 0.0f);
+
 	UFUNCTION(BlueprintCallable, Category = "VHV|NPC|Quest Commands")
 	bool Wait(float Duration);
 
@@ -83,9 +92,13 @@ private:
 	FName ActiveActionID;
 	float ActiveWaitDuration = 0.0f;
 	float ActiveMoveSpeedOverride = 0.0f;
+	float ActiveMoveAcceptanceRadius = 25.0f;
 	float PreviousMaxWalkSpeed = 0.0f;
 	bool bFaceActiveDestinationRotation = false;
+	bool bUseDirectMoveDestination = false;
 	bool bMoveSpeedOverridden = false;
+	FVector ActiveMoveDestination = FVector::ZeroVector;
+	FRotator ActiveMoveDestinationRotation = FRotator::ZeroRotator;
 	TWeakObjectPtr<AActor> ActiveMoveTarget;
 	bool bHasQuestOwnership = false;
 	bool bPatrolWasActive = false;

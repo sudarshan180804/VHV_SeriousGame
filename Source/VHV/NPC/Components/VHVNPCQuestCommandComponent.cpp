@@ -64,7 +64,33 @@ bool UVHVNPCQuestCommandComponent::MoveToTarget(
 	AbortActiveCommand(true);
 	ActiveCommand = EVHVNPCQuestCommandType::MoveToTarget;
 	ActiveTargetID = TargetID;
+	bUseDirectMoveDestination = false;
+	ActiveMoveAcceptanceRadius = 25.0f;
 	bFaceActiveDestinationRotation = bFaceDestinationRotation;
+	ActiveMoveSpeedOverride = FMath::Max(0.0f, MoveSpeedOverride);
+	return QueueOrExecuteActiveCommand();
+}
+
+bool UVHVNPCQuestCommandComponent::MoveToLocation(
+	const FVector Destination,
+	const float AcceptanceRadius,
+	const bool bFaceDestinationRotation,
+	const FRotator DestinationRotation,
+	const float MoveSpeedOverride)
+{
+	if (Destination.ContainsNaN() || AcceptanceRadius < 0.0f || !BehaviorComponent)
+	{
+		return false;
+	}
+	BeginQuestOwnership();
+	AbortActiveCommand(true);
+	ActiveCommand = EVHVNPCQuestCommandType::MoveToTarget;
+	ActiveTargetID = NAME_None;
+	bUseDirectMoveDestination = true;
+	ActiveMoveDestination = Destination;
+	ActiveMoveAcceptanceRadius = AcceptanceRadius;
+	bFaceActiveDestinationRotation = bFaceDestinationRotation;
+	ActiveMoveDestinationRotation = DestinationRotation;
 	ActiveMoveSpeedOverride = FMath::Max(0.0f, MoveSpeedOverride);
 	return QueueOrExecuteActiveCommand();
 }
@@ -203,6 +229,12 @@ bool UVHVNPCQuestCommandComponent::ExecuteActiveCommand()
 	{
 	case EVHVNPCQuestCommandType::MoveToTarget:
 		ApplyActiveMoveSpeedOverride();
+		if (bUseDirectMoveDestination)
+		{
+			bStarted = BehaviorComponent->StartMoveToLocation(
+				ActiveMoveDestination, ActiveMoveAcceptanceRadius, false);
+			break;
+		}
 		if (UWorld* World = GetWorld())
 		{
 			if (UGameInstance* GameInstance = World->GetGameInstance())
@@ -285,17 +317,19 @@ void UVHVNPCQuestCommandComponent::CompleteActiveCommand(const bool bSuccess)
 		return;
 	}
 	const EVHVNPCQuestCommandType CompletedCommand = ActiveCommand;
-	if (bSuccess && CompletedCommand == EVHVNPCQuestCommandType::MoveToTarget)
+	if (bSuccess && CompletedCommand == EVHVNPCQuestCommandType::MoveToTarget
+		&& !bUseDirectMoveDestination)
 	{
 		LastSuccessfulMoveTargetID = ActiveTargetID;
 	}
 	if (bSuccess
 		&& CompletedCommand == EVHVNPCQuestCommandType::MoveToTarget
 		&& bFaceActiveDestinationRotation
-		&& ActiveMoveTarget.IsValid()
 		&& GetOwner())
 	{
-		const FRotator DestinationRotation = ActiveMoveTarget->GetActorRotation();
+		const FRotator DestinationRotation = bUseDirectMoveDestination
+			? ActiveMoveDestinationRotation
+			: (ActiveMoveTarget.IsValid() ? ActiveMoveTarget->GetActorRotation() : GetOwner()->GetActorRotation());
 		FRotator OwnerRotation = GetOwner()->GetActorRotation();
 		OwnerRotation.Yaw = DestinationRotation.Yaw;
 		GetOwner()->SetActorRotation(OwnerRotation);
@@ -306,7 +340,11 @@ void UVHVNPCQuestCommandComponent::CompleteActiveCommand(const bool bSuccess)
 	ActiveActionID = NAME_None;
 	ActiveWaitDuration = 0.0f;
 	ActiveMoveSpeedOverride = 0.0f;
+	ActiveMoveAcceptanceRadius = 25.0f;
 	bFaceActiveDestinationRotation = false;
+	bUseDirectMoveDestination = false;
+	ActiveMoveDestination = FVector::ZeroVector;
+	ActiveMoveDestinationRotation = FRotator::ZeroRotator;
 	ActiveMoveTarget.Reset();
 	bBehaviorOperationActive = false;
 	bCommandPending = false;
@@ -332,7 +370,11 @@ void UVHVNPCQuestCommandComponent::AbortActiveCommand(const bool bBroadcastFailu
 	ActiveActionID = NAME_None;
 	ActiveWaitDuration = 0.0f;
 	ActiveMoveSpeedOverride = 0.0f;
+	ActiveMoveAcceptanceRadius = 25.0f;
 	bFaceActiveDestinationRotation = false;
+	bUseDirectMoveDestination = false;
+	ActiveMoveDestination = FVector::ZeroVector;
+	ActiveMoveDestinationRotation = FRotator::ZeroRotator;
 	ActiveMoveTarget.Reset();
 	bBehaviorOperationActive = false;
 	bCommandPending = false;

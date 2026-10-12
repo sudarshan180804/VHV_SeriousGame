@@ -77,6 +77,14 @@ public:
     UFUNCTION(BlueprintCallable, Category = "VHV|Ambient Conversation")
     bool StartConversation();
 
+    /**
+     * Play one validated contiguous section of the authored conversation. This is
+     * used by scene-specific observation triggers; it intentionally leaves the
+     * normal full-conversation bPlayOnce contract unchanged.
+     */
+    UFUNCTION(BlueprintCallable, Category = "VHV|Ambient Conversation")
+    bool StartConversationRange(int32 FirstLineIndex, int32 LineCount);
+
     UFUNCTION(BlueprintCallable, Category = "VHV|Ambient Conversation")
     void StopConversation();
 
@@ -128,6 +136,8 @@ private:
     bool bPlaying = false;
     bool bHasPlayed = false;
     bool bPausedForDistance = false;
+    int32 ActiveLineEndExclusive = INDEX_NONE;
+    bool bApplyCompletionEffectsForActivePlayback = true;
 
     UFUNCTION()
     void HandleWorldActionRequested(FGuid RequestID, FName ActionID);
@@ -136,6 +146,12 @@ private:
     void HandleWorldActionCompleted(FGuid RequestID, FName ReceiverID, FName ActionID, bool bSuccess);
 
     bool StartConversationInternal(FGuid WorldActionRequestID);
+    bool StartConversationRangeInternal(
+        FGuid WorldActionRequestID,
+        int32 FirstLineIndex,
+        int32 LineCount,
+        bool bHonorPlayOnce,
+        bool bApplyCompletionEffects);
     bool ResolveAndValidateParticipants(FString& OutError);
     void PrepareParticipants();
     void RestoreParticipants();

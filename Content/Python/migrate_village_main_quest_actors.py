@@ -240,6 +240,17 @@ def _r3(r):
     return [round(float(r.pitch), 3), round(float(r.yaw), 3), round(float(r.roll), 3)]
 
 
+def _rotator_from_report(values):
+    """Convert report-format [Pitch, Yaw, Roll] to an Unreal Rotator."""
+    if values is None or len(values) != 3:
+        raise ValueError("Report rotation must contain exactly [Pitch, Yaw, Roll].")
+    return unreal.Rotator(
+        pitch=float(values[0]),
+        yaw=float(values[1]),
+        roll=float(values[2]),
+    )
+
+
 def _transform_json(actor):
     return {
         "Location": _v3(actor.get_actor_location()),
@@ -2381,7 +2392,10 @@ def _apply(report, actors, accepted_report_id):
         raise RuntimeError("Preflight failed; APPLY is forbidden. See report blockers.")
     manual = [row["ActorLabel"] for row in report["ProposedChanges"]
               if row["ValidationStatus"] == "ManualReview"]
-    if manual:
+    # An exact accepted report id is the designer's approval of non-blocking
+    # doorway/staging review warnings.  They remain blocking unless the same
+    # regenerated plan has passed the final physical/navigation readiness gate.
+    if manual and report.get("PreApplyReadiness", {}).get("Status") != "PASS":
         raise RuntimeError("APPLY is blocked until ManualReview placements are accepted/resolved: {}".format(
             ", ".join(manual[:20]) + (" ..." if len(manual) > 20 else "")))
 
@@ -2406,7 +2420,7 @@ def _apply(report, actors, accepted_report_id):
                 target = change["NewTransform"]
                 actor.modify()
                 actor.set_actor_location(unreal.Vector(*target["Location"]), False, True)
-                actor.set_actor_rotation(unreal.Rotator(*target["Rotation"]), False)
+                actor.set_actor_rotation(_rotator_from_report(target["Rotation"]), False)
                 # Scale is deliberately untouched.
                 changed.append(actor)
 
@@ -2449,7 +2463,7 @@ def _apply(report, actors, accepted_report_id):
                 continue
             try:
                 actor.set_actor_location(unreal.Vector(*snapshot["Location"]), False, True)
-                actor.set_actor_rotation(unreal.Rotator(*snapshot["Rotation"]), False)
+                actor.set_actor_rotation(_rotator_from_report(snapshot["Rotation"]), False)
                 actor.set_actor_scale3d(unreal.Vector(*snapshot["Scale"]))
             except Exception as exc:
                 restore_failures.append("{}: {}".format(path, exc))
@@ -2498,7 +2512,7 @@ def run(mode=REPORT_ONLY, accepted_report_id=None):
 
 def _command_line_options():
     mode = os.environ.get("VHV_QUEST_MIGRATION_MODE", REPORT_ONLY).upper()
-    accepted = None
+    accepted = os.environ.get("VHV_QUEST_MIGRATION_ACCEPTED_REPORT_ID")
     for argument in sys.argv:
         if argument.startswith("--vhv-migration-mode="):
             mode = argument.split("=", 1)[1].upper()

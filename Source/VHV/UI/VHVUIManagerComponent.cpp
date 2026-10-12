@@ -2525,6 +2525,31 @@ void UVHVUIManagerComponent::UpdateObjectiveTrackingProximity()
         return;
     }
 
+    // Q1 O14 deliberately tracks the persistent Instructor actor rather than its
+    // obsolete static location. Keep the cached marker/direction position synced
+    // if runtime staging or later actor movement changes the Instructor location.
+    if (TrackedLocationQuestID == FName(TEXT("Q_HBCT_01_MOTIVATION"))
+        && TrackedLocationObjectiveID == FName(TEXT("O14_FinalDebrief")))
+    {
+        if (const AActor* TrackedActor = TrackedLocationActor.Get())
+        {
+            const FVector CurrentActorLocation = TrackedActor->GetActorLocation();
+            if (!CurrentActorLocation.Equals(TrackedLocation, 0.1f))
+            {
+                TrackedLocation = CurrentActorLocation;
+                if (ObjectiveTrackingMarker)
+                {
+                    ObjectiveTrackingMarker->SetTrackingLocation(TrackedLocation);
+                }
+                if (ObjectiveDirectionWidget
+                    && ObjectiveTrackingMode == EVHVObjectiveTrackingMode::WorldMarkerAndDirection)
+                {
+                    ObjectiveDirectionWidget->ShowDirectionTo(TrackedLocation);
+                }
+            }
+        }
+    }
+
     const bool bArrived = IsPlayerAtObjectiveTrackingTarget();
     if (bObjectiveTrackingProximitySuppressed == bArrived)
     {
