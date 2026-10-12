@@ -12,6 +12,7 @@ class UVHVWorldActionSubsystem;
 class AActor;
 class AVHVNPCCharacter;
 class AVHVNPCBehaviorTarget;
+class UVHVNPCBehaviorComponent;
 class UVHVNPCQuestCommandComponent;
 class UWorld;
 struct FVHVQuestSaveState;
@@ -223,6 +224,11 @@ private:
     UFUNCTION()
     void HandleWorldActionCompleted(FGuid RequestID, FName ReceiverID, FName ActionID, bool bSuccess);
 
+    UFUNCTION()
+    void HandleMotivationFinalDebriefInstructorStateChanged(
+        EVHVNPCBehaviorState PreviousState,
+        EVHVNPCBehaviorState NewState);
+
     bool ValidateQuestArc(const UVHVQuestArcData* QuestArc) const;
     void CompleteCurrentQuest();
     void ActivateCurrentObjective();
@@ -255,6 +261,9 @@ private:
     bool ExecuteActiveWorldAction();
     void ClearActiveWorldActionTracking();
     void DispatchNPCMoves(const TArray<FVHVQuestNPCMoveRequest>& Moves);
+    void TryStartMotivationInstructorWalk();
+    void TryStageMotivationFinalDebriefInstructor();
+    void ClearMotivationFinalDebriefInstructorWait();
     void RestorePersistentNPCMoves();
     void RestorePersistentNPCMoveForParticipant(FName ParticipantID);
 #if !UE_BUILD_SHIPPING
@@ -320,6 +329,10 @@ private:
     bool bDeveloperObjectiveSkipInProgress = false;
 #endif
     uint32 ObjectiveActivationSerial = 0;
+    uint32 MotivationInstructorWalkActivationSerial = 0;
+    uint32 MotivationFinalDebriefStagingActivationSerial = 0;
+    uint32 MotivationFinalDebriefPendingActivationSerial = 0;
+    TWeakObjectPtr<UVHVNPCBehaviorComponent> MotivationFinalDebriefPendingBehavior;
 
     using FBehaviorTargetRegistry = TMap<FName, TWeakObjectPtr<AVHVNPCBehaviorTarget>>;
     using FNPCCommandRegistry = TMap<FName, TWeakObjectPtr<UVHVNPCQuestCommandComponent>>;

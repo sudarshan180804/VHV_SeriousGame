@@ -113,6 +113,11 @@ bool AVHVAmbientConversationActor::StartConversation()
     return StartConversationInternal(FGuid());
 }
 
+bool AVHVAmbientConversationActor::StartConversationRange(const int32 FirstLineIndex, const int32 LineCount)
+{
+    return StartConversationRangeInternal(FGuid(), FirstLineIndex, LineCount, false, false);
+}
+
 void AVHVAmbientConversationActor::StopConversation()
 {
     if (bPlaying) CompleteConversation(false);
@@ -123,6 +128,8 @@ void AVHVAmbientConversationActor::ResetConversation()
     if (bPlaying) CompleteConversation(false);
     bHasPlayed = false;
     CurrentLineIndex = INDEX_NONE;
+    ActiveLineEndExclusive = INDEX_NONE;
+    bApplyCompletionEffectsForActivePlayback = true;
     ResetWorldPresentation();
 }
 
@@ -186,13 +193,34 @@ void AVHVAmbientConversationActor::HandleWorldActionCompleted(const FGuid Reques
 
 bool AVHVAmbientConversationActor::StartConversationInternal(const FGuid WorldActionRequestID)
 {
-    if (bPlaying || (bPlayOnce && bHasPlayed))
+    const int32 LineCount = ConversationData ? ConversationData->Lines.Num() : 0;
+    return StartConversationRangeInternal(WorldActionRequestID, 0, LineCount, true, true);
+}
+
+bool AVHVAmbientConversationActor::StartConversationRangeInternal(
+    const FGuid WorldActionRequestID,
+    const int32 FirstLineIndex,
+    const int32 LineCount,
+    const bool bHonorPlayOnce,
+    const bool bApplyCompletionEffects)
+{
+    if (bPlaying || (bHonorPlayOnce && bPlayOnce && bHasPlayed))
     {
         UE_LOG(LogVHVAmbientSpeech, Warning,
             TEXT("Conversation '%s' refused start: state=%s, PlayOnce=%s, HasPlayed=%s, asset='%s'."),
             *GetName(), bPlaying ? TEXT("playing") : TEXT("stopped"),
             bPlayOnce ? TEXT("true") : TEXT("false"), bHasPlayed ? TEXT("true") : TEXT("false"),
             *GetNameSafe(ConversationData));
+        return false;
+    }
+    if (!ConversationData || FirstLineIndex < 0 || LineCount <= 0
+        || FirstLineIndex >= ConversationData->Lines.Num()
+        || LineCount > ConversationData->Lines.Num() - FirstLineIndex)
+    {
+        UE_LOG(LogVHVAmbientSpeech, Warning,
+            TEXT("Conversation '%s' refused invalid line range First=%d Count=%d (asset='%s', lines=%d)."),
+            *GetName(), FirstLineIndex, LineCount, *GetNameSafe(ConversationData),
+            ConversationData ? ConversationData->Lines.Num() : 0);
         return false;
     }
     FString Error;
@@ -215,7 +243,9 @@ bool AVHVAmbientConversationActor::StartConversationInternal(const FGuid WorldAc
                 &AVHVAmbientConversationActor::HandleWorldActionCompleted);
         }
     }
-    CurrentLineIndex = INDEX_NONE;
+    CurrentLineIndex = FirstLineIndex - 1;
+    ActiveLineEndExclusive = FirstLineIndex + LineCount;
+    bApplyCompletionEffectsForActivePlayback = bApplyCompletionEffects;
     bPlaying = true;
     bHasPlayed = true;
     bPausedForDistance = false;
@@ -365,7 +395,8 @@ void AVHVAmbientConversationActor::AdvanceSequence()
 {
     if (!bPlaying || !GetWorld()) return;
     ++CurrentLineIndex;
-    if (!ConversationData->Lines.IsValidIndex(CurrentLineIndex))
+    if (!ConversationData->Lines.IsValidIndex(CurrentLineIndex)
+        || (ActiveLineEndExclusive != INDEX_NONE && CurrentLineIndex >= ActiveLineEndExclusive))
     {
         CompleteConversation(true);
         return;
@@ -453,7 +484,8 @@ void AVHVAmbientConversationActor::CompleteConversation(const bool bSuccess)
                 &AVHVAmbientConversationActor::HandleWorldActionCompleted);
         }
     }
-    if (bSuccess && ConversationData && !ConversationData->CompletionEffects.IsEmpty()
+    if (bSuccess && bApplyCompletionEffectsForActivePlayback
+        && ConversationData && !ConversationData->CompletionEffects.IsEmpty()
         && GetWorld() && GetWorld()->GetGameInstance())
     {
         if (UVHVStoryStateSubsystem* Story = GetWorld()->GetGameInstance()->GetSubsystem<UVHVStoryStateSubsystem>())
@@ -461,6 +493,8 @@ void AVHVAmbientConversationActor::CompleteConversation(const bool bSuccess)
             Story->ApplyEffects(ConversationData->CompletionEffects);
         }
     }
+    ActiveLineEndExclusive = INDEX_NONE;
+    bApplyCompletionEffectsForActivePlayback = true;
     if (CompletedRequestID.IsValid()) WorldActionReceiver->FinishWorldAction(CompletedRequestID, bSuccess);
     OnConversationFinished.Broadcast(bSuccess);
     UE_LOG(LogVHVAmbientSpeech, Log, TEXT("Ambient conversation '%s' finished (%s)."),

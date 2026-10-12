@@ -1,8 +1,11 @@
 #include "Quest/Systems/VHVQuestSubsystem.h"
 
+#include "HBCT/Intro/VHVMarketObservationTrigger.h"
+
 #include "Core/VHVConversationDataAsset.h"
 #include "Quest/Data/VHVQuestArcData.h"
 #include "NPC/VHVNPCCharacter.h"
+#include "NPC/Components/VHVNPCBehaviorComponent.h"
 #include "NPC/Components/VHVNPCQuestCommandComponent.h"
 #include "NPC/Components/VHVNPCInteractionComponent.h"
 #include "NPC/Components/VHVNPCNameplateComponent.h"
@@ -15,10 +18,13 @@
 #include "World/Systems/VHVWorldActionSubsystem.h"
 #include "World/Location/VHVQuestLocationVolume.h"
 #include "Components/BoxComponent.h"
+#include "Engine/TargetPoint.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "NavigationPath.h"
+#include "NavigationSystem.h"
 #include "TimerManager.h"
 #include "VHV.h"
 
@@ -36,6 +42,7 @@ void UVHVQuestSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 void UVHVQuestSubsystem::Deinitialize()
 {
+    ClearMotivationFinalDebriefInstructorWait();
     ClearActiveObjectiveNPCReadinessTracking();
     ClearActiveObjectiveNPCMoveTracking(true);
     ClearActiveNPCActionTracking();
@@ -196,6 +203,33 @@ bool UVHVQuestSubsystem::ResolveCurrentObjectiveTrackingTarget(
     if (!World || !Objective || !Objective->bEnableLocationTracking)
     {
         return false;
+    }
+
+    // Q1's final debrief is staged from an editable TargetPoint at runtime, so its
+    // waypoint must follow the persistent Instructor instead of the older authored
+    // semantic location. All other objectives retain the normal location resolver.
+    static const FName MotivationQuestID(TEXT("Q_HBCT_01_MOTIVATION"));
+    static const FName FinalDebriefObjectiveID(TEXT("O14_FinalDebrief"));
+    static const FName InstructorParticipantID(TEXT("Instructor"));
+    if (RuntimeState.ActiveQuestID == MotivationQuestID
+        && Objective->ObjectiveID == FinalDebriefObjectiveID)
+    {
+        const UVHVNPCQuestCommandComponent* CommandComponent = FindNPCCommandComponent(
+            World, InstructorParticipantID);
+        AActor* Instructor = CommandComponent ? CommandComponent->GetOwner() : nullptr;
+        if (!Instructor)
+        {
+            UE_LOG(LogVHV, Warning,
+                TEXT("[VHVTracking] Q1 final-debrief Instructor is unavailable; refusing to use the stale semantic location."));
+            return false;
+        }
+
+        OutQuestID = RuntimeState.ActiveQuestID;
+        OutObjectiveID = Objective->ObjectiveID;
+        OutLocationID = InstructorParticipantID;
+        OutWorldLocation = Instructor->GetActorLocation();
+        OutTargetActor = Instructor;
+        return true;
     }
 
     const FName LocationID = GetFirstIncompleteTrackingLocationID(*Objective);
@@ -557,6 +591,14 @@ bool UVHVQuestSubsystem::DebugRestartCurrentQuest()
     bCurrentObjectiveActivated = false;
     bCurrentObjectiveWaitingOnConditions = false;
     bCompletingCurrentObjective = false;
+
+    // Q0's five market observations are persisted in Story State so an in-progress
+    // save/load retains them. An explicit developer restart is the one quest
+    // lifecycle operation that must discard that scoped progress.
+    if (QuestID == FName(TEXT("Q_HBCT_00_INTRO")))
+    {
+        AVHVMarketObservationTrigger::ResetObservationProgress(StoryStateSubsystem);
+    }
 
     if (RuntimeState.TrackedQuestID.IsNone())
     {
@@ -2218,6 +2260,9 @@ void UVHVQuestSubsystem::ContinueActiveObjectiveAfterNPCMoves()
         return;
     }
 
+    TryStartMotivationInstructorWalk();
+    TryStageMotivationFinalDebriefInstructor();
+
     if (Objective->ObjectiveType == EVHVQuestObjectiveType::NPCAction)
     {
         ExecuteActiveNPCAction();
@@ -2255,6 +2300,228 @@ void UVHVQuestSubsystem::ContinueActiveObjectiveAfterNPCMoves()
             RequestCurrentObjectiveActivation();
         }
     }
+}
+
+void UVHVQuestSubsystem::TryStartMotivationInstructorWalk()
+{
+    static const FName MotivationQuestID(TEXT("Q_HBCT_01_MOTIVATION"));
+    static const FName ReachPrasertObjectiveID(TEXT("O01_ReachPrasertHouse"));
+    static const FName InstructorParticipantID(TEXT("Instructor"));
+    constexpr float ArrivalTolerance = 90.0f;
+    constexpr float MaximumProjectionOffset = 100.0f;
+    const FVector RequestedDestination(-37.0, 4194.0, 186.0);
+
+    const FVHVQuestObjectiveDefinition* Objective = GetActiveObjective();
+    if (!Objective
+        || RuntimeState.ActiveQuestID != MotivationQuestID
+        || Objective->ObjectiveID != ReachPrasertObjectiveID
+        || MotivationInstructorWalkActivationSerial == ObjectiveActivationSerial)
+    {
+        return;
+    }
+
+    // Mark this activation before any recoverable failure. This is a one-shot
+    // scene cue and must not issue movement repeatedly while the objective lives.
+    MotivationInstructorWalkActivationSerial = ObjectiveActivationSerial;
+
+    UWorld* World = GetWorld();
+    UVHVNPCQuestCommandComponent* CommandComponent = FindNPCCommandComponent(
+        World, InstructorParticipantID);
+    AActor* Instructor = CommandComponent ? CommandComponent->GetOwner() : nullptr;
+    UNavigationSystemV1* Navigation = World
+        ? FNavigationSystem::GetCurrent<UNavigationSystemV1>(World)
+        : nullptr;
+    if (!World || !CommandComponent || !Instructor || !Navigation)
+    {
+        UE_LOG(LogVHV, Warning,
+            TEXT("[VHVQuest] Q1 Instructor walk was not started: movement participant or navigation system unavailable."));
+        return;
+    }
+
+    if (FVector::Dist2D(Instructor->GetActorLocation(), RequestedDestination) <= ArrivalTolerance)
+    {
+        UE_LOG(LogVHV, Log,
+            TEXT("[VHVQuest] Q1 Instructor is already within %.0f cm of the Prasert destination; no move issued."),
+            ArrivalTolerance);
+        return;
+    }
+
+    FNavLocation ProjectedDestination;
+    if (!Navigation->ProjectPointToNavigation(
+            RequestedDestination,
+            ProjectedDestination,
+            FVector(MaximumProjectionOffset, MaximumProjectionOffset, 500.0f)))
+    {
+        UE_LOG(LogVHV, Error,
+            TEXT("[VHVQuest] Q1 Instructor walk rejected: no Recast point within %.0f cm of %s."),
+            MaximumProjectionOffset, *RequestedDestination.ToCompactString());
+        return;
+    }
+
+    const float ProjectionOffset = FVector::Dist2D(RequestedDestination, ProjectedDestination.Location);
+    if (ProjectionOffset > MaximumProjectionOffset)
+    {
+        UE_LOG(LogVHV, Error,
+            TEXT("[VHVQuest] Q1 Instructor walk rejected: nearest Recast point is %.1f cm from the intended XY."),
+            ProjectionOffset);
+        return;
+    }
+
+    UNavigationPath* Path = UNavigationSystemV1::FindPathToLocationSynchronously(
+        World, Instructor->GetActorLocation(), ProjectedDestination.Location, Instructor);
+    if (!Path || !Path->IsValid() || Path->IsPartial())
+    {
+        UE_LOG(LogVHV, Error,
+            TEXT("[VHVQuest] Q1 Instructor walk rejected: Recast returned no complete path to %s."),
+            *ProjectedDestination.Location.ToCompactString());
+        return;
+    }
+
+    const FVector PrasertHouseDirection = FVector(612.0, 4960.0, ProjectedDestination.Location.Z)
+        - ProjectedDestination.Location;
+    const FRotator ArrivalRotation = PrasertHouseDirection.Rotation();
+    if (!CommandComponent->MoveToLocation(
+            ProjectedDestination.Location,
+            ArrivalTolerance,
+            true,
+            ArrivalRotation,
+            0.0f))
+    {
+        UE_LOG(LogVHV, Warning,
+            TEXT("[VHVQuest] Q1 Instructor walk command was rejected; quest progression remains unchanged."));
+        return;
+    }
+
+    UE_LOG(LogVHV, Log,
+        TEXT("[VHVQuest] Q1 Instructor walking to Prasert staging point %s (requested=%s, projection offset=%.1f cm, acceptance=%.0f cm)."),
+        *ProjectedDestination.Location.ToCompactString(), *RequestedDestination.ToCompactString(),
+        ProjectionOffset, ArrivalTolerance);
+}
+
+void UVHVQuestSubsystem::TryStageMotivationFinalDebriefInstructor()
+{
+    static const FName MotivationQuestID(TEXT("Q_HBCT_01_MOTIVATION"));
+    static const FName FinalDebriefObjectiveID(TEXT("O14_FinalDebrief"));
+    static const FName InstructorParticipantID(TEXT("Instructor"));
+    static const FName TargetIdentity(TEXT("VHV_Q1_FinalDebrief_InstructorTarget"));
+
+    const FVHVQuestObjectiveDefinition* Objective = GetActiveObjective();
+    if (!Objective
+        || RuntimeState.ActiveQuestID != MotivationQuestID
+        || Objective->ObjectiveID != FinalDebriefObjectiveID
+        || MotivationFinalDebriefStagingActivationSerial == ObjectiveActivationSerial)
+    {
+        return;
+    }
+
+    UWorld* World = GetWorld();
+    UVHVNPCQuestCommandComponent* CommandComponent = FindNPCCommandComponent(
+        World, InstructorParticipantID);
+    AActor* Instructor = CommandComponent ? CommandComponent->GetOwner() : nullptr;
+    if (!World || !CommandComponent || !Instructor)
+    {
+        UE_LOG(LogVHV, Error,
+            TEXT("[VHVQuest] Q1 final-debrief staging failed: persistent Instructor is unavailable."));
+        return;
+    }
+
+    ATargetPoint* DebriefTarget = nullptr;
+    for (TActorIterator<ATargetPoint> It(World); It; ++It)
+    {
+        if (It->GetFName() == TargetIdentity || It->ActorHasTag(TargetIdentity))
+        {
+            DebriefTarget = *It;
+            break;
+        }
+    }
+    if (!DebriefTarget)
+    {
+        UE_LOG(LogVHV, Error,
+            TEXT("[VHVQuest] Q1 final-debrief staging failed: TargetPoint '%s' is missing."),
+            *TargetIdentity.ToString());
+        return;
+    }
+
+    UVHVNPCBehaviorComponent* Behavior = Instructor->FindComponentByClass<UVHVNPCBehaviorComponent>();
+    if (Behavior)
+    {
+        const EVHVNPCBehaviorState State = Behavior->GetBehaviorState();
+        if (State == EVHVNPCBehaviorState::Engaging || State == EVHVNPCBehaviorState::Talking)
+        {
+            ClearMotivationFinalDebriefInstructorWait();
+            MotivationFinalDebriefPendingBehavior = Behavior;
+            MotivationFinalDebriefPendingActivationSerial = ObjectiveActivationSerial;
+            Behavior->OnBehaviorStateChanged.AddUniqueDynamic(
+                this, &UVHVQuestSubsystem::HandleMotivationFinalDebriefInstructorStateChanged);
+            UE_LOG(LogVHV, Log,
+                TEXT("[VHVQuest] Q1 final-debrief Instructor staging deferred until active dialogue ends."));
+            return;
+        }
+    }
+
+    ClearMotivationFinalDebriefInstructorWait();
+
+    // This objective follows the Mali-house conversation, away from the debrief site.
+    // Cancel the earlier Q1 walk before relocating so no stale AI request can pull the
+    // persistent Instructor away from the designer-authored TargetPoint afterward.
+    CommandComponent->CancelQuestCommand();
+    if (ACharacter* Character = Cast<ACharacter>(Instructor))
+    {
+        if (UCharacterMovementComponent* Movement = Character->GetCharacterMovement())
+        {
+            Movement->StopMovementImmediately();
+        }
+    }
+
+    const bool bRelocated = Instructor->SetActorLocationAndRotation(
+        DebriefTarget->GetActorLocation(),
+        DebriefTarget->GetActorRotation(),
+        false,
+        nullptr,
+        ETeleportType::TeleportPhysics);
+    if (!bRelocated)
+    {
+        UE_LOG(LogVHV, Error,
+            TEXT("[VHVQuest] Q1 final-debrief Instructor staging failed at TargetPoint '%s'."),
+            *TargetIdentity.ToString());
+        return;
+    }
+
+    MotivationFinalDebriefStagingActivationSerial = ObjectiveActivationSerial;
+    Instructor->ForceNetUpdate();
+    OnObjectiveTrackingTargetChanged.Broadcast(RuntimeState.ActiveQuestID, Objective->ObjectiveID);
+    UE_LOG(LogVHV, Log,
+        TEXT("[VHVQuest] Q1 final-debrief Instructor staged from TargetPoint '%s' at %s."),
+        *TargetIdentity.ToString(), *DebriefTarget->GetActorLocation().ToCompactString());
+}
+
+void UVHVQuestSubsystem::HandleMotivationFinalDebriefInstructorStateChanged(
+    const EVHVNPCBehaviorState PreviousState,
+    const EVHVNPCBehaviorState NewState)
+{
+    (void)PreviousState;
+    if (NewState != EVHVNPCBehaviorState::Idle)
+    {
+        return;
+    }
+
+    const uint32 PendingActivationSerial = MotivationFinalDebriefPendingActivationSerial;
+    ClearMotivationFinalDebriefInstructorWait();
+    if (PendingActivationSerial == ObjectiveActivationSerial)
+    {
+        TryStageMotivationFinalDebriefInstructor();
+    }
+}
+
+void UVHVQuestSubsystem::ClearMotivationFinalDebriefInstructorWait()
+{
+    if (UVHVNPCBehaviorComponent* Behavior = MotivationFinalDebriefPendingBehavior.Get())
+    {
+        Behavior->OnBehaviorStateChanged.RemoveDynamic(
+            this, &UVHVQuestSubsystem::HandleMotivationFinalDebriefInstructorStateChanged);
+    }
+    MotivationFinalDebriefPendingBehavior.Reset();
+    MotivationFinalDebriefPendingActivationSerial = 0;
 }
 
 void UVHVQuestSubsystem::ReevaluateWaitingObjective()
