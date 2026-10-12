@@ -1,0 +1,170 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "GameFramework/Actor.h"
+#include "VHVTimeSkipSequence.generated.h"
+
+class AVHVAmbientConversationActor;
+class AVHVQuestLocationVolume;
+class USkeletalMeshComponent;
+class UVHVQuestSubsystem;
+class UVHVStoryStateSubsystem;
+class UVHVTimeSkipOverlayWidget;
+
+UENUM(BlueprintType)
+enum class EVHVTimeSkipSequenceState : uint8
+{
+    Idle,
+    PlayingStage,
+    Transitioning,
+    Completed
+};
+
+USTRUCT(BlueprintType)
+struct VHV_API FVHVTimeSkipStage
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Time Skip")
+    FName StageID;
+
+    /** Text displayed after this stage and before the next one. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Time Skip")
+    FText TransitionText = FText::FromString(TEXT("Afterwards..."));
+
+    /** Existing scene whose genuine completion advances this stage. */
+    UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Time Skip")
+    TObjectPtr<AVHVAmbientConversationActor> ObservationScene;
+
+    /** Existing NPCs/props visible and collidable only while this stage is active. */
+    UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Time Skip")
+    TArray<TObjectPtr<AActor>> StageActors;
+
+    /** Optional existing marker/TargetPoint used for runtime player arrival. */
+    UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Time Skip")
+    TObjectPtr<AActor> PlayerArrivalTarget;
+
+    /** Existing overlap route retained for the first stage and as a safe fallback. */
+    UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Time Skip")
+    TObjectPtr<AVHVQuestLocationVolume> LegacyTrigger;
+
+    /** Auto-play ObservationScene after a successful blackout transition. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Time Skip")
+    bool bAutoStartObservationAfterTransition = true;
+};
+
+/**
+ * Reusable, event-driven stage director for short cinematic time transitions.
+ * It never owns quest progress: authored scene completion effects remain authoritative.
+ */
+UCLASS(Blueprintable)
+class VHV_API AVHVTimeSkipSequence : public AActor
+{
+    GENERATED_BODY()
+
+public:
+    AVHVTimeSkipSequence();
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Time Skip|Gating")
+    FName RequiredQuestID;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Time Skip|Gating")
+    FName RequiredObjectiveID;
+
+    /** Optional saved-progress counter; completed count selects the resume stage. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Time Skip|Gating")
+    FName ProgressCounterID;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Time Skip")
+    TArray<FVHVTimeSkipStage> Stages;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Time Skip|Presentation")
+    TSubclassOf<UVHVTimeSkipOverlayWidget> OverlayWidgetClass;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Time Skip|Presentation", meta = (ClampMin = "0.05"))
+    float FadeInDuration = 0.25f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Time Skip|Presentation", meta = (ClampMin = "0.0"))
+    float TextHoldDuration = 0.60f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Time Skip|Presentation", meta = (ClampMin = "0.05"))
+    float FadeOutDuration = 0.28f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Time Skip|Safety", meta = (ClampMin = "1.0"))
+    float TransitionFailSafeDuration = 3.0f;
+
+    /** Blueprint/dialogue extension point for future non-ambient stages. */
+    UFUNCTION(BlueprintCallable, Category = "VHV|Time Skip")
+    bool NotifyCurrentStageCompleted(FName StageID, bool bSuccess = true);
+
+    UFUNCTION(BlueprintPure, Category = "VHV|Time Skip")
+    EVHVTimeSkipSequenceState GetSequenceState() const { return SequenceState; }
+
+protected:
+    virtual void BeginPlay() override;
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+#if WITH_EDITOR
+    virtual EDataValidationResult IsDataValid(class FDataValidationContext& Context) const override;
+#endif
+
+private:
+    UPROPERTY(Transient)
+    TObjectPtr<UVHVQuestSubsystem> QuestSubsystem;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UVHVStoryStateSubsystem> StoryStateSubsystem;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UVHVTimeSkipOverlayWidget> OverlayWidget;
+
+    EVHVTimeSkipSequenceState SequenceState = EVHVTimeSkipSequenceState::Idle;
+    int32 CurrentStageIndex = INDEX_NONE;
+    int32 PendingStageIndex = INDEX_NONE;
+    bool bCurrentStageConversationStarted = false;
+    bool bInputLocked = false;
+    bool bChangedMoveIgnore = false;
+    bool bChangedLookIgnore = false;
+    bool bDisabledPawnInput = false;
+    bool bPendingPlayerRelocation = false;
+    FTransform PendingPlayerTransform = FTransform::Identity;
+    FTimerHandle TransitionFailSafeTimer;
+    TSet<FName> CompletedStageIDs;
+    TMap<TWeakObjectPtr<AActor>, bool> OriginalActorHiddenStates;
+    TMap<TWeakObjectPtr<AActor>, bool> OriginalActorCollisionStates;
+    TMap<TWeakObjectPtr<USkeletalMeshComponent>, bool> OriginalMeshVisibilityStates;
+    TMap<TWeakObjectPtr<USkeletalMeshComponent>, bool> OriginalMeshHiddenStates;
+    TMap<TWeakObjectPtr<AVHVQuestLocationVolume>, bool> OriginalTriggerEnabledStates;
+    TMap<TWeakObjectPtr<AVHVQuestLocationVolume>, TEnumAsByte<ECollisionEnabled::Type>> OriginalTriggerCollisionStates;
+
+    UFUNCTION()
+    void HandleObjectiveChanged(FName QuestID, FName ObjectiveID);
+
+    UFUNCTION()
+    void HandleQuestStarted(FName QuestID);
+
+    UFUNCTION()
+    void HandleQuestCompleted(FName QuestID);
+
+    UFUNCTION()
+    void HandleConversationStarted();
+
+    UFUNCTION()
+    void HandleConversationFinished(bool bSuccess);
+
+    void RefreshForCurrentObjective();
+    void ActivateSequence();
+    void ConfigureInactivePresentation(bool bKeepFinalStage);
+    void ApplyStagePresentation(int32 StageIndex);
+    void SetLegacyTriggerEnabled(int32 StageIndex, bool bEnabled);
+    bool BeginTransition(int32 NextStageIndex);
+    bool EnsureOverlay();
+    bool ResolvePlayerArrival(int32 StageIndex, FTransform& OutTransform) const;
+    void HandleOverlayFullyObscured();
+    void HandleOverlayFinished();
+    void HandleTransitionFailSafe();
+    void LockPlayerInput();
+    void RestorePlayerInput();
+    void EnableFallbackForStage(int32 StageIndex, const TCHAR* Reason);
+    void RestoreOriginalActorState();
+};
