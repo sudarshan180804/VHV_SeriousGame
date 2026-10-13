@@ -231,12 +231,13 @@ void UVHVDeveloperSubsystem::PrintStatus() const
 bool UVHVDeveloperSubsystem::CompleteCurrentObjective()
 {
 #if !UE_BUILD_SHIPPING
+    UVHVUIManagerComponent* UIManager = nullptr;
     if (UWorld* World = GetWorld())
     {
         if (APlayerController* PlayerController = World->GetFirstPlayerController())
         {
-            if (UVHVUIManagerComponent* UIManager =
-                PlayerController->FindComponentByClass<UVHVUIManagerComponent>())
+            UIManager = PlayerController->FindComponentByClass<UVHVUIManagerComponent>();
+            if (UIManager)
             {
                 if (!UIManager->PrepareForDeveloperObjectiveSkip())
                 {
@@ -245,7 +246,12 @@ bool UVHVDeveloperSubsystem::CompleteCurrentObjective()
             }
         }
     }
-    return QuestSubsystem && QuestSubsystem->DebugCompleteCurrentObjective();
+    const bool bCompleted = QuestSubsystem && QuestSubsystem->DebugCompleteCurrentObjective();
+    if (UIManager)
+    {
+        UIManager->FinishDeveloperObjectiveSkip();
+    }
+    return bCompleted;
 #else
     return false;
 #endif

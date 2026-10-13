@@ -153,6 +153,12 @@ void UVHVMajorQuestStingerWidget::ShowStinger(const FVHVMajorQuestStingerData& I
     }
 }
 
+void UVHVMajorQuestStingerWidget::DismissImmediately()
+{
+    bPlaying = false;
+    SetVisibility(ESlateVisibility::Collapsed);
+}
+
 void UVHVMajorQuestStingerWidget::NativeTick(
     const FGeometry& MyGeometry, const float InDeltaTime)
 {

@@ -70,6 +70,7 @@ protected:
     {
         FVHVMajorQuestStingerData Data;
         bool bCompletesLearningActivity = false;
+        bool bIsQuestTransition = false;
     };
 
     virtual void BeginPlay() override;
@@ -281,6 +282,9 @@ public:
     /** Development-only teardown used before skipping the current quest objective. */
     bool PrepareForDeveloperObjectiveSkip();
 
+    /** Clears the one-call transition bypass after the developer objective skip returns. */
+    void FinishDeveloperObjectiveSkip();
+
     /** Enhanced Input entry point for the Off -> beam -> beam+arrow cycle. */
     void ToggleObjectiveTracking();
 
@@ -340,6 +344,8 @@ protected:
     bool bStartingMajorStingerActivity = false;
     bool bMajorStingerSequenceActive = false;
     bool bCurrentMajorStingerCompletesActivity = false;
+    bool bCurrentMajorStingerIsQuestTransition = false;
+    bool bDeveloperQuestTransitionBypassActive = false;
     TArray<FQueuedMajorStinger> PendingMajorStingers;
 
     UFUNCTION()
@@ -364,9 +370,13 @@ protected:
     UFUNCTION()
     void HandleQuestCompleted(FName QuestID);
     void HandleMajorQuestStingerFinished();
-    bool QueueMajorQuestStinger(const FVHVMajorQuestStingerData& StingerData, bool bCompletesLearningActivity = false);
+    bool QueueMajorQuestStinger(
+        const FVHVMajorQuestStingerData& StingerData,
+        bool bCompletesLearningActivity = false,
+        bool bIsQuestTransition = false);
     bool PlayNextMajorQuestStinger();
     void FinishMajorQuestStingerSequence();
+    bool DismissActiveQuestTransitionForDeveloper();
     void ReconcileUIStateAfterMajorStinger();
 
     void EnsureFeedbackWidget();

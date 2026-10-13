@@ -21,6 +21,8 @@ public:
     UVHVMajorQuestStingerWidget();
 
     void ShowStinger(const FVHVMajorQuestStingerData& InData);
+    /** Development UI teardown path: stop and hide without broadcasting completion. */
+    void DismissImmediately();
     bool IsPlaying() const { return bPlaying; }
 
     FOnVHVMajorQuestStingerFinished OnStingerFinished;

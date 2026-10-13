@@ -1455,7 +1455,8 @@ bool UVHVUIManagerComponent::IsQuestTrackerSuppressedForMajorStinger() const
 
 bool UVHVUIManagerComponent::QueueMajorQuestStinger(
     const FVHVMajorQuestStingerData& StingerData,
-    const bool bCompletesLearningActivity)
+    const bool bCompletesLearningActivity,
+    const bool bIsQuestTransition)
 {
     if (!StingerData.IsConfigured() || !MainHUD)
     {
@@ -1465,6 +1466,7 @@ bool UVHVUIManagerComponent::QueueMajorQuestStinger(
     FQueuedMajorStinger& Queued = PendingMajorStingers.AddDefaulted_GetRef();
     Queued.Data = StingerData;
     Queued.bCompletesLearningActivity = bCompletesLearningActivity;
+    Queued.bIsQuestTransition = bIsQuestTransition;
 
     if (bMajorStingerSequenceActive)
     {
@@ -1526,11 +1528,13 @@ bool UVHVUIManagerComponent::PlayNextMajorQuestStinger()
     FQueuedMajorStinger Queued = MoveTemp(PendingMajorStingers[0]);
     PendingMajorStingers.RemoveAt(0);
     bCurrentMajorStingerCompletesActivity = Queued.bCompletesLearningActivity;
+    bCurrentMajorStingerIsQuestTransition = Queued.bIsQuestTransition;
     UE_LOG(LogVHV, Log, TEXT("[VHVUI] Major stinger begin: '%s'."), *Queued.Data.Title);
     MajorQuestStingerWidget->ShowStinger(Queued.Data);
     if (!MajorQuestStingerWidget->IsPlaying())
     {
         bCurrentMajorStingerCompletesActivity = false;
+        bCurrentMajorStingerIsQuestTransition = false;
         PendingMajorStingers.Reset();
         FinishMajorQuestStingerSequence();
         return false;
@@ -1543,6 +1547,7 @@ void UVHVUIManagerComponent::HandleMajorQuestStingerFinished()
     UE_LOG(LogVHV, Log, TEXT("[VHVUI] Major stinger complete."));
     const bool bCompleteActivity = bCurrentMajorStingerCompletesActivity;
     bCurrentMajorStingerCompletesActivity = false;
+    bCurrentMajorStingerIsQuestTransition = false;
 
     if (bCompleteActivity && TextbookSubsystem && TextbookSubsystem->IsActivityActive())
     {
@@ -1567,6 +1572,7 @@ void UVHVUIManagerComponent::FinishMajorQuestStingerSequence()
 
     bMajorStingerSequenceActive = false;
     bCurrentMajorStingerCompletesActivity = false;
+    bCurrentMajorStingerIsQuestTransition = false;
     PendingMajorStingers.Reset();
 
     if (QuestTrackerWidget)
@@ -1614,22 +1620,40 @@ void UVHVUIManagerComponent::ReconcileUIStateAfterMajorStinger()
 void UVHVUIManagerComponent::HandleQuestStarted(const FName QuestID)
 {
     ClearObjectiveTracking(true);
+#if !UE_BUILD_SHIPPING
+    if (bDeveloperQuestTransitionBypassActive)
+    {
+        UE_LOG(LogVHV, Log,
+            TEXT("[VHVDeveloper] Bypassed quest-start stinger for '%s'."),
+            *QuestID.ToString());
+        return;
+    }
+#endif
     FVHVQuestDefinition Quest;
     if (QuestSubsystem && QuestSubsystem->GetQuestDefinition(QuestID, Quest)
         && Quest.StartStinger.IsConfigured())
     {
-        QueueMajorQuestStinger(Quest.StartStinger);
+        QueueMajorQuestStinger(Quest.StartStinger, false, true);
     }
 }
 
 void UVHVUIManagerComponent::HandleQuestCompleted(const FName QuestID)
 {
     ClearObjectiveTracking(true);
+#if !UE_BUILD_SHIPPING
+    if (bDeveloperQuestTransitionBypassActive)
+    {
+        UE_LOG(LogVHV, Log,
+            TEXT("[VHVDeveloper] Bypassed quest-completion stinger for '%s'."),
+            *QuestID.ToString());
+        return;
+    }
+#endif
     FVHVQuestDefinition Quest;
     if (QuestSubsystem && QuestSubsystem->GetQuestDefinition(QuestID, Quest)
         && Quest.CompletionStinger.IsConfigured())
     {
-        QueueMajorQuestStinger(Quest.CompletionStinger);
+        QueueMajorQuestStinger(Quest.CompletionStinger, false, true);
     }
 }
 
@@ -2309,15 +2333,60 @@ bool UVHVUIManagerComponent::HandleModalBackgroundClick()
 bool UVHVUIManagerComponent::PrepareForDeveloperObjectiveSkip()
 {
 #if !UE_BUILD_SHIPPING
-    // Do not tear down a queued stinger sequence mid-callback. The shortcut can
-    // be pressed again after the current cinematic transition completes.
     if (bMajorStingerSequenceActive)
     {
+        // This keypress dismisses the quest transition only. It must never also
+        // complete the newly active objective.
+        DismissActiveQuestTransitionForDeveloper();
         return false;
     }
 
     ClearObjectiveTracking();
     ExitConversation();
+    bDeveloperQuestTransitionBypassActive = true;
+    return true;
+#else
+    return false;
+#endif
+}
+
+void UVHVUIManagerComponent::FinishDeveloperObjectiveSkip()
+{
+#if !UE_BUILD_SHIPPING
+    bDeveloperQuestTransitionBypassActive = false;
+#endif
+}
+
+bool UVHVUIManagerComponent::DismissActiveQuestTransitionForDeveloper()
+{
+#if !UE_BUILD_SHIPPING
+    if (!bMajorStingerSequenceActive || !bCurrentMajorStingerIsQuestTransition)
+    {
+        return false;
+    }
+
+    if (MajorQuestStingerWidget)
+    {
+        // Prevent the widget's later tick from broadcasting a stale completion.
+        MajorQuestStingerWidget->DismissImmediately();
+    }
+
+    bCurrentMajorStingerCompletesActivity = false;
+    bCurrentMajorStingerIsQuestTransition = false;
+    PendingMajorStingers.RemoveAll([](const FQueuedMajorStinger& Queued)
+    {
+        return Queued.bIsQuestTransition;
+    });
+
+    UE_LOG(LogVHV, Log,
+        TEXT("[VHVDeveloper] Dismissed active quest transition and chained quest stingers."));
+
+    if (!PendingMajorStingers.IsEmpty())
+    {
+        return PlayNextMajorQuestStinger();
+    }
+
+    FinishMajorQuestStingerSequence();
     return true;
 #else
     return false;
