@@ -67,6 +67,22 @@ void AVHVTimeSkipSequence::BeginPlay()
                     : ECollisionEnabled::NoCollision);
         }
     }
+    for (AActor* SequenceActor : SequenceActors)
+    {
+        if (SequenceActor && !OriginalActorHiddenStates.Contains(SequenceActor))
+        {
+            OriginalActorHiddenStates.Add(SequenceActor, SequenceActor->IsHidden());
+            OriginalActorCollisionStates.Add(SequenceActor, SequenceActor->GetActorEnableCollision());
+            if (const ACharacter* Character = Cast<ACharacter>(SequenceActor))
+            {
+                if (USkeletalMeshComponent* Mesh = Character->GetMesh())
+                {
+                    OriginalMeshVisibilityStates.Add(Mesh, Mesh->IsVisible());
+                    OriginalMeshHiddenStates.Add(Mesh, Mesh->bHiddenInGame);
+                }
+            }
+        }
+    }
 
     if (QuestSubsystem)
     {
@@ -176,7 +192,7 @@ void AVHVTimeSkipSequence::HandleQuestCompleted(const FName QuestID)
     if (QuestID == RequiredQuestID)
     {
         bEntryTransitionArmed = false;
-        ConfigureInactivePresentation(true);
+        ConfigureInactivePresentation(bKeepFinalStageAfterObjective);
     }
 }
 
@@ -219,7 +235,7 @@ void AVHVTimeSkipSequence::RefreshForCurrentObjective()
     {
         ActivateSequence();
     }
-    else if (SequenceState != EVHVTimeSkipSequenceState::Completed)
+    else if (SequenceState != EVHVTimeSkipSequenceState::Completed || !bKeepFinalStageAfterObjective)
     {
         ConfigureInactivePresentation(false);
     }
@@ -284,6 +300,16 @@ void AVHVTimeSkipSequence::ConfigureInactivePresentation(const bool bKeepFinalSt
     CurrentStageIndex = bKeepFinalStage && !Stages.IsEmpty() ? Stages.Num() - 1 : INDEX_NONE;
     PendingStageIndex = INDEX_NONE;
     bCurrentStageConversationStarted = false;
+    if (bStopObservationsWhenDeactivated)
+    {
+        for (FVHVTimeSkipStage& Stage : Stages)
+        {
+            if (Stage.ObservationScene && Stage.ObservationScene->IsPlaying())
+            {
+                Stage.ObservationScene->StopConversation();
+            }
+        }
+    }
     ApplyStagePresentation(CurrentStageIndex);
     for (int32 Index = 0; Index < Stages.Num(); ++Index)
     {
@@ -293,6 +319,29 @@ void AVHVTimeSkipSequence::ConfigureInactivePresentation(const bool bKeepFinalSt
 
 void AVHVTimeSkipSequence::ApplyStagePresentation(const int32 StageIndex)
 {
+    const bool bSequenceActive = Stages.IsValidIndex(StageIndex);
+    for (AActor* SequenceActor : SequenceActors)
+    {
+        if (!SequenceActor)
+        {
+            UE_LOG(LogVHV, Error, TEXT("[VHVTimeSkip] Sequence has a missing shared actor reference."));
+            continue;
+        }
+        const bool bOriginallyCollidable = OriginalActorCollisionStates.FindRef(SequenceActor);
+        SequenceActor->SetActorHiddenInGame(!bSequenceActive);
+        SequenceActor->SetActorEnableCollision(bSequenceActive && bOriginallyCollidable);
+        if (bSequenceActive)
+        {
+            if (ACharacter* Character = Cast<ACharacter>(SequenceActor))
+            {
+                if (USkeletalMeshComponent* Mesh = Character->GetMesh())
+                {
+                    Mesh->SetVisibility(true, true);
+                    Mesh->SetHiddenInGame(false, true);
+                }
+            }
+        }
+    }
     for (int32 Index = 0; Index < Stages.Num(); ++Index)
     {
         const bool bActive = Index == StageIndex;
@@ -405,6 +454,16 @@ bool AVHVTimeSkipSequence::NotifyCurrentStageCompleted(const FName StageID, cons
             SetLegacyTriggerEnabled(Index, false);
         }
         RestorePlayerInput();
+        OnSequenceCompleted.Broadcast();
+        if (bRequestObjectiveActivationOnSequenceCompleted && QuestSubsystem)
+        {
+            if (!QuestSubsystem->RequestCurrentObjectiveActivation())
+            {
+                UE_LOG(LogVHV, Error,
+                    TEXT("[VHVTimeSkip] Final stage '%s' completed, but the required objective activity could not be activated."),
+                    *StageID.ToString());
+            }
+        }
         return true;
     }
     return BeginTransition(CurrentStageIndex + 1);
@@ -1033,6 +1092,14 @@ EDataValidationResult AVHVTimeSkipSequence::IsDataValid(FDataValidationContext& 
         Result = EDataValidationResult::Invalid;
     }
     TSet<FName> StageIDs;
+    for (const AActor* SequenceActor : SequenceActors)
+    {
+        if (!IsValid(SequenceActor))
+        {
+            Context.AddError(FText::FromString(TEXT("Time-skip sequence has a missing shared sequence actor reference.")));
+            Result = EDataValidationResult::Invalid;
+        }
+    }
     for (const FVHVTimeSkipStage& Stage : Stages)
     {
         if (Stage.StageID.IsNone() || StageIDs.Contains(Stage.StageID)

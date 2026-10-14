@@ -62,6 +62,10 @@ public:
     UFUNCTION(BlueprintCallable, Category = "VHV|Textbook")
     void SubmitAnswer(bool bWasCorrect, bool bWasPartial = false);
 
+    /** Validates and submits one authored SingleChoice option, retaining its optional coaching text. */
+    UFUNCTION(BlueprintCallable, Category = "VHV|Textbook")
+    bool SubmitSingleChoice(int32 SelectedOptionIndex);
+
     UFUNCTION(BlueprintCallable, Category = "VHV|Textbook")
     bool SubmitMultiChoice(const TArray<int32>& SelectedOptionIndices);
 
@@ -136,6 +140,10 @@ public:
     UFUNCTION(BlueprintPure, Category = "VHV|Textbook")
     ELearningPhase GetCurrentPhase() const;
 
+    /** Answer-specific feedback when authored, otherwise the activity's existing feedback. */
+    UFUNCTION(BlueprintPure, Category = "VHV|Textbook")
+    FString GetCurrentResponseFeedbackText() const;
+
     UFUNCTION(BlueprintPure, Category = "VHV|Textbook")
     bool IsLearningActivityActive() const;
 
@@ -166,6 +174,8 @@ public:
     FOnDayCompleted OnDayCompleted;
 
 private:
+
+    int32 LastSelectedSingleChoiceOptionIndex = INDEX_NONE;
 
     bool IsValidOrderingDefinition(const FTextbookActivityData& Activity) const;
     bool IsValidMatchingDefinition(const FTextbookActivityData& Activity) const;

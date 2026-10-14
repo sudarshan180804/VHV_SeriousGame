@@ -221,6 +221,10 @@ struct VHV_API FVHVQuestObjectiveDefinition
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective", meta = (EditCondition = "ObjectiveType == EVHVQuestObjectiveType::Conversation || ObjectiveType == EVHVQuestObjectiveType::LearningActivity", EditConditionHides))
     bool bAutoStart = true;
 
+    /** Opt out when an event-driven scene, rather than direct NPC interaction, unlocks this objective's modal. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective", meta = (EditCondition = "ObjectiveType == EVHVQuestObjectiveType::Conversation || ObjectiveType == EVHVQuestObjectiveType::LearningActivity", EditConditionHides))
+    bool bAllowParticipantActivation = true;
+
     /** Optional participant-specific conversations used by non-linear objectives. */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective|Contextual Conversations")
     TArray<FVHVQuestContextualConversation> ContextualConversations;

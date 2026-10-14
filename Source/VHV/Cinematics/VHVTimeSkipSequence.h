@@ -13,6 +13,7 @@ class UVHVTimeSkipOverlayWidget;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
     FVHVTimeSkipStagePresentationActivated, FName, StageID, FName, ObjectiveID);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FVHVTimeSkipSequenceCompleted);
 
 UENUM(BlueprintType)
 enum class EVHVTimeSkipSequenceState : uint8
@@ -88,6 +89,10 @@ public:
     UPROPERTY(BlueprintAssignable, Category = "Time Skip")
     FVHVTimeSkipStagePresentationActivated OnStagePresentationActivated;
 
+    /** Fired once after the final required observation succeeds. */
+    UPROPERTY(BlueprintAssignable, Category = "Time Skip")
+    FVHVTimeSkipSequenceCompleted OnSequenceCompleted;
+
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Time Skip|Gating")
     FName RequiredQuestID;
 
@@ -117,6 +122,22 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Time Skip")
     TArray<FVHVTimeSkipStage> Stages;
+
+    /** Actors shared by every stage; hidden whenever this sequence is inactive. */
+    UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Time Skip|Presentation")
+    TArray<TObjectPtr<AActor>> SequenceActors;
+
+    /** Opt-in hook for a staged lesson whose final observation unlocks its authored objective activity. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Time Skip|Gating")
+    bool bRequestObjectiveActivationOnSequenceCompleted = false;
+
+    /** Existing Q3/Q5 sequences preserve their final tableau by default. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Time Skip|Presentation")
+    bool bKeepFinalStageAfterObjective = true;
+
+    /** Stop only this sequence's ambient observations when its objective is skipped or replaced. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Time Skip|Safety")
+    bool bStopObservationsWhenDeactivated = false;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Time Skip|Presentation")
     TSubclassOf<UVHVTimeSkipOverlayWidget> OverlayWidgetClass;

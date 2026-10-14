@@ -111,6 +111,10 @@ struct FQuestionOption
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Question")
     bool bIsCorrect = false;
+
+    /** Optional answer-specific coaching shown with the existing feedback styling. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Question", meta = (MultiLine = "true"))
+    FString ResponseFeedback;
 };
 
 // ============================================================
@@ -320,6 +324,10 @@ struct FTextbookAttemptPolicy
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attempts", meta = (ClampMin = "1", EditCondition = "bEnabled"))
     int32 MaxAttempts = 2;
+
+    /** Opt-in assessed questions can keep coaching until the correct answer is chosen. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attempts", meta = (EditCondition = "bEnabled"))
+    bool bRetryUntilCorrect = false;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attempts", meta = (MultiLine = "true", EditCondition = "bEnabled"))
     FString FirstIncorrectHint;

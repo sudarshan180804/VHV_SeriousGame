@@ -1298,16 +1298,19 @@ void UVHVUIManagerComponent::RefreshCurrentHintUI()
 
     const FTextbookActivityData CurrentActivity = TextbookSubsystem->GetCurrentActivity();
     const FTextbookRuntimeState RuntimeState = TextbookSubsystem->GetRuntimeState();
-    FString HintText;
-    if (CurrentActivity.AttemptPolicy.bEnabled
-        && !CurrentActivity.AttemptPolicy.FirstIncorrectHint.IsEmpty())
+    FString HintText = TextbookSubsystem->GetCurrentResponseFeedbackText();
+    if (HintText.IsEmpty())
     {
-        HintText = CurrentActivity.AttemptPolicy.FirstIncorrectHint;
-    }
-    else if (CurrentActivity.Hints.Num() > 0)
-    {
-        const int32 HintIndex = FMath::Clamp(RuntimeState.HintLevel - 1, 0, CurrentActivity.Hints.Num() - 1);
-        HintText = CurrentActivity.Hints[HintIndex];
+        if (CurrentActivity.AttemptPolicy.bEnabled
+            && !CurrentActivity.AttemptPolicy.FirstIncorrectHint.IsEmpty())
+        {
+            HintText = CurrentActivity.AttemptPolicy.FirstIncorrectHint;
+        }
+        else if (CurrentActivity.Hints.Num() > 0)
+        {
+            const int32 HintIndex = FMath::Clamp(RuntimeState.HintLevel - 1, 0, CurrentActivity.Hints.Num() - 1);
+            HintText = CurrentActivity.Hints[HintIndex];
+        }
     }
 
     if (!FeedbackWidget->GetParent())
@@ -1349,8 +1352,7 @@ void UVHVUIManagerComponent::RefreshCurrentFeedbackUI()
     }
 
     const FTextbookRuntimeState RuntimeState = TextbookSubsystem->GetRuntimeState();
-    const FString FeedbackText = CurrentActivity.GetFeedbackTextForResult(
-        RuntimeState.bAnswerCorrect, RuntimeState.bAnswerPartial);
+    const FString FeedbackText = TextbookSubsystem->GetCurrentResponseFeedbackText();
     if (FeedbackText.TrimStartAndEnd().IsEmpty())
     {
         // Imported or legacy runtime state may still point at Feedback. Collapse
@@ -2151,9 +2153,7 @@ bool UVHVUIManagerComponent::TrySubmitCurrentQuestionAnswer()
         return false;
     }
 
-    const bool bWasCorrect = CurrentActivity.Question.Options[SelectedIndex].bIsCorrect;
-    TextbookSubsystem->SubmitAnswer(bWasCorrect);
-    return true;
+    return TextbookSubsystem->SubmitSingleChoice(SelectedIndex);
 }
 
 bool UVHVUIManagerComponent::HandleActivityInteractionInput()

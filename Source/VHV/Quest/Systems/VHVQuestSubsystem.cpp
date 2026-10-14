@@ -1099,9 +1099,11 @@ bool UVHVQuestSubsystem::CanParticipantInteract(const FName ParticipantID) const
     case EVHVQuestObjectiveType::Talk:
         return !GetRequiredConversationID(*Objective).IsNone();
     case EVHVQuestObjectiveType::Conversation:
-        return !Objective->bAutoStart && !GetRequiredConversationID(*Objective).IsNone();
+        return Objective->bAllowParticipantActivation
+            && !Objective->bAutoStart && !GetRequiredConversationID(*Objective).IsNone();
     case EVHVQuestObjectiveType::LearningActivity:
-        return !Objective->bAutoStart && !Objective->GetEffectiveActivityID().IsNone();
+        return Objective->bAllowParticipantActivation
+            && !Objective->bAutoStart && !Objective->GetEffectiveActivityID().IsNone();
     default:
         return false;
     }

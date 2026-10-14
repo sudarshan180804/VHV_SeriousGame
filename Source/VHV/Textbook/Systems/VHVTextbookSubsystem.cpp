@@ -151,7 +151,8 @@ void UVHVTextbookSubsystem::SubmitAnswer(const bool bWasCorrect, const bool bWas
         || CurrentActivity.ActivityType == ETextbookActivityType::MultiChoice;
     const bool bRetryEnabled = bAssessedChoice && CurrentActivity.AttemptPolicy.bEnabled;
     const int32 MaxAttempts = FMath::Max(1, CurrentActivity.AttemptPolicy.MaxAttempts);
-    const bool bNeedsRetry = bRetryEnabled && !bWasCorrect && RuntimeState.AttemptCount < MaxAttempts;
+    const bool bNeedsRetry = bRetryEnabled && !bWasCorrect
+        && (CurrentActivity.AttemptPolicy.bRetryUntilCorrect || RuntimeState.AttemptCount < MaxAttempts);
 
     if (bNeedsRetry)
     {
@@ -171,6 +172,25 @@ void UVHVTextbookSubsystem::SubmitAnswer(const bool bWasCorrect, const bool bWas
             ? TEXT("Feedback")
             : (CurrentActivity.Teaching.HasMeaningfulContent() ? TEXT("Teach") : TEXT("Complete")));
     EnterFeedbackPhase();
+}
+
+bool UVHVTextbookSubsystem::SubmitSingleChoice(const int32 SelectedOptionIndex)
+{
+    if (!CurrentLevelData || !RuntimeState.bActivityActive || RuntimeState.CurrentPhase != ELearningPhase::Ask)
+    {
+        return false;
+    }
+
+    const FTextbookActivityData CurrentActivity = GetCurrentActivity();
+    if (CurrentActivity.ActivityType != ETextbookActivityType::SingleChoice
+        || !CurrentActivity.Question.Options.IsValidIndex(SelectedOptionIndex))
+    {
+        return false;
+    }
+
+    LastSelectedSingleChoiceOptionIndex = SelectedOptionIndex;
+    SubmitAnswer(CurrentActivity.Question.Options[SelectedOptionIndex].bIsCorrect);
+    return true;
 }
 
 bool UVHVTextbookSubsystem::SubmitMultiChoice(const TArray<int32>& SelectedOptionIndices)
@@ -780,6 +800,7 @@ bool UVHVTextbookSubsystem::StartActivityByID(const FString& ActivityID)
                 RuntimeState.HintLevel = 0;
                 RuntimeState.bAnswerSubmitted = false;
                 RuntimeState.bAnswerCorrect = false;
+                LastSelectedSingleChoiceOptionIndex = INDEX_NONE;
 
                 OnLearningPhaseChanged.Broadcast(RuntimeState.CurrentPhase);
                 return true;
@@ -788,6 +809,23 @@ bool UVHVTextbookSubsystem::StartActivityByID(const FString& ActivityID)
     }
 
     return false;
+}
+
+FString UVHVTextbookSubsystem::GetCurrentResponseFeedbackText() const
+{
+    const FTextbookActivityData CurrentActivity = GetCurrentActivity();
+    if (CurrentActivity.ActivityType == ETextbookActivityType::SingleChoice
+        && CurrentActivity.Question.Options.IsValidIndex(LastSelectedSingleChoiceOptionIndex))
+    {
+        const FString& ResponseFeedback =
+            CurrentActivity.Question.Options[LastSelectedSingleChoiceOptionIndex].ResponseFeedback;
+        if (!ResponseFeedback.TrimStartAndEnd().IsEmpty())
+        {
+            return ResponseFeedback;
+        }
+    }
+    return CurrentActivity.GetFeedbackTextForResult(
+        RuntimeState.bAnswerCorrect, RuntimeState.bAnswerPartial);
 }
 
 // ============================================================
@@ -821,6 +859,7 @@ void UVHVTextbookSubsystem::ExitCurrentLearningSession()
     RuntimeState.bAnswerCorrect = false;
     RuntimeState.bAnswerPartial = false;
     RuntimeState.CurrentPhase = ELearningPhase::Ask;
+    LastSelectedSingleChoiceOptionIndex = INDEX_NONE;
 }
 
 void UVHVTextbookSubsystem::RetryCurrentActivityAfterHint()
@@ -834,6 +873,7 @@ void UVHVTextbookSubsystem::RetryCurrentActivityAfterHint()
     RuntimeState.bAnswerSubmitted = false;
     RuntimeState.bAnswerCorrect = false;
     RuntimeState.bAnswerPartial = false;
+    LastSelectedSingleChoiceOptionIndex = INDEX_NONE;
     RuntimeState.CurrentPhase = ELearningPhase::Ask;
 
     UE_LOG(LogTemp, Warning, TEXT("[VHVTextbook] Hint dismissed -> retry ActivityID=%s"), *CurrentActivity.GetEffectiveActivityID());

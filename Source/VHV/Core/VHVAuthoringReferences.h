@@ -45,4 +45,19 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "VHV|Authoring References")
     static FName ResolveStoryStateID(FGameplayTag StoryStateTag, FName LegacyStoryStateID);
+
+#if WITH_EDITOR
+    /**
+     * Reads an enum's underlying serialized value from a native UScriptStruct export.
+     * Used only by transactional editor validation when Python cannot expose a hidden enum entry.
+     */
+    UFUNCTION(BlueprintCallable, Category = "VHV|Authoring References|Editor", meta = (DevelopmentOnly))
+    static bool ReadSerializedEnumProperty(
+        const FString& ScriptStructPath,
+        const FString& SerializedStruct,
+        FName PropertyName,
+        FString& OutDeclaredEnumType,
+        int64& OutNumericValue,
+        FString& OutError);
+#endif
 };
