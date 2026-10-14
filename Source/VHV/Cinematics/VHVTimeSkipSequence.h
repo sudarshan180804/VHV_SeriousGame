@@ -168,6 +168,16 @@ private:
     bool bDisabledPawnInput = false;
     bool bPendingPlayerRelocation = false;
     bool bEntryTransitionArmed = false;
+    FName DiagnosticSourceObjectiveID;
+    FName DiagnosticDestinationObjectiveID;
+    bool bDiagnosticSourceComplete = false;
+    bool bDiagnosticDestinationActive = false;
+    bool bDiagnosticTransitionRequested = false;
+    bool bDiagnosticArrivalResolved = false;
+    bool bDiagnosticCollisionValid = false;
+    bool bDiagnosticOverlayStarted = false;
+    bool bDiagnosticInputRestored = false;
+    FString DiagnosticBlockReason;
     FTransform PendingPlayerTransform = FTransform::Identity;
     FTimerHandle TransitionFailSafeTimer;
     FTimerHandle PostTransitionObservationTimer;
@@ -205,7 +215,7 @@ private:
     bool BeginTransition(int32 NextStageIndex);
     bool BeginEntryTransition(int32 StageIndex);
     bool EnsureOverlay();
-    bool ResolvePlayerArrival(int32 StageIndex, FTransform& OutTransform) const;
+    bool ResolvePlayerArrival(int32 StageIndex, FTransform& OutTransform);
     void HandleOverlayFullyObscured();
     void HandleOverlayFinished();
     void HandleTransitionFailSafe();
@@ -214,4 +224,6 @@ private:
     void RestorePlayerInput();
     void EnableFallbackForStage(int32 StageIndex, const TCHAR* Reason);
     void RestoreOriginalActorState();
+    void BeginQ5Diagnostic(FName SourceObjectiveID, FName DestinationObjectiveID);
+    void LogQ5Diagnostic(const TCHAR* Phase) const;
 };

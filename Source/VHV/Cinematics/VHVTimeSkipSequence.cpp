@@ -116,6 +116,11 @@ void AVHVTimeSkipSequence::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void AVHVTimeSkipSequence::HandleObjectiveChanged(const FName QuestID, const FName ObjectiveID)
 {
+    if (QuestID == RequiredQuestID && ObjectiveID == DiagnosticDestinationObjectiveID)
+    {
+        bDiagnosticDestinationActive = true;
+        LogQ5Diagnostic(TEXT("DestinationActive"));
+    }
     if (bTransitionOnNextObjectiveActivation
         && bEntryTransitionArmed
         && QuestID == RequiredQuestID
@@ -137,6 +142,9 @@ void AVHVTimeSkipSequence::HandleObjectiveCompleted(const FName QuestID, const F
             && ObjectiveID == RequiredObjectiveID
             && SequenceState != EVHVTimeSkipSequenceState::Transitioning)
         {
+            BeginQ5Diagnostic(ObjectiveID, Stages.IsValidIndex(0) ? Stages[0].ObjectiveID : NAME_None);
+            bDiagnosticSourceComplete = true;
+            LogQ5Diagnostic(TEXT("SourceComplete"));
             bEntryTransitionArmed = true;
         }
         return;
@@ -147,6 +155,12 @@ void AVHVTimeSkipSequence::HandleObjectiveCompleted(const FName QuestID, const F
         || Stages[CurrentStageIndex].ObjectiveID != ObjectiveID)
     {
         return;
+    }
+    if (Stages.IsValidIndex(CurrentStageIndex + 1))
+    {
+        BeginQ5Diagnostic(ObjectiveID, Stages[CurrentStageIndex + 1].ObjectiveID);
+        bDiagnosticSourceComplete = true;
+        LogQ5Diagnostic(TEXT("SourceComplete"));
     }
     NotifyCurrentStageCompleted(Stages[CurrentStageIndex].StageID, true);
 }
@@ -403,11 +417,24 @@ bool AVHVTimeSkipSequence::BeginTransition(const int32 NextStageIndex)
         GetWorld()->GetTimerManager().ClearTimer(PostTransitionObservationTimer);
     }
     if (SequenceState != EVHVTimeSkipSequenceState::PlayingStage
-        || !Stages.IsValidIndex(NextStageIndex)
-        || !EnsureOverlay()
-        || !ResolvePlayerArrival(NextStageIndex, PendingPlayerTransform))
+        || !Stages.IsValidIndex(NextStageIndex))
     {
+        DiagnosticBlockReason = TEXT("invalid sequence state or destination stage");
+        LogQ5Diagnostic(TEXT("Blocked"));
         EnableFallbackForStage(NextStageIndex, TEXT("transition preflight failed"));
+        return false;
+    }
+    if (!EnsureOverlay())
+    {
+        DiagnosticBlockReason = TEXT("overlay could not be created");
+        LogQ5Diagnostic(TEXT("Blocked"));
+        EnableFallbackForStage(NextStageIndex, TEXT("transition overlay unavailable"));
+        return false;
+    }
+    if (!ResolvePlayerArrival(NextStageIndex, PendingPlayerTransform))
+    {
+        LogQ5Diagnostic(TEXT("Blocked"));
+        EnableFallbackForStage(NextStageIndex, TEXT("arrival validation failed"));
         return false;
     }
 
@@ -426,6 +453,10 @@ bool AVHVTimeSkipSequence::BeginTransition(const int32 NextStageIndex)
         FadeInDuration,
         TextHoldDuration,
         FadeOutDuration);
+    bDiagnosticTransitionRequested = true;
+    bDiagnosticOverlayStarted = true;
+    DiagnosticBlockReason.Reset();
+    LogQ5Diagnostic(TEXT("OverlayStarted"));
     return true;
 }
 
@@ -436,11 +467,24 @@ bool AVHVTimeSkipSequence::BeginEntryTransition(const int32 StageIndex)
         GetWorld()->GetTimerManager().ClearTimer(PostTransitionObservationTimer);
     }
     if (SequenceState == EVHVTimeSkipSequenceState::Transitioning
-        || !Stages.IsValidIndex(StageIndex)
-        || !EnsureOverlay()
-        || !ResolvePlayerArrival(StageIndex, PendingPlayerTransform))
+        || !Stages.IsValidIndex(StageIndex))
     {
+        DiagnosticBlockReason = TEXT("invalid sequence state or destination stage");
+        LogQ5Diagnostic(TEXT("Blocked"));
         EnableFallbackForStage(StageIndex, TEXT("entry transition preflight failed"));
+        return false;
+    }
+    if (!EnsureOverlay())
+    {
+        DiagnosticBlockReason = TEXT("overlay could not be created");
+        LogQ5Diagnostic(TEXT("Blocked"));
+        EnableFallbackForStage(StageIndex, TEXT("entry transition overlay unavailable"));
+        return false;
+    }
+    if (!ResolvePlayerArrival(StageIndex, PendingPlayerTransform))
+    {
+        LogQ5Diagnostic(TEXT("Blocked"));
+        EnableFallbackForStage(StageIndex, TEXT("entry arrival validation failed"));
         return false;
     }
 
@@ -460,6 +504,10 @@ bool AVHVTimeSkipSequence::BeginEntryTransition(const int32 StageIndex)
         FadeInDuration,
         TextHoldDuration,
         FadeOutDuration);
+    bDiagnosticTransitionRequested = true;
+    bDiagnosticOverlayStarted = true;
+    DiagnosticBlockReason.Reset();
+    LogQ5Diagnostic(TEXT("OverlayStarted"));
     return true;
 }
 
@@ -486,10 +534,11 @@ bool AVHVTimeSkipSequence::EnsureOverlay()
     return true;
 }
 
-bool AVHVTimeSkipSequence::ResolvePlayerArrival(const int32 StageIndex, FTransform& OutTransform) const
+bool AVHVTimeSkipSequence::ResolvePlayerArrival(const int32 StageIndex, FTransform& OutTransform)
 {
     if (!Stages.IsValidIndex(StageIndex))
     {
+        DiagnosticBlockReason = TEXT("destination stage index is invalid");
         return false;
     }
     const AActor* ArrivalTarget = Stages[StageIndex].PlayerArrivalTarget;
@@ -497,12 +546,23 @@ bool AVHVTimeSkipSequence::ResolvePlayerArrival(const int32 StageIndex, FTransfo
     ACharacter* PlayerCharacter = PlayerController ? Cast<ACharacter>(PlayerController->GetPawn()) : nullptr;
     if (!PlayerCharacter)
     {
+        DiagnosticBlockReason = TEXT("player character is unavailable");
         return false;
     }
     if (!ArrivalTarget)
     {
         OutTransform = PlayerCharacter->GetActorTransform();
+        bDiagnosticArrivalResolved = true;
+        bDiagnosticCollisionValid = true;
+        LogQ5Diagnostic(TEXT("ArrivalValidated"));
         return true;
+    }
+
+    bDiagnosticArrivalResolved = IsValid(ArrivalTarget);
+    if (!bDiagnosticArrivalResolved)
+    {
+        DiagnosticBlockReason = TEXT("arrival target reference is invalid");
+        return false;
     }
 
     FNavLocation ProjectedLocation(ArrivalTarget->GetActorLocation());
@@ -521,7 +581,104 @@ bool AVHVTimeSkipSequence::ResolvePlayerArrival(const int32 StageIndex, FTransfo
     const UCapsuleComponent* Capsule = PlayerCharacter->GetCapsuleComponent();
     if (!Capsule)
     {
+        DiagnosticBlockReason = TEXT("player capsule is unavailable");
         return false;
+    }
+
+    const FRotator ArrivalRotation(0.0f, ArrivalTarget->GetActorRotation().Yaw, 0.0f);
+    const FVector CapsuleLocalOffset = PlayerCharacter->GetActorTransform().InverseTransformPosition(
+        Capsule->GetComponentLocation());
+    const FVector RotatedCapsuleOffset = ArrivalRotation.RotateVector(CapsuleLocalOffset);
+    constexpr float GroundClearance = 3.0f;
+    const float HalfHeight = Capsule->GetScaledCapsuleHalfHeight();
+    const float Radius = Capsule->GetScaledCapsuleRadius();
+
+    // Q3 keeps its authored Recast/Landscape behavior. Q5 cinematic arrivals use
+    // the hand-authored target XY and accept any genuinely walkable Pawn-blocking
+    // floor (including house meshes and platforms), followed by a full capsule test.
+    if (!bRequireNavigationProjection)
+    {
+        const FVector Anchor = ArrivalTarget->GetActorLocation();
+        const FVector TraceStart = Anchor + FVector(0.0f, 0.0f, 25.0f);
+        const FVector TraceEnd = Anchor - FVector(0.0f, 0.0f, FMath::Max(1000.0f, HalfHeight * 6.0f));
+        FCollisionQueryParams GroundQuery(SCENE_QUERY_STAT(VHVTimeSkipArrivalWalkableGround), true, PlayerCharacter);
+        GroundQuery.AddIgnoredActor(this);
+        GroundQuery.AddIgnoredActor(ArrivalTarget);
+        if (Stages[StageIndex].LegacyTrigger)
+        {
+            GroundQuery.AddIgnoredActor(Stages[StageIndex].LegacyTrigger);
+        }
+
+        FHitResult GroundHit;
+        bool bFoundWalkableSupport = false;
+        const UCharacterMovementComponent* Movement = PlayerCharacter->GetCharacterMovement();
+        const float WalkableFloorZ = Movement ? Movement->GetWalkableFloorZ() : 0.70f;
+        for (int32 TraceAttempt = 0; TraceAttempt < 16; ++TraceAttempt)
+        {
+            FHitResult Hit;
+            if (!GetWorld()->LineTraceSingleByChannel(
+                    Hit, TraceStart, TraceEnd, ECC_Pawn, GroundQuery))
+            {
+                break;
+            }
+            const AActor* RequiredSupport = Stages[StageIndex].PlayerArrivalSupportActor;
+            const bool bSupportMatches = !RequiredSupport || Hit.GetActor() == RequiredSupport;
+            const bool bWalkable = Hit.bBlockingHit && Hit.ImpactNormal.Z >= WalkableFloorZ;
+            if (bSupportMatches && bWalkable)
+            {
+                GroundHit = Hit;
+                bFoundWalkableSupport = true;
+                break;
+            }
+            if (Hit.GetActor())
+            {
+                GroundQuery.AddIgnoredActor(Hit.GetActor());
+            }
+            if (Hit.GetComponent())
+            {
+                GroundQuery.AddIgnoredComponent(Hit.GetComponent());
+            }
+        }
+        if (!bFoundWalkableSupport)
+        {
+            DiagnosticBlockReason = TEXT("no walkable Pawn-blocking floor below arrival anchor");
+            UE_LOG(LogVHV, Warning,
+                TEXT("[VHVTimeSkip] Stage '%s' has no walkable floor below arrival '%s'."),
+                *Stages[StageIndex].StageID.ToString(), *GetNameSafe(ArrivalTarget));
+            return false;
+        }
+
+        const FVector ActorDestination(
+            Anchor.X,
+            Anchor.Y,
+            GroundHit.ImpactPoint.Z + HalfHeight + GroundClearance - RotatedCapsuleOffset.Z);
+        const FVector CapsuleCenter = ActorDestination + RotatedCapsuleOffset;
+        FCollisionQueryParams CapsuleQuery(SCENE_QUERY_STAT(VHVTimeSkipArrivalCapsule), false, PlayerCharacter);
+        CapsuleQuery.AddIgnoredActor(this);
+        CapsuleQuery.AddIgnoredActor(ArrivalTarget);
+        if (GetWorld()->OverlapBlockingTestByProfile(
+                CapsuleCenter,
+                ArrivalRotation.Quaternion(),
+                Capsule->GetCollisionProfileName(),
+                FCollisionShape::MakeCapsule(Radius, HalfHeight),
+                CapsuleQuery))
+        {
+            DiagnosticBlockReason = TEXT("player capsule is blocked at resolved arrival");
+            UE_LOG(LogVHV, Warning, TEXT("[VHVTimeSkip] Stage '%s' player arrival capsule is blocked."),
+                *Stages[StageIndex].StageID.ToString());
+            return false;
+        }
+
+        OutTransform = FTransform(ArrivalRotation, ActorDestination, FVector::OneVector);
+        bDiagnosticCollisionValid = true;
+        DiagnosticBlockReason.Reset();
+        UE_LOG(LogVHV, Log,
+            TEXT("[VHVTimeSkip] Stage '%s' arrival '%s' validated on support '%s/%s' at %s."),
+            *Stages[StageIndex].StageID.ToString(), *GetNameSafe(ArrivalTarget),
+            *GetNameSafe(GroundHit.GetActor()), *GetNameSafe(GroundHit.GetComponent()),
+            *ActorDestination.ToCompactString());
+        LogQ5Diagnostic(TEXT("ArrivalValidated"));
+        return true;
     }
 
     // A Recast projection describes a support surface, not the center of a
@@ -578,13 +735,6 @@ bool AVHVTimeSkipSequence::ResolvePlayerArrival(const int32 StageIndex, FTransfo
         return false;
     }
 
-    const FRotator ArrivalRotation(0.0f, ArrivalTarget->GetActorRotation().Yaw, 0.0f);
-    const FVector CapsuleLocalOffset = PlayerCharacter->GetActorTransform().InverseTransformPosition(
-        Capsule->GetComponentLocation());
-    const FVector RotatedCapsuleOffset = ArrivalRotation.RotateVector(CapsuleLocalOffset);
-    constexpr float GroundClearance = 3.0f;
-    const float HalfHeight = Capsule->GetScaledCapsuleHalfHeight();
-    const float Radius = Capsule->GetScaledCapsuleRadius();
     const FVector ActorDestination(
         IntendedXY.X,
         IntendedXY.Y,
@@ -606,6 +756,9 @@ bool AVHVTimeSkipSequence::ResolvePlayerArrival(const int32 StageIndex, FTransfo
     }
 
     OutTransform = FTransform(ArrivalRotation, ActorDestination, FVector::OneVector);
+    bDiagnosticCollisionValid = true;
+    DiagnosticBlockReason.Reset();
+    LogQ5Diagnostic(TEXT("ArrivalValidated"));
     return true;
 }
 
@@ -662,6 +815,8 @@ void AVHVTimeSkipSequence::HandleOverlayFinished()
     bPendingPlayerRelocation = false;
     SequenceState = EVHVTimeSkipSequenceState::PlayingStage;
     RestorePlayerInput();
+    bDiagnosticInputRestored = true;
+    LogQ5Diagnostic(TEXT("InputRestored"));
 
     FVHVTimeSkipStage& Stage = Stages[CurrentStageIndex];
     if (Stage.bAutoStartObservationAfterTransition && Stage.ObservationScene)
@@ -716,6 +871,9 @@ void AVHVTimeSkipSequence::HandleTransitionFailSafe()
         OverlayWidget->CancelTransition();
     }
     RestorePlayerInput();
+    bDiagnosticInputRestored = true;
+    DiagnosticBlockReason = TEXT("transition fail-safe fired");
+    LogQ5Diagnostic(TEXT("FailSafe"));
     EnableFallbackForStage(PendingStageIndex, TEXT("transition fail-safe fired"));
 }
 
@@ -817,6 +975,49 @@ void AVHVTimeSkipSequence::RestoreOriginalActorState()
             }
         }
     }
+}
+
+void AVHVTimeSkipSequence::BeginQ5Diagnostic(
+    const FName SourceObjectiveID, const FName DestinationObjectiveID)
+{
+    if (RequiredQuestID != FName(TEXT("Q_HBCT_05_SELF_MONITORING")))
+    {
+        return;
+    }
+    DiagnosticSourceObjectiveID = SourceObjectiveID;
+    DiagnosticDestinationObjectiveID = DestinationObjectiveID;
+    bDiagnosticSourceComplete = false;
+    bDiagnosticDestinationActive = false;
+    bDiagnosticTransitionRequested = false;
+    bDiagnosticArrivalResolved = false;
+    bDiagnosticCollisionValid = false;
+    bDiagnosticOverlayStarted = false;
+    bDiagnosticInputRestored = false;
+    DiagnosticBlockReason.Reset();
+}
+
+void AVHVTimeSkipSequence::LogQ5Diagnostic(const TCHAR* Phase) const
+{
+    if (RequiredQuestID != FName(TEXT("Q_HBCT_05_SELF_MONITORING"))
+        || DiagnosticSourceObjectiveID.IsNone()
+        || DiagnosticDestinationObjectiveID.IsNone())
+    {
+        return;
+    }
+    UE_LOG(LogVHV, Log,
+        TEXT("Q5 TimeSkip %s->%s [%s]: SourceComplete=%s, DestActive=%s, SequenceResolved=true, TransitionRequested=%s, ArrivalReferenceResolved=%s, CollisionValid=%s, OverlayStarted=%s, InputRestored=%s%s%s"),
+        *DiagnosticSourceObjectiveID.ToString(),
+        *DiagnosticDestinationObjectiveID.ToString(),
+        Phase,
+        bDiagnosticSourceComplete ? TEXT("true") : TEXT("false"),
+        bDiagnosticDestinationActive ? TEXT("true") : TEXT("false"),
+        bDiagnosticTransitionRequested ? TEXT("true") : TEXT("false"),
+        bDiagnosticArrivalResolved ? TEXT("true") : TEXT("false"),
+        bDiagnosticCollisionValid ? TEXT("true") : TEXT("false"),
+        bDiagnosticOverlayStarted ? TEXT("true") : TEXT("false"),
+        bDiagnosticInputRestored ? TEXT("true") : TEXT("false"),
+        DiagnosticBlockReason.IsEmpty() ? TEXT("") : TEXT(", BlockReason="),
+        DiagnosticBlockReason.IsEmpty() ? TEXT("") : *DiagnosticBlockReason);
 }
 
 #if WITH_EDITOR

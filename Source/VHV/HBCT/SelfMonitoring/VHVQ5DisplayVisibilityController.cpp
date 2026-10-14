@@ -207,6 +207,34 @@ void AVHVQ5DisplayVisibilityController::ApplyObjectiveVisibility(const FName Obj
     }
     UE_LOG(LogVHV, Log, TEXT("[Q5DisplayVisibility] Objective '%s' activated %d display actor(s)."),
         *ObjectiveID.ToString(), Group->DisplayActors.Num());
+    if (ObjectiveID == FName(TEXT("O08_RecordAfternoon")))
+    {
+        for (const AActor* DisplayActor : Group->DisplayActors)
+        {
+            int32 GameplayComponentCount = 0;
+            int32 VisibleGameplayComponentCount = 0;
+            TInlineComponentArray<UPrimitiveComponent*> Components;
+            if (DisplayActor)
+            {
+                DisplayActor->GetComponents(Components);
+            }
+            for (const UPrimitiveComponent* Component : Components)
+            {
+                if (IsGameplayDisplayComponent(Component))
+                {
+                    ++GameplayComponentCount;
+                    VisibleGameplayComponentCount += Component->IsVisible()
+                        && !Component->bHiddenInGame ? 1 : 0;
+                }
+            }
+            UE_LOG(LogVHV, Log,
+                TEXT("Q5 Tracker O08: ActiveObjective=O08_RecordAfternoon, DisplayGroup=%s, ActorHidden=%s, GameplayComponentsVisible=%d/%d"),
+                *GetNameSafe(DisplayActor),
+                DisplayActor && !DisplayActor->IsHidden() ? TEXT("false") : TEXT("true"),
+                VisibleGameplayComponentCount,
+                GameplayComponentCount);
+        }
+    }
 }
 
 void AVHVQ5DisplayVisibilityController::HideAllDisplays()
