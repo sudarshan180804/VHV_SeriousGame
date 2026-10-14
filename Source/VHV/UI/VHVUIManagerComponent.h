@@ -285,6 +285,12 @@ public:
     /** Clears the one-call transition bypass after the developer objective skip returns. */
     void FinishDeveloperObjectiveSkip();
 
+    /** Development-only teardown/bypass for one direct whole-quest transition. */
+    void PrepareForDeveloperQuestSkip();
+
+    /** Reconciles the newly active quest's UI and releases the transition bypass. */
+    void FinishDeveloperQuestSkip();
+
     /** Enhanced Input entry point for the Off -> beam -> beam+arrow cycle. */
     void ToggleObjectiveTracking();
 

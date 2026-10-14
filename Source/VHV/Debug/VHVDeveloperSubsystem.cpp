@@ -231,6 +231,10 @@ void UVHVDeveloperSubsystem::PrintStatus() const
 bool UVHVDeveloperSubsystem::CompleteCurrentObjective()
 {
 #if !UE_BUILD_SHIPPING
+    if (bWholeQuestSkipInProgress)
+    {
+        return false;
+    }
     UVHVUIManagerComponent* UIManager = nullptr;
     if (UWorld* World = GetWorld())
     {
@@ -257,6 +261,46 @@ bool UVHVDeveloperSubsystem::CompleteCurrentObjective()
 #endif
 }
 
+bool UVHVDeveloperSubsystem::CompleteCurrentQuest()
+{
+#if !UE_BUILD_SHIPPING
+    if (bWholeQuestSkipInProgress || !QuestSubsystem)
+    {
+        return false;
+    }
+
+    const FName CapturedQuestID = QuestSubsystem->GetRuntimeState().ActiveQuestID;
+    if (CapturedQuestID.IsNone())
+    {
+        UE_LOG(LogVHV, Warning, TEXT("[VHVDeveloper] Cannot complete quest: there is no active quest."));
+        return false;
+    }
+
+    TGuardValue<bool> SkipGuard(bWholeQuestSkipInProgress, true);
+    UVHVUIManagerComponent* UIManager = nullptr;
+    if (UWorld* World = GetWorld())
+    {
+        if (APlayerController* PlayerController = World->GetFirstPlayerController())
+        {
+            UIManager = PlayerController->FindComponentByClass<UVHVUIManagerComponent>();
+            if (UIManager)
+            {
+                UIManager->PrepareForDeveloperQuestSkip();
+            }
+        }
+    }
+
+    const bool bCompleted = QuestSubsystem->DebugCompleteCurrentQuest(CapturedQuestID);
+    if (UIManager)
+    {
+        UIManager->FinishDeveloperQuestSkip();
+    }
+    return bCompleted;
+#else
+    return false;
+#endif
+}
+
 void UVHVDeveloperSubsystem::BindDeveloperInput(UInputComponent* InputComponent)
 {
 #if !UE_BUILD_SHIPPING
@@ -267,6 +311,21 @@ void UVHVDeveloperSubsystem::BindDeveloperInput(UInputComponent* InputComponent)
             IE_Pressed,
             this,
             &UVHVDeveloperSubsystem::HandleCompleteCurrentObjectiveShortcut);
+        InputComponent->BindKey(
+            EKeys::M,
+            IE_Pressed,
+            this,
+            &UVHVDeveloperSubsystem::HandleCompleteCurrentQuestShortcut);
+    }
+#endif
+}
+
+void UVHVDeveloperSubsystem::HandleCompleteCurrentQuestShortcut()
+{
+#if !UE_BUILD_SHIPPING
+    if (!IsEditableTextFocused())
+    {
+        CompleteCurrentQuest();
     }
 #endif
 }

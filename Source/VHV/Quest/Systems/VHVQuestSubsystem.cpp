@@ -541,7 +541,7 @@ bool UVHVQuestSubsystem::IsParticipantInActiveFreeRoamNPCTravel(const FName Part
 #if !UE_BUILD_SHIPPING
 bool UVHVQuestSubsystem::DebugCompleteCurrentObjective()
 {
-    if (bDeveloperObjectiveSkipInProgress || bCompletingCurrentObjective)
+    if (bDeveloperObjectiveSkipInProgress || bDeveloperQuestSkipInProgress || bCompletingCurrentObjective)
     {
         UE_LOG(LogVHV, Verbose,
             TEXT("[VHVQuest] Ignoring developer skip while an objective transition is already in progress."));
@@ -614,6 +614,119 @@ bool UVHVQuestSubsystem::DebugCompleteCurrentObjective()
             NextObjective ? *NextObjective->ObjectiveID.ToString() : TEXT("None"));
     }
     return bCompleted;
+}
+
+bool UVHVQuestSubsystem::DebugCompleteCurrentQuest(const FName ExpectedQuestID)
+{
+    if (bDeveloperObjectiveSkipInProgress || bDeveloperQuestSkipInProgress || bCompletingCurrentObjective)
+    {
+        UE_LOG(LogVHV, Verbose,
+            TEXT("[VHVQuest] Ignoring whole-quest developer skip while another transition is in progress."));
+        return false;
+    }
+
+    FVHVQuestRuntimeState* QuestState = FindQuestState(ExpectedQuestID);
+    const FVHVQuestDefinition* Quest = FindQuestDefinition(ExpectedQuestID);
+    if (ExpectedQuestID.IsNone() || RuntimeState.ActiveQuestID != ExpectedQuestID
+        || !QuestState || !Quest || QuestState->Status != EVHVQuestStatus::Active)
+    {
+        UE_LOG(LogVHV, Warning,
+            TEXT("[VHVDeveloper] Whole-quest skip rejected because captured quest '%s' is no longer active."),
+            *ExpectedQuestID.ToString());
+        return false;
+    }
+
+    const int32 QuestIndex = ActiveQuestArc
+        ? ActiveQuestArc->Quests.IndexOfByPredicate([ExpectedQuestID](const FVHVQuestDefinition& Candidate)
+        {
+            return Candidate.QuestID == ExpectedQuestID;
+        })
+        : INDEX_NONE;
+    const FName NextQuestID = ActiveQuestArc && ActiveQuestArc->Quests.IsValidIndex(QuestIndex + 1)
+        ? ActiveQuestArc->Quests[QuestIndex + 1].QuestID
+        : NAME_None;
+
+    const int32 FirstRemainingObjective = FMath::Clamp(
+        QuestState->CurrentObjectiveIndex, 0, Quest->Objectives.Num());
+    bool bRemainingEffectsRequireStoryState = false;
+    for (int32 ObjectiveIndex = FirstRemainingObjective;
+         ObjectiveIndex < Quest->Objectives.Num(); ++ObjectiveIndex)
+    {
+        if (!Quest->Objectives[ObjectiveIndex].CompletionEffects.IsEmpty())
+        {
+            bRemainingEffectsRequireStoryState = true;
+            break;
+        }
+    }
+    if (bRemainingEffectsRequireStoryState && !StoryStateSubsystem)
+    {
+        UE_LOG(LogVHV, Error,
+            TEXT("[VHVDeveloper] Whole-quest skip cannot establish required Story State for '%s'."),
+            *ExpectedQuestID.ToString());
+        return false;
+    }
+
+    TGuardValue<bool> ObjectiveSkipGuard(bDeveloperObjectiveSkipInProgress, true);
+    TGuardValue<bool> QuestSkipGuard(bDeveloperQuestSkipInProgress, true);
+    ++ObjectiveActivationSerial;
+    DebugCancelActiveObjectiveExecution();
+    bCurrentObjectiveActivated = false;
+    bCurrentObjectiveWaitingOnConditions = false;
+    bCurrentObjectiveWaitingOnNPCReadiness = false;
+    bCurrentObjectiveWaitingOnNPCMoves = false;
+
+    int32 SkippedObjectiveCount = 0;
+    for (int32 ObjectiveIndex = FirstRemainingObjective; ObjectiveIndex < Quest->Objectives.Num(); ++ObjectiveIndex)
+    {
+        const FVHVQuestObjectiveDefinition& Objective = Quest->Objectives[ObjectiveIndex];
+        if (!QuestState->CompletedObjectiveIDs.Contains(Objective.ObjectiveID))
+        {
+            QuestState->CompletedObjectiveIDs.Add(Objective.ObjectiveID);
+            ++SkippedObjectiveCount;
+        }
+        if (StoryStateSubsystem && !Objective.CompletionEffects.IsEmpty()
+            && !StoryStateSubsystem->ApplyEffects(Objective.CompletionEffects))
+        {
+            UE_LOG(LogVHV, Warning,
+                TEXT("[VHVDeveloper] Quest '%s' objective '%s' had an invalid debug completion effect."),
+                *ExpectedQuestID.ToString(), *Objective.ObjectiveID.ToString());
+        }
+    }
+    QuestState->CurrentObjectiveIndex = Quest->Objectives.Num();
+
+    UE_LOG(LogVHV, Log,
+        TEXT("[VHVDeveloper] Completing captured quest '%s' directly; skipped %d remaining objectives."),
+        *ExpectedQuestID.ToString(), SkippedObjectiveCount);
+    CompleteCurrentQuest();
+
+    // Normal completion unlocks the successor. Debug whole-quest skip always starts it,
+    // even when an authored transition normally waits for external presentation.
+    if (!NextQuestID.IsNone() && RuntimeState.ActiveQuestID.IsNone())
+    {
+        StartQuest(NextQuestID);
+    }
+
+    const bool bReachedExpectedState = NextQuestID.IsNone()
+        ? RuntimeState.bArcCompleted && RuntimeState.ActiveQuestID.IsNone()
+        : RuntimeState.ActiveQuestID == NextQuestID;
+    if (bReachedExpectedState)
+    {
+        UE_LOG(LogVHV, Log,
+            TEXT("[VHVDeveloper] Whole-quest skip result: Completed='%s' Next='%s' Active='%s' ArcCompleted=%s"),
+            *ExpectedQuestID.ToString(),
+            NextQuestID.IsNone() ? TEXT("EndOfArc") : *NextQuestID.ToString(),
+            RuntimeState.ActiveQuestID.IsNone() ? TEXT("None") : *RuntimeState.ActiveQuestID.ToString(),
+            RuntimeState.bArcCompleted ? TEXT("true") : TEXT("false"));
+    }
+    else
+    {
+        UE_LOG(LogVHV, Error,
+            TEXT("[VHVDeveloper] Whole-quest skip result mismatch: Completed='%s' ExpectedNext='%s' Active='%s'."),
+            *ExpectedQuestID.ToString(),
+            NextQuestID.IsNone() ? TEXT("EndOfArc") : *NextQuestID.ToString(),
+            RuntimeState.ActiveQuestID.IsNone() ? TEXT("None") : *RuntimeState.ActiveQuestID.ToString());
+    }
+    return bReachedExpectedState;
 }
 
 bool UVHVQuestSubsystem::DebugRestartCurrentQuest()

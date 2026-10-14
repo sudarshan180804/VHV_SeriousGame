@@ -2362,6 +2362,37 @@ void UVHVUIManagerComponent::FinishDeveloperObjectiveSkip()
 #endif
 }
 
+void UVHVUIManagerComponent::PrepareForDeveloperQuestSkip()
+{
+#if !UE_BUILD_SHIPPING
+    bDeveloperQuestTransitionBypassActive = true;
+    ClearObjectiveTracking(true);
+
+    if (MajorQuestStingerWidget && MajorQuestStingerWidget->IsPlaying())
+    {
+        MajorQuestStingerWidget->DismissImmediately();
+    }
+    bCurrentMajorStingerCompletesActivity = false;
+    bCurrentMajorStingerIsQuestTransition = false;
+    PendingMajorStingers.Reset();
+    if (bMajorStingerSequenceActive)
+    {
+        FinishMajorQuestStingerSequence();
+    }
+
+    // This also exits any quest-managed learning activity and restores Gameplay input.
+    ExitConversation();
+#endif
+}
+
+void UVHVUIManagerComponent::FinishDeveloperQuestSkip()
+{
+#if !UE_BUILD_SHIPPING
+    bDeveloperQuestTransitionBypassActive = false;
+    ReconcileUIStateAfterMajorStinger();
+#endif
+}
+
 bool UVHVUIManagerComponent::DismissActiveQuestTransitionForDeveloper()
 {
 #if !UE_BUILD_SHIPPING

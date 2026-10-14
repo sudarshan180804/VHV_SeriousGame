@@ -25,6 +25,10 @@ public:
     UFUNCTION(BlueprintCallable, Category = "VHV|Developer")
     bool CompleteCurrentObjective();
 
+    /** Completes exactly one captured active quest without playing skipped objectives. */
+    UFUNCTION(BlueprintCallable, Category = "VHV|Developer")
+    bool CompleteCurrentQuest();
+
     UFUNCTION(BlueprintCallable, Category = "VHV|Developer")
     bool RestartCurrentQuest();
 
@@ -59,6 +63,9 @@ private:
     /** Developer shortcut: N completes exactly one active quest objective. */
     void HandleCompleteCurrentObjectiveShortcut();
 
+    /** Developer shortcut: M completes exactly one active quest and starts its successor. */
+    void HandleCompleteCurrentQuestShortcut();
+
     UPROPERTY()
     TObjectPtr<UVHVQuestSubsystem> QuestSubsystem;
 
@@ -67,4 +74,9 @@ private:
 
     UPROPERTY()
     TObjectPtr<UVHVSaveSubsystem> SaveSubsystem;
+
+#if !UE_BUILD_SHIPPING
+    /** Rejects nested N/M input while the synchronous whole-quest transition is dispatching delegates. */
+    bool bWholeQuestSkipInProgress = false;
+#endif
 };

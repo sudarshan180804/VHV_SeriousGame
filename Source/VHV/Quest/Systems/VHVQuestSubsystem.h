@@ -103,6 +103,7 @@ public:
 
 #if !UE_BUILD_SHIPPING
     bool DebugCompleteCurrentObjective();
+    bool DebugCompleteCurrentQuest(FName ExpectedQuestID);
     bool DebugRestartCurrentQuest();
 #endif
 
@@ -327,6 +328,8 @@ private:
 #if !UE_BUILD_SHIPPING
     /** Guards developer fast-forward across transient cleanup and synchronous objective activation. */
     bool bDeveloperObjectiveSkipInProgress = false;
+    /** Guards a direct whole-quest completion and its synchronous next-quest activation. */
+    bool bDeveloperQuestSkipInProgress = false;
 #endif
     uint32 ObjectiveActivationSerial = 0;
     uint32 MotivationInstructorWalkActivationSerial = 0;
