@@ -27,6 +27,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "VHV|Textbook")
     void SetOrderingItems(const TArray<FOrderingItem>& Items);
 
+    /** Optional per-activity copy; empty values retain the existing generic presentation. */
+    void SetActivityPresentation(const FString& InTitle, const FString& InInstruction);
+
     UFUNCTION(BlueprintCallable, Category = "VHV|Textbook")
     void SetOwningUIManager(UVHVUIManagerComponent* InUIManager);
 
@@ -89,6 +92,8 @@ protected:
     FString MouseDragItemID;
 
     TSharedPtr<SHorizontalBox> CardsSlateContainer;
+    TSharedPtr<STextBlock> ActivityTitleSlate;
+    TSharedPtr<STextBlock> ActivityInstructionSlate;
     TSharedPtr<STextBlock> SubmitHintSlate;
     FSlateBrush BackgroundBrush;
     FSlateBrush BackgroundShadeBrush;
@@ -98,6 +103,9 @@ protected:
 
     UPROPERTY(Transient)
     TObjectPtr<UTexture2D> OrderingBackgroundTexture;
+
+    FString ActivityTitleText = TEXT("Put the steps in the correct order");
+    FString ActivityInstructionText = TEXT("Drag the cards left or right to arrange them.");
 
     // Legacy WBP bindings are retained for load compatibility. The approved
     // Ordering presentation is built by the native Slate tree.

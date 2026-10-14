@@ -11,6 +11,9 @@ class UVHVQuestSubsystem;
 class UVHVStoryStateSubsystem;
 class UVHVTimeSkipOverlayWidget;
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
+    FVHVTimeSkipStagePresentationActivated, FName, StageID, FName, ObjectiveID);
+
 UENUM(BlueprintType)
 enum class EVHVTimeSkipSequenceState : uint8
 {
@@ -28,6 +31,10 @@ struct VHV_API FVHVTimeSkipStage
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Time Skip")
     FName StageID;
 
+    /** Optional objective represented by this stage when objective-completion advancement is enabled. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Time Skip|Gating")
+    FName ObjectiveID;
+
     /** Text displayed after this stage and before the next one. */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Time Skip")
     FText TransitionText = FText::FromString(TEXT("Afterwards..."));
@@ -44,6 +51,10 @@ struct VHV_API FVHVTimeSkipStage
     UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Time Skip")
     TObjectPtr<AActor> PlayerArrivalTarget;
 
+    /** Optional physical support actor for elevated platforms. Null retains Landscape-only support. */
+    UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Time Skip")
+    TObjectPtr<AActor> PlayerArrivalSupportActor;
+
     /** Existing overlap route retained for the first stage and as a safe fallback. */
     UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Time Skip")
     TObjectPtr<AVHVQuestLocationVolume> LegacyTrigger;
@@ -51,6 +62,14 @@ struct VHV_API FVHVTimeSkipStage
     /** Auto-play ObservationScene after a successful blackout transition. */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Time Skip")
     bool bAutoStartObservationAfterTransition = true;
+
+    /** Optional breathing room after fade-out before an automatic observation begins. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Time Skip", meta = (ClampMin = "0.0"))
+    float PostTransitionObservationDelay = 0.0f;
+
+    /** A fade-only stage may omit scene and stage-actor ownership. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Time Skip")
+    bool bPresentationOnly = false;
 };
 
 /**
@@ -65,6 +84,10 @@ class VHV_API AVHVTimeSkipSequence : public AActor
 public:
     AVHVTimeSkipSequence();
 
+    /** Notification only; does not alter sequence timing or quest progress. */
+    UPROPERTY(BlueprintAssignable, Category = "Time Skip")
+    FVHVTimeSkipStagePresentationActivated OnStagePresentationActivated;
+
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Time Skip|Gating")
     FName RequiredQuestID;
 
@@ -74,6 +97,23 @@ public:
     /** Optional saved-progress counter; completed count selects the resume stage. */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Time Skip|Gating")
     FName ProgressCounterID;
+
+    /** Advance from each stage's genuine quest-objective completion instead of conversation completion. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Time Skip|Gating")
+    bool bAdvanceOnObjectiveCompletion = false;
+
+    /**
+     * Arm when RequiredObjectiveID completes, then play the first stage as an
+     * entry transition when that stage's objective becomes active. This never
+     * advances quest state and does not replay when loading directly into the
+     * target objective.
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Time Skip|Gating")
+    bool bTransitionOnNextObjectiveActivation = false;
+
+    /** Q3 retains Recast validation; cinematic platform sequences may opt out per instance. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Time Skip|Safety")
+    bool bRequireNavigationProjection = true;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Time Skip")
     TArray<FVHVTimeSkipStage> Stages;
@@ -127,8 +167,10 @@ private:
     bool bChangedLookIgnore = false;
     bool bDisabledPawnInput = false;
     bool bPendingPlayerRelocation = false;
+    bool bEntryTransitionArmed = false;
     FTransform PendingPlayerTransform = FTransform::Identity;
     FTimerHandle TransitionFailSafeTimer;
+    FTimerHandle PostTransitionObservationTimer;
     TSet<FName> CompletedStageIDs;
     TMap<TWeakObjectPtr<AActor>, bool> OriginalActorHiddenStates;
     TMap<TWeakObjectPtr<AActor>, bool> OriginalActorCollisionStates;
@@ -139,6 +181,9 @@ private:
 
     UFUNCTION()
     void HandleObjectiveChanged(FName QuestID, FName ObjectiveID);
+
+    UFUNCTION()
+    void HandleObjectiveCompleted(FName QuestID, FName ObjectiveID);
 
     UFUNCTION()
     void HandleQuestStarted(FName QuestID);
@@ -158,11 +203,13 @@ private:
     void ApplyStagePresentation(int32 StageIndex);
     void SetLegacyTriggerEnabled(int32 StageIndex, bool bEnabled);
     bool BeginTransition(int32 NextStageIndex);
+    bool BeginEntryTransition(int32 StageIndex);
     bool EnsureOverlay();
     bool ResolvePlayerArrival(int32 StageIndex, FTransform& OutTransform) const;
     void HandleOverlayFullyObscured();
     void HandleOverlayFinished();
     void HandleTransitionFailSafe();
+    void StartPendingAutoObservation();
     void LockPlayerInput();
     void RestorePlayerInput();
     void EnableFallbackForStage(int32 StageIndex, const TCHAR* Reason);

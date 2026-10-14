@@ -247,16 +247,21 @@ def build_activities():
             success_effects=[effect("VHV.Story.Flag.HBCT.SelfMonitoring.SMAdjustmentCompleted")]),
         assessed_activity(
             "VHV.Activity.HBCT.SelfMonitoring.ProgressGraphOrdering",
-            "Build the Progress Graph", ordering,
-            "Place the four weekly walking results in order.",
+            "Help Uncle Chai Build a Walking Routine", ordering,
+            "Arrange the milestones from a manageable starting goal to a routine he can maintain.",
             ordering_items=hbct.ordering_items([
-                "Week 1 - 3 walking-goal days",
-                "Week 2 - 4 walking-goal days",
-                "Week 3 - 5 walking-goal days",
-                "Week 4 - 5 walking-goal days",
+                "START SMALL\nBegin with 3 walking days per week.",
+                "BUILD CONSISTENCY\nIncrease to 4 walking days per week.",
+                "REACH THE GOAL\nWork up to 5 walking days per week.",
+                "MAINTAIN THE HABIT\nContinue the 5-day goal consistently.",
             ]),
             correct_order=["1", "2", "3", "4"],
-            correct_feedback="The graph makes Chai's increasing consistency visible: 3, 4, 5, 5.",
+            hints=[
+                "Think about starting with a manageable goal, gradually increasing it, and then maintaining the routine.",
+                "Think about starting with a manageable goal, gradually increasing it, and then maintaining the routine.",
+            ],
+            incorrect_feedback="Think about starting with a manageable goal, gradually increasing it, and then maintaining the routine.",
+            correct_feedback="Great! Small, achievable increases help Uncle Chai build a routine he can keep.",
             success_effects=[effect("VHV.Story.Flag.HBCT.SelfMonitoring.SMProgressGraphBuilt")]),
         assessed_activity(
             "VHV.Activity.HBCT.SelfMonitoring.ReminderChoice",

@@ -1170,6 +1170,11 @@ void UVHVUIManagerComponent::RefreshCurrentAskQuestionUI()
         if (OrderingWidget)
         {
             OrderingWidget->SetOwningUIManager(this);
+            const bool bQ5WalkingRoutine = CurrentActivity.GetEffectiveActivityID()
+                == TEXT("VHV.Activity.HBCT.SelfMonitoring.ProgressGraphOrdering");
+            OrderingWidget->SetActivityPresentation(
+                bQ5WalkingRoutine ? CurrentActivity.ActivityTitle : FString(),
+                bQ5WalkingRoutine ? CurrentActivity.PromptText : FString());
             OrderingWidget->SetOrderingItems(CurrentActivity.OrderingItems);
             if (!OrderingWidget->GetParent())
             {

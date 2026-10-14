@@ -71,6 +71,7 @@ void AVHVTimeSkipSequence::BeginPlay()
     if (QuestSubsystem)
     {
         QuestSubsystem->OnObjectiveChanged.AddUniqueDynamic(this, &AVHVTimeSkipSequence::HandleObjectiveChanged);
+        QuestSubsystem->OnObjectiveCompleted.AddUniqueDynamic(this, &AVHVTimeSkipSequence::HandleObjectiveCompleted);
         QuestSubsystem->OnQuestStarted.AddUniqueDynamic(this, &AVHVTimeSkipSequence::HandleQuestStarted);
         QuestSubsystem->OnQuestCompleted.AddUniqueDynamic(this, &AVHVTimeSkipSequence::HandleQuestCompleted);
     }
@@ -82,6 +83,7 @@ void AVHVTimeSkipSequence::EndPlay(const EEndPlayReason::Type EndPlayReason)
     if (GetWorld())
     {
         GetWorld()->GetTimerManager().ClearTimer(TransitionFailSafeTimer);
+        GetWorld()->GetTimerManager().ClearTimer(PostTransitionObservationTimer);
     }
     RestorePlayerInput();
     if (OverlayWidget)
@@ -104,6 +106,7 @@ void AVHVTimeSkipSequence::EndPlay(const EEndPlayReason::Type EndPlayReason)
     if (QuestSubsystem)
     {
         QuestSubsystem->OnObjectiveChanged.RemoveDynamic(this, &AVHVTimeSkipSequence::HandleObjectiveChanged);
+        QuestSubsystem->OnObjectiveCompleted.RemoveDynamic(this, &AVHVTimeSkipSequence::HandleObjectiveCompleted);
         QuestSubsystem->OnQuestStarted.RemoveDynamic(this, &AVHVTimeSkipSequence::HandleQuestStarted);
         QuestSubsystem->OnQuestCompleted.RemoveDynamic(this, &AVHVTimeSkipSequence::HandleQuestCompleted);
     }
@@ -113,9 +116,39 @@ void AVHVTimeSkipSequence::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void AVHVTimeSkipSequence::HandleObjectiveChanged(const FName QuestID, const FName ObjectiveID)
 {
-    (void)QuestID;
-    (void)ObjectiveID;
+    if (bTransitionOnNextObjectiveActivation
+        && bEntryTransitionArmed
+        && QuestID == RequiredQuestID
+        && Stages.IsValidIndex(0)
+        && Stages[0].ObjectiveID == ObjectiveID)
+    {
+        bEntryTransitionArmed = false;
+        BeginEntryTransition(0);
+        return;
+    }
     RefreshForCurrentObjective();
+}
+
+void AVHVTimeSkipSequence::HandleObjectiveCompleted(const FName QuestID, const FName ObjectiveID)
+{
+    if (bTransitionOnNextObjectiveActivation)
+    {
+        if (QuestID == RequiredQuestID
+            && ObjectiveID == RequiredObjectiveID
+            && SequenceState != EVHVTimeSkipSequenceState::Transitioning)
+        {
+            bEntryTransitionArmed = true;
+        }
+        return;
+    }
+    if (!bAdvanceOnObjectiveCompletion || QuestID != RequiredQuestID
+        || SequenceState != EVHVTimeSkipSequenceState::PlayingStage
+        || !Stages.IsValidIndex(CurrentStageIndex)
+        || Stages[CurrentStageIndex].ObjectiveID != ObjectiveID)
+    {
+        return;
+    }
+    NotifyCurrentStageCompleted(Stages[CurrentStageIndex].StageID, true);
 }
 
 void AVHVTimeSkipSequence::HandleQuestStarted(const FName QuestID)
@@ -128,6 +161,7 @@ void AVHVTimeSkipSequence::HandleQuestCompleted(const FName QuestID)
 {
     if (QuestID == RequiredQuestID)
     {
+        bEntryTransitionArmed = false;
         ConfigureInactivePresentation(true);
     }
 }
@@ -141,9 +175,32 @@ void AVHVTimeSkipSequence::RefreshForCurrentObjective()
     }
     const FVHVQuestArcRuntimeState Runtime = QuestSubsystem->GetRuntimeState();
     FVHVQuestObjectiveDefinition Objective;
+    const bool bHasObjective = QuestSubsystem->GetCurrentObjective(Objective);
+    if (bTransitionOnNextObjectiveActivation)
+    {
+        if (SequenceState == EVHVTimeSkipSequenceState::Transitioning)
+        {
+            return;
+        }
+        const bool bTargetObjective = Runtime.ActiveQuestID == RequiredQuestID
+            && bHasObjective
+            && Stages.IsValidIndex(0)
+            && Objective.ObjectiveID == Stages[0].ObjectiveID;
+        if (!bTargetObjective && SequenceState == EVHVTimeSkipSequenceState::PlayingStage)
+        {
+            ConfigureInactivePresentation(false);
+        }
+        return;
+    }
+    const bool bStageObjectiveMatches = bAdvanceOnObjectiveCompletion
+        && Stages.ContainsByPredicate([&Objective](const FVHVTimeSkipStage& Stage)
+        {
+            return Stage.ObjectiveID == Objective.ObjectiveID;
+        });
     const bool bMatches = Runtime.ActiveQuestID == RequiredQuestID
-        && QuestSubsystem->GetCurrentObjective(Objective)
-        && Objective.ObjectiveID == RequiredObjectiveID;
+        && bHasObjective
+        && (bAdvanceOnObjectiveCompletion ? bStageObjectiveMatches
+                                          : Objective.ObjectiveID == RequiredObjectiveID);
     if (bMatches)
     {
         ActivateSequence();
@@ -161,10 +218,27 @@ void AVHVTimeSkipSequence::ActivateSequence()
     {
         return;
     }
-    const int32 CompletedCount = StoryStateSubsystem && !ProgressCounterID.IsNone()
-        ? StoryStateSubsystem->GetCounter(ProgressCounterID)
-        : 0;
-    CurrentStageIndex = FMath::Clamp(CompletedCount, 0, Stages.Num() - 1);
+    if (bAdvanceOnObjectiveCompletion && QuestSubsystem)
+    {
+        FVHVQuestObjectiveDefinition Objective;
+        QuestSubsystem->GetCurrentObjective(Objective);
+        CurrentStageIndex = Stages.IndexOfByPredicate([&Objective](const FVHVTimeSkipStage& Stage)
+        {
+            return Stage.ObjectiveID == Objective.ObjectiveID;
+        });
+        if (!Stages.IsValidIndex(CurrentStageIndex))
+        {
+            ConfigureInactivePresentation(false);
+            return;
+        }
+    }
+    else
+    {
+        const int32 CompletedCount = StoryStateSubsystem && !ProgressCounterID.IsNone()
+            ? StoryStateSubsystem->GetCounter(ProgressCounterID)
+            : 0;
+        CurrentStageIndex = FMath::Clamp(CompletedCount, 0, Stages.Num() - 1);
+    }
     CompletedStageIDs.Reset();
     for (int32 Index = 0; Index < CurrentStageIndex; ++Index)
     {
@@ -185,6 +259,7 @@ void AVHVTimeSkipSequence::ConfigureInactivePresentation(const bool bKeepFinalSt
     if (GetWorld())
     {
         GetWorld()->GetTimerManager().ClearTimer(TransitionFailSafeTimer);
+        GetWorld()->GetTimerManager().ClearTimer(PostTransitionObservationTimer);
     }
     RestorePlayerInput();
     if (OverlayWidget)
@@ -282,6 +357,14 @@ void AVHVTimeSkipSequence::HandleConversationFinished(const bool bSuccess)
         return;
     }
     bCurrentStageConversationStarted = false;
+    if (bAdvanceOnObjectiveCompletion)
+    {
+        if (!bSuccess)
+        {
+            SetLegacyTriggerEnabled(CurrentStageIndex, true);
+        }
+        return;
+    }
     NotifyCurrentStageCompleted(Stages[CurrentStageIndex].StageID, bSuccess);
 }
 
@@ -315,6 +398,10 @@ bool AVHVTimeSkipSequence::NotifyCurrentStageCompleted(const FName StageID, cons
 
 bool AVHVTimeSkipSequence::BeginTransition(const int32 NextStageIndex)
 {
+    if (GetWorld())
+    {
+        GetWorld()->GetTimerManager().ClearTimer(PostTransitionObservationTimer);
+    }
     if (SequenceState != EVHVTimeSkipSequenceState::PlayingStage
         || !Stages.IsValidIndex(NextStageIndex)
         || !EnsureOverlay()
@@ -336,6 +423,40 @@ bool AVHVTimeSkipSequence::BeginTransition(const int32 NextStageIndex)
         false);
     OverlayWidget->PlayTransition(
         Stages[CurrentStageIndex].TransitionText,
+        FadeInDuration,
+        TextHoldDuration,
+        FadeOutDuration);
+    return true;
+}
+
+bool AVHVTimeSkipSequence::BeginEntryTransition(const int32 StageIndex)
+{
+    if (GetWorld())
+    {
+        GetWorld()->GetTimerManager().ClearTimer(PostTransitionObservationTimer);
+    }
+    if (SequenceState == EVHVTimeSkipSequenceState::Transitioning
+        || !Stages.IsValidIndex(StageIndex)
+        || !EnsureOverlay()
+        || !ResolvePlayerArrival(StageIndex, PendingPlayerTransform))
+    {
+        EnableFallbackForStage(StageIndex, TEXT("entry transition preflight failed"));
+        return false;
+    }
+
+    bPendingPlayerRelocation = Stages[StageIndex].PlayerArrivalTarget != nullptr;
+    CurrentStageIndex = INDEX_NONE;
+    PendingStageIndex = StageIndex;
+    SequenceState = EVHVTimeSkipSequenceState::Transitioning;
+    LockPlayerInput();
+    GetWorld()->GetTimerManager().SetTimer(
+        TransitionFailSafeTimer,
+        this,
+        &AVHVTimeSkipSequence::HandleTransitionFailSafe,
+        TransitionFailSafeDuration,
+        false);
+    OverlayWidget->PlayTransition(
+        Stages[StageIndex].TransitionText,
         FadeInDuration,
         TextHoldDuration,
         FadeOutDuration);
@@ -384,14 +505,17 @@ bool AVHVTimeSkipSequence::ResolvePlayerArrival(const int32 StageIndex, FTransfo
         return true;
     }
 
-    UNavigationSystemV1* Navigation = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
-    FNavLocation ProjectedLocation;
-    if (!Navigation || !Navigation->ProjectPointToNavigation(
-            ArrivalTarget->GetActorLocation(), ProjectedLocation, FVector(150.0f, 150.0f, 500.0f)))
+    FNavLocation ProjectedLocation(ArrivalTarget->GetActorLocation());
+    if (bRequireNavigationProjection)
     {
-        UE_LOG(LogVHV, Warning, TEXT("[VHVTimeSkip] Stage '%s' has no nearby Recast arrival point."),
-            *Stages[StageIndex].StageID.ToString());
-        return false;
+        UNavigationSystemV1* Navigation = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
+        if (!Navigation || !Navigation->ProjectPointToNavigation(
+                ArrivalTarget->GetActorLocation(), ProjectedLocation, FVector(150.0f, 150.0f, 500.0f)))
+        {
+            UE_LOG(LogVHV, Warning, TEXT("[VHVTimeSkip] Stage '%s' has no nearby Recast arrival point."),
+                *Stages[StageIndex].StageID.ToString());
+            return false;
+        }
     }
 
     const UCapsuleComponent* Capsule = PlayerCharacter->GetCapsuleComponent();
@@ -400,9 +524,9 @@ bool AVHVTimeSkipSequence::ResolvePlayerArrival(const int32 StageIndex, FTransfo
         return false;
     }
 
-    // A Recast projection describes the navigable support surface, not the center
-    // of an ACharacter capsule. Resolve the Landscape height independently so a
-    // roof or other WorldStatic blocker cannot be mistaken for terrain support.
+    // A Recast projection describes a support surface, not the center of a
+    // character capsule. Resolve either the explicitly configured platform or,
+    // for existing Q3 instances, Landscape without changing their behavior.
     const FVector IntendedXY(ArrivalTarget->GetActorLocation().X, ArrivalTarget->GetActorLocation().Y, 0.0f);
     const FVector TraceStart(IntendedXY.X, IntendedXY.Y,
         FMath::Max(ArrivalTarget->GetActorLocation().Z, ProjectedLocation.Location.Z) + 3000.0f);
@@ -420,11 +544,16 @@ bool AVHVTimeSkipSequence::ResolvePlayerArrival(const int32 StageIndex, FTransfo
             break;
         }
 
+        const AActor* RequiredSupport = Stages[StageIndex].PlayerArrivalSupportActor;
         const UClass* ActorClass = Hit.GetActor() ? Hit.GetActor()->GetClass() : nullptr;
         const UClass* ComponentClass = Hit.GetComponent() ? Hit.GetComponent()->GetClass() : nullptr;
         const bool bLandscapeActor = ActorClass && ActorClass->GetName().Contains(TEXT("Landscape"));
         const bool bLandscapeComponent = ComponentClass && ComponentClass->GetName().Contains(TEXT("Landscape"));
-        if (Hit.bBlockingHit && (bLandscapeActor || bLandscapeComponent))
+        const bool bRequiredSupportHit = RequiredSupport && Hit.GetActor() == RequiredSupport;
+        const bool bAcceptedSupport = RequiredSupport
+            ? bRequiredSupportHit
+            : (bLandscapeActor || bLandscapeComponent);
+        if (Hit.bBlockingHit && bAcceptedSupport)
         {
             GroundHit = Hit;
             bFoundLandscape = true;
@@ -444,7 +573,7 @@ bool AVHVTimeSkipSequence::ResolvePlayerArrival(const int32 StageIndex, FTransfo
     }
     if (!bFoundLandscape)
     {
-        UE_LOG(LogVHV, Warning, TEXT("[VHVTimeSkip] Stage '%s' has no Landscape support at its intended XY."),
+        UE_LOG(LogVHV, Warning, TEXT("[VHVTimeSkip] Stage '%s' has no valid configured support at its intended XY."),
             *Stages[StageIndex].StageID.ToString());
         return false;
     }
@@ -512,6 +641,9 @@ void AVHVTimeSkipSequence::HandleOverlayFullyObscured()
     {
         ActivatedActorCount += IsValid(Actor) ? 1 : 0;
     }
+    OnStagePresentationActivated.Broadcast(
+        Stages[CurrentStageIndex].StageID,
+        Stages[CurrentStageIndex].ObjectiveID);
     UE_LOG(LogVHV, Log, TEXT("Q3 TimeSkip: %s -> %s | ActiveStage=%d | ActorsActivated=%d"),
         Stages.IsValidIndex(PreviousStageIndex)
             ? *Stages[PreviousStageIndex].StageID.ToString() : TEXT("None"),
@@ -534,14 +666,38 @@ void AVHVTimeSkipSequence::HandleOverlayFinished()
     FVHVTimeSkipStage& Stage = Stages[CurrentStageIndex];
     if (Stage.bAutoStartObservationAfterTransition && Stage.ObservationScene)
     {
-        if (!Stage.ObservationScene->StartConversation())
+        if (Stage.PostTransitionObservationDelay > 0.0f)
         {
-            EnableFallbackForStage(CurrentStageIndex, TEXT("automatic observation start was rejected"));
+            GetWorld()->GetTimerManager().SetTimer(
+                PostTransitionObservationTimer,
+                this,
+                &AVHVTimeSkipSequence::StartPendingAutoObservation,
+                Stage.PostTransitionObservationDelay,
+                false);
+        }
+        else
+        {
+            StartPendingAutoObservation();
         }
     }
     else
     {
         SetLegacyTriggerEnabled(CurrentStageIndex, true);
+    }
+}
+
+void AVHVTimeSkipSequence::StartPendingAutoObservation()
+{
+    if (SequenceState != EVHVTimeSkipSequenceState::PlayingStage
+        || !Stages.IsValidIndex(CurrentStageIndex))
+    {
+        return;
+    }
+    FVHVTimeSkipStage& Stage = Stages[CurrentStageIndex];
+    if (!Stage.bAutoStartObservationAfterTransition || !Stage.ObservationScene
+        || !Stage.ObservationScene->StartConversation())
+    {
+        EnableFallbackForStage(CurrentStageIndex, TEXT("automatic observation start was rejected"));
     }
 }
 
@@ -667,7 +823,10 @@ void AVHVTimeSkipSequence::RestoreOriginalActorState()
 EDataValidationResult AVHVTimeSkipSequence::IsDataValid(FDataValidationContext& Context) const
 {
     EDataValidationResult Result = Super::IsDataValid(Context);
-    if (RequiredQuestID.IsNone() || RequiredObjectiveID.IsNone() || Stages.IsEmpty())
+    if (RequiredQuestID.IsNone()
+        || ((!bAdvanceOnObjectiveCompletion || bTransitionOnNextObjectiveActivation)
+            && RequiredObjectiveID.IsNone())
+        || Stages.IsEmpty())
     {
         Context.AddError(FText::FromString(TEXT("Time-skip sequence requires quest/objective gates and at least one stage.")));
         Result = EDataValidationResult::Invalid;
@@ -675,13 +834,21 @@ EDataValidationResult AVHVTimeSkipSequence::IsDataValid(FDataValidationContext& 
     TSet<FName> StageIDs;
     for (const FVHVTimeSkipStage& Stage : Stages)
     {
-        if (Stage.StageID.IsNone() || StageIDs.Contains(Stage.StageID) || !Stage.ObservationScene)
+        if (Stage.StageID.IsNone() || StageIDs.Contains(Stage.StageID)
+            || (!Stage.bPresentationOnly && !Stage.ObservationScene))
         {
             Context.AddError(FText::FromString(TEXT("Every time-skip stage needs a unique ID and an observation scene.")));
             Result = EDataValidationResult::Invalid;
         }
         StageIDs.Add(Stage.StageID);
-        if (Stage.StageActors.IsEmpty())
+        if (bAdvanceOnObjectiveCompletion && Stage.ObjectiveID.IsNone())
+        {
+            Context.AddError(FText::FromString(FString::Printf(
+                TEXT("Time-skip stage '%s' needs an ObjectiveID in objective-completion mode."),
+                *Stage.StageID.ToString())));
+            Result = EDataValidationResult::Invalid;
+        }
+        if (!Stage.bPresentationOnly && Stage.StageActors.IsEmpty())
         {
             Context.AddError(FText::FromString(FString::Printf(
                 TEXT("Time-skip stage '%s' has no stage actors."), *Stage.StageID.ToString())));

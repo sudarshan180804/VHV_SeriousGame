@@ -102,7 +102,7 @@ TSharedRef<SWidget> UVHVOrderingWidget::RebuildWidget()
                 .AutoHeight()
                 .HAlign(HAlign_Center)
                 [
-                    SNew(STextBlock)
+                    SAssignNew(ActivityTitleSlate, STextBlock)
                     .Font(VHVActivityUIStyle::MediumFont(VHVActivityUIStyle::HeaderFontSize))
                     .ColorAndOpacity(VHVActivityUIStyle::HeaderGold())
                     .ShadowOffset(FVector2D(1.0f, 2.0f))
@@ -132,20 +132,20 @@ TSharedRef<SWidget> UVHVOrderingWidget::RebuildWidget()
                     .Justification(ETextJustify::Center)
                     .ShadowOffset(FVector2D(1.0f, 2.0f))
                     .ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.62f))
-                    .Text(FText::FromString(TEXT("Put the steps in the correct order")))
+                    .Text(FText::FromString(ActivityTitleText))
                 ]
                 + SVerticalBox::Slot()
                 .AutoHeight()
                 .HAlign(HAlign_Center)
                 .Padding(FMargin(0.0f, 12.0f, 0.0f, 0.0f))
                 [
-                    SNew(STextBlock)
+                    SAssignNew(ActivityInstructionSlate, STextBlock)
                     .Font(VHVActivityUIStyle::RegularFont(VHVActivityUIStyle::InstructionFontSize))
                     .ColorAndOpacity(VHVActivityUIStyle::TextSecondary())
                     .Justification(ETextJustify::Center)
                     .ShadowOffset(FVector2D(1.0f, 1.0f))
                     .ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.55f))
-                    .Text(FText::FromString(TEXT("Drag the cards left or right to arrange them.")))
+                    .Text(FText::FromString(ActivityInstructionText))
                 ]
             ]
             + SConstraintCanvas::Slot()
@@ -260,8 +260,27 @@ void UVHVOrderingWidget::ReleaseSlateResources(const bool bReleaseChildren)
 {
     Super::ReleaseSlateResources(bReleaseChildren);
     CardsSlateContainer.Reset();
+    ActivityTitleSlate.Reset();
+    ActivityInstructionSlate.Reset();
     SubmitHintSlate.Reset();
     CardWidgets.Reset();
+}
+
+void UVHVOrderingWidget::SetActivityPresentation(
+    const FString& InTitle, const FString& InInstruction)
+{
+    ActivityTitleText = InTitle.TrimStartAndEnd().IsEmpty()
+        ? TEXT("Put the steps in the correct order") : InTitle;
+    ActivityInstructionText = InInstruction.TrimStartAndEnd().IsEmpty()
+        ? TEXT("Drag the cards left or right to arrange them.") : InInstruction;
+    if (ActivityTitleSlate)
+    {
+        ActivityTitleSlate->SetText(FText::FromString(ActivityTitleText));
+    }
+    if (ActivityInstructionSlate)
+    {
+        ActivityInstructionSlate->SetText(FText::FromString(ActivityInstructionText));
+    }
 }
 
 void UVHVOrderingWidget::SetOrderingItems(const TArray<FOrderingItem>& Items)
