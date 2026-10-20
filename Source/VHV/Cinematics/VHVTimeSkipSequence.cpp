@@ -87,6 +87,7 @@ void AVHVTimeSkipSequence::BeginPlay()
     if (QuestSubsystem)
     {
         QuestSubsystem->OnObjectiveChanged.AddUniqueDynamic(this, &AVHVTimeSkipSequence::HandleObjectiveChanged);
+        QuestSubsystem->OnObjectiveReady.AddUniqueDynamic(this, &AVHVTimeSkipSequence::HandleObjectiveReady);
         QuestSubsystem->OnObjectiveCompleted.AddUniqueDynamic(this, &AVHVTimeSkipSequence::HandleObjectiveCompleted);
         QuestSubsystem->OnQuestStarted.AddUniqueDynamic(this, &AVHVTimeSkipSequence::HandleQuestStarted);
         QuestSubsystem->OnQuestCompleted.AddUniqueDynamic(this, &AVHVTimeSkipSequence::HandleQuestCompleted);
@@ -122,6 +123,7 @@ void AVHVTimeSkipSequence::EndPlay(const EEndPlayReason::Type EndPlayReason)
     if (QuestSubsystem)
     {
         QuestSubsystem->OnObjectiveChanged.RemoveDynamic(this, &AVHVTimeSkipSequence::HandleObjectiveChanged);
+        QuestSubsystem->OnObjectiveReady.RemoveDynamic(this, &AVHVTimeSkipSequence::HandleObjectiveReady);
         QuestSubsystem->OnObjectiveCompleted.RemoveDynamic(this, &AVHVTimeSkipSequence::HandleObjectiveCompleted);
         QuestSubsystem->OnQuestStarted.RemoveDynamic(this, &AVHVTimeSkipSequence::HandleQuestStarted);
         QuestSubsystem->OnQuestCompleted.RemoveDynamic(this, &AVHVTimeSkipSequence::HandleQuestCompleted);
@@ -139,6 +141,7 @@ void AVHVTimeSkipSequence::HandleObjectiveChanged(const FName QuestID, const FNa
     }
     if (bTransitionOnNextObjectiveActivation
         && bEntryTransitionArmed
+        && !bWaitForObjectiveReadyForEntryTransition
         && QuestID == RequiredQuestID
         && Stages.IsValidIndex(0)
         && Stages[0].ObjectiveID == ObjectiveID)
@@ -148,6 +151,21 @@ void AVHVTimeSkipSequence::HandleObjectiveChanged(const FName QuestID, const FNa
         return;
     }
     RefreshForCurrentObjective();
+}
+
+void AVHVTimeSkipSequence::HandleObjectiveReady(const FName QuestID, const FName ObjectiveID)
+{
+    if (!bTransitionOnNextObjectiveActivation
+        || !bWaitForObjectiveReadyForEntryTransition
+        || !bEntryTransitionArmed
+        || QuestID != RequiredQuestID
+        || !Stages.IsValidIndex(0)
+        || Stages[0].ObjectiveID != ObjectiveID)
+    {
+        return;
+    }
+    bEntryTransitionArmed = false;
+    BeginEntryTransition(0);
 }
 
 void AVHVTimeSkipSequence::HandleObjectiveCompleted(const FName QuestID, const FName ObjectiveID)
@@ -497,7 +515,8 @@ bool AVHVTimeSkipSequence::BeginTransition(const int32 NextStageIndex)
         return false;
     }
 
-    bPendingPlayerRelocation = Stages[NextStageIndex].PlayerArrivalTarget != nullptr;
+    bPendingPlayerRelocation = Stages[NextStageIndex].PlayerArrivalTarget != nullptr
+        || Stages[NextStageIndex].PlayerArrivalRelativeActor != nullptr;
     PendingStageIndex = NextStageIndex;
     SequenceState = EVHVTimeSkipSequenceState::Transitioning;
     LockPlayerInput();
@@ -547,7 +566,8 @@ bool AVHVTimeSkipSequence::BeginEntryTransition(const int32 StageIndex)
         return false;
     }
 
-    bPendingPlayerRelocation = Stages[StageIndex].PlayerArrivalTarget != nullptr;
+    bPendingPlayerRelocation = Stages[StageIndex].PlayerArrivalTarget != nullptr
+        || Stages[StageIndex].PlayerArrivalRelativeActor != nullptr;
     CurrentStageIndex = INDEX_NONE;
     PendingStageIndex = StageIndex;
     SequenceState = EVHVTimeSkipSequenceState::Transitioning;
@@ -600,7 +620,9 @@ bool AVHVTimeSkipSequence::ResolvePlayerArrival(const int32 StageIndex, FTransfo
         DiagnosticBlockReason = TEXT("destination stage index is invalid");
         return false;
     }
-    const AActor* ArrivalTarget = Stages[StageIndex].PlayerArrivalTarget;
+    const FVHVTimeSkipStage& Stage = Stages[StageIndex];
+    const AActor* RelativeActor = Stage.PlayerArrivalRelativeActor;
+    const AActor* ArrivalTarget = RelativeActor ? RelativeActor : Stage.PlayerArrivalTarget;
     APlayerController* PlayerController = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
     ACharacter* PlayerCharacter = PlayerController ? Cast<ACharacter>(PlayerController->GetPawn()) : nullptr;
     if (!PlayerCharacter)
@@ -624,12 +646,30 @@ bool AVHVTimeSkipSequence::ResolvePlayerArrival(const int32 StageIndex, FTransfo
         return false;
     }
 
-    FNavLocation ProjectedLocation(ArrivalTarget->GetActorLocation());
+    FVector ArrivalAnchor = ArrivalTarget->GetActorLocation();
+    FRotator ArrivalRotation(0.0f, ArrivalTarget->GetActorRotation().Yaw, 0.0f);
+    if (RelativeActor)
+    {
+        FVector Forward = RelativeActor->GetActorForwardVector().GetSafeNormal2D();
+        if (Forward.IsNearlyZero())
+        {
+            Forward = FVector::ForwardVector;
+        }
+        const FVector Right = FVector::CrossProduct(FVector::UpVector, Forward).GetSafeNormal2D();
+        const float BehindDistance = FMath::Clamp(Stage.PlayerArrivalBehindDistance, 150.0f, 260.0f);
+        const float LateralOffset = FMath::Clamp(Stage.PlayerArrivalLateralOffset, -100.0f, 100.0f);
+        ArrivalAnchor = RelativeActor->GetActorLocation() - Forward * BehindDistance + Right * LateralOffset;
+        ArrivalRotation = (RelativeActor->GetActorLocation() - ArrivalAnchor).Rotation();
+        ArrivalRotation.Pitch = 0.0f;
+        ArrivalRotation.Roll = 0.0f;
+    }
+
+    FNavLocation ProjectedLocation(ArrivalAnchor);
     if (bRequireNavigationProjection)
     {
         UNavigationSystemV1* Navigation = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
         if (!Navigation || !Navigation->ProjectPointToNavigation(
-                ArrivalTarget->GetActorLocation(), ProjectedLocation, FVector(150.0f, 150.0f, 500.0f)))
+                ArrivalAnchor, ProjectedLocation, FVector(75.0f, 75.0f, 500.0f)))
         {
             UE_LOG(LogVHV, Warning, TEXT("[VHVTimeSkip] Stage '%s' has no nearby Recast arrival point."),
                 *Stages[StageIndex].StageID.ToString());
@@ -644,7 +684,6 @@ bool AVHVTimeSkipSequence::ResolvePlayerArrival(const int32 StageIndex, FTransfo
         return false;
     }
 
-    const FRotator ArrivalRotation(0.0f, ArrivalTarget->GetActorRotation().Yaw, 0.0f);
     const FVector CapsuleLocalOffset = PlayerCharacter->GetActorTransform().InverseTransformPosition(
         Capsule->GetComponentLocation());
     const FVector RotatedCapsuleOffset = ArrivalRotation.RotateVector(CapsuleLocalOffset);
@@ -652,12 +691,12 @@ bool AVHVTimeSkipSequence::ResolvePlayerArrival(const int32 StageIndex, FTransfo
     const float HalfHeight = Capsule->GetScaledCapsuleHalfHeight();
     const float Radius = Capsule->GetScaledCapsuleRadius();
 
-    // Q3 keeps its authored Recast/Landscape behavior. Q5 cinematic arrivals use
-    // the hand-authored target XY and accept any genuinely walkable Pawn-blocking
-    // floor (including house meshes and platforms), followed by a full capsule test.
-    if (!bRequireNavigationProjection)
+    // Q3 keeps its authored Recast/Landscape behavior. Q5 cinematic arrivals and
+    // runtime-relative arrivals accept any genuinely walkable Pawn-blocking floor
+    // (including house meshes and platforms), followed by a full capsule test.
+    if (!bRequireNavigationProjection || RelativeActor)
     {
-        const FVector Anchor = ArrivalTarget->GetActorLocation();
+        const FVector Anchor = RelativeActor ? ProjectedLocation.Location : ArrivalAnchor;
         const FVector TraceStart = Anchor + FVector(0.0f, 0.0f, 25.0f);
         const FVector TraceEnd = Anchor - FVector(0.0f, 0.0f, FMath::Max(1000.0f, HalfHeight * 6.0f));
         FCollisionQueryParams GroundQuery(SCENE_QUERY_STAT(VHVTimeSkipArrivalWalkableGround), true, PlayerCharacter);
@@ -743,12 +782,14 @@ bool AVHVTimeSkipSequence::ResolvePlayerArrival(const int32 StageIndex, FTransfo
     // A Recast projection describes a support surface, not the center of a
     // character capsule. Resolve either the explicitly configured platform or,
     // for existing Q3 instances, Landscape without changing their behavior.
-    const FVector IntendedXY(ArrivalTarget->GetActorLocation().X, ArrivalTarget->GetActorLocation().Y, 0.0f);
+    const FVector IntendedLocation = RelativeActor ? ProjectedLocation.Location : ArrivalAnchor;
+    const FVector IntendedXY(IntendedLocation.X, IntendedLocation.Y, 0.0f);
     const FVector TraceStart(IntendedXY.X, IntendedXY.Y,
-        FMath::Max(ArrivalTarget->GetActorLocation().Z, ProjectedLocation.Location.Z) + 3000.0f);
+        FMath::Max(ArrivalAnchor.Z, ProjectedLocation.Location.Z) + 3000.0f);
     const FVector TraceEnd(IntendedXY.X, IntendedXY.Y, TraceStart.Z - 10000.0f);
     FCollisionQueryParams GroundQuery(SCENE_QUERY_STAT(VHVTimeSkipArrivalGround), true, PlayerCharacter);
     GroundQuery.AddIgnoredActor(this);
+    GroundQuery.AddIgnoredActor(ArrivalTarget);
 
     FHitResult GroundHit;
     bool bFoundLandscape = false;
@@ -802,6 +843,7 @@ bool AVHVTimeSkipSequence::ResolvePlayerArrival(const int32 StageIndex, FTransfo
 
     FCollisionQueryParams CapsuleQuery(SCENE_QUERY_STAT(VHVTimeSkipArrivalCapsule), false, PlayerCharacter);
     CapsuleQuery.AddIgnoredActor(this);
+    CapsuleQuery.AddIgnoredActor(ArrivalTarget);
     if (GetWorld()->OverlapBlockingTestByProfile(
             CapsuleCenter,
             ArrivalRotation.Quaternion(),
@@ -840,6 +882,23 @@ void AVHVTimeSkipSequence::HandleOverlayFullyObscured()
     if (PlayerController && bPendingPlayerRelocation)
     {
         PlayerController->SetControlRotation(PendingPlayerTransform.Rotator());
+    }
+    FVHVTimeSkipStage& PendingStage = Stages[PendingStageIndex];
+    if (bPendingPlayerRelocation
+        && PendingStage.bFaceRelativeActorTowardPlayer
+        && IsValid(PendingStage.PlayerArrivalRelativeActor))
+    {
+        const FVector ToPlayer = PendingPlayerTransform.GetLocation()
+            - PendingStage.PlayerArrivalRelativeActor->GetActorLocation();
+        if (!ToPlayer.IsNearlyZero())
+        {
+            FRotator FacingRotation = ToPlayer.Rotation();
+            FacingRotation.Pitch = 0.0f;
+            FacingRotation.Roll = 0.0f;
+            PendingStage.PlayerArrivalRelativeActor->SetActorRotation(
+                FacingRotation, ETeleportType::TeleportPhysics);
+            PendingStage.PlayerArrivalRelativeActor->ForceNetUpdate();
+        }
     }
     const int32 PreviousStageIndex = CurrentStageIndex;
     ApplyStagePresentation(PendingStageIndex);
@@ -1131,6 +1190,13 @@ EDataValidationResult AVHVTimeSkipSequence::IsDataValid(FDataValidationContext& 
                     *Stage.StageID.ToString())));
                 Result = EDataValidationResult::Invalid;
             }
+        }
+        if (Stage.PlayerArrivalRelativeActor && !IsValid(Stage.PlayerArrivalRelativeActor))
+        {
+            Context.AddError(FText::FromString(FString::Printf(
+                TEXT("Time-skip stage '%s' has an invalid relative arrival actor."),
+                *Stage.StageID.ToString())));
+            Result = EDataValidationResult::Invalid;
         }
     }
     return Result;

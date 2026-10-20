@@ -52,6 +52,21 @@ struct VHV_API FVHVTimeSkipStage
     UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Time Skip")
     TObjectPtr<AActor> PlayerArrivalTarget;
 
+    /** Optional actor used to calculate a conversational arrival behind its current runtime orientation. */
+    UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Time Skip")
+    TObjectPtr<AActor> PlayerArrivalRelativeActor;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Time Skip", meta = (ClampMin = "150.0", ClampMax = "260.0", Units = "Centimeters"))
+    float PlayerArrivalBehindDistance = 180.0f;
+
+    /** Optional right-vector offset for separating conversational capsules and sight lines. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Time Skip", meta = (ClampMin = "-100.0", ClampMax = "100.0", Units = "Centimeters"))
+    float PlayerArrivalLateralOffset = 0.0f;
+
+    /** During blackout, rotate the relative actor toward the resolved player arrival without translating it. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Time Skip")
+    bool bFaceRelativeActorTowardPlayer = false;
+
     /** Optional physical support actor for elevated platforms. Null retains Landscape-only support. */
     UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Time Skip")
     TObjectPtr<AActor> PlayerArrivalSupportActor;
@@ -115,6 +130,10 @@ public:
      */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Time Skip|Gating")
     bool bTransitionOnNextObjectiveActivation = false;
+
+    /** Defer an armed entry transition until objective readiness has staged its runtime participants. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Time Skip|Gating")
+    bool bWaitForObjectiveReadyForEntryTransition = false;
 
     /** Q3 retains Recast validation; cinematic platform sequences may opt out per instance. */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Time Skip|Safety")
@@ -212,6 +231,9 @@ private:
 
     UFUNCTION()
     void HandleObjectiveChanged(FName QuestID, FName ObjectiveID);
+
+    UFUNCTION()
+    void HandleObjectiveReady(FName QuestID, FName ObjectiveID);
 
     UFUNCTION()
     void HandleObjectiveCompleted(FName QuestID, FName ObjectiveID);

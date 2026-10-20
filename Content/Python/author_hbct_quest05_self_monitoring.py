@@ -64,6 +64,30 @@ def flag_not_set(name):
     return condition_set([flag_condition(name, False)])
 
 
+def contextual(participant_tag, conversation, entry_node, unavailable_after_flag):
+    return struct(
+        unreal.VHVQuestContextualConversation,
+        participant_tag=tag(participant_tag),
+        conversation=conversation,
+        entry_node_id=entry_node,
+        availability_conditions=flag_not_set(unavailable_after_flag))
+
+
+def contextual_when(participant_tag, conversation, entry_node, conditions):
+    return struct(
+        unreal.VHVQuestContextualConversation,
+        participant_tag=tag(participant_tag),
+        conversation=conversation,
+        entry_node_id=entry_node,
+        availability_conditions=condition_set(conditions))
+
+
+def learning_with_effect(node_id, activity_tag, completion_flag, topic_id=TOPIC_ID):
+    node = hbct.learning_node(node_id, activity_tag, topic_id=topic_id)
+    node.set_editor_property("completion_effects", [effect(completion_flag)])
+    return node
+
+
 def objective(objective_id, text, objective_type, **properties):
     values = {
         "objective_id": objective_id,
@@ -246,6 +270,83 @@ def build_activities():
             correct_feedback="The record shows what should change and what is already working.",
             success_effects=[effect("VHV.Story.Flag.HBCT.SelfMonitoring.SMAdjustmentCompleted")]),
         assessed_activity(
+            "VHV.Activity.HBCT.SelfMonitoring.AdjustedRoutineDecision",
+            "Choose a Realistic Busy-Day Adjustment", single,
+            "What should Uncle Chai do today?",
+            question=struct(
+                unreal.QuestionData,
+                question_id="HBCT_SM_ADJUSTED_ROUTINE_DECISION",
+                question_text="What should Uncle Chai do today?",
+                options=[
+                    struct(unreal.QuestionOption,
+                           option_text="Take a 10-minute walk, record it honestly, and plan another full session when possible.",
+                           is_correct=True,
+                           response_feedback="Plan adjusted: Short walk today. Record the actual duration."),
+                    struct(unreal.QuestionOption,
+                           option_text="Mark 30 minutes as completed even though he hasn't walked.",
+                           is_correct=False,
+                           response_feedback="A record must show what actually happened. Recording 30 minutes would hide the pattern."),
+                    struct(unreal.QuestionOption,
+                           option_text="Abandon the walking plan because one day was too busy.",
+                           is_correct=False,
+                           response_feedback="One difficult day is evidence for adjustment, not a reason to abandon the routine."),
+                ]),
+            attempt_policy=struct(
+                unreal.TextbookAttemptPolicy,
+                enabled=True,
+                max_attempts=1,
+                retry_until_correct=True,
+                first_incorrect_hint="Use the record to choose an honest, realistic action that keeps the routine going.",
+                final_incorrect_explanation="Use the record to choose an honest, realistic action that keeps the routine going."),
+            correct_feedback="Plan adjusted: Short walk today. Record the actual duration."),
+        assessed_activity(
+            "VHV.Activity.HBCT.SelfMonitoring.AdjustedWalkRecording",
+            "Record What Actually Happened", single,
+            "What should be written in Uncle Chai's walking record?",
+            question=struct(
+                unreal.QuestionData,
+                question_id="HBCT_SM_ADJUSTED_WALK_RECORDING",
+                question_text="What should be written in Uncle Chai's walking record?",
+                options=[
+                    struct(unreal.QuestionOption,
+                           option_text="10 minutes walked — below the 30-minute daily target.",
+                           is_correct=True,
+                           response_feedback="Correct. The shorter walk is worthwhile, but it does not count as a completed 30-minute day."),
+                    struct(unreal.QuestionOption,
+                           option_text="30-minute target completed.",
+                           is_correct=False,
+                           response_feedback="The full daily target was not met. Record the actual 10 minutes instead."),
+                    struct(unreal.QuestionOption,
+                           option_text="Don't record today because the full target wasn't reached.",
+                           is_correct=False,
+                           response_feedback="Incomplete sessions still matter. Honest records reveal when and why the plan needs adjustment."),
+                ]),
+            attempt_policy=struct(
+                unreal.TextbookAttemptPolicy,
+                enabled=True,
+                max_attempts=1,
+                retry_until_correct=True,
+                first_incorrect_hint="Compare the actual duration with Chai's 30-minute daily target.",
+                final_incorrect_explanation="Compare the actual duration with Chai's 30-minute daily target."),
+            correct_feedback="The record now shows the actual duration without claiming the full target was met.",
+            teaching=hbct.teaching(
+                "TODAY'S WALKING RECORD",
+                "Planned target: 30 minutes\nActual walk: 10 minutes\nFull daily target met: No\nNext step: Plan a full session when feasible",
+                ["A shorter walk is worthwhile and must still be recorded honestly."],
+                unreal.TextbookTeachingCategory.REFLECTION),
+            success_effects=[effect(
+                "VHV.Story.Flag.HBCT.SelfMonitoring.SMAdjustedWalkRecordedAccurately")]),
+        hbct.activity(
+            "VHV.Activity.HBCT.SelfMonitoring.AdjustedRoutineSummary",
+            "SELF-MONITORING", observation,
+            "Acknowledge the self-monitoring process.",
+            hbct.teaching(
+                "SELF-MONITORING",
+                "OBSERVE → RECORD → COMPARE → ADJUST\n\nRecords help us make realistic improvements.",
+                ["Observe what happened.", "Record it honestly.",
+                 "Compare it with the goal.", "Adjust the plan using the evidence."],
+                unreal.TextbookTeachingCategory.KEY_IDEA)),
+        assessed_activity(
             "VHV.Activity.HBCT.SelfMonitoring.ProgressGraphOrdering",
             "Help Uncle Chai Build a Walking Routine", ordering,
             "Arrange the milestones from a manageable starting goal to a routine he can maintain.",
@@ -381,6 +482,42 @@ def create_conversations():
                 text("SMAdjust_04", "Instructor", "Monitoring is not about judging Chai.", "SMAdjust_05", "VHV.Participant.Instructor"),
                 text("SMAdjust_05", "Instructor", "It gives us information for adjustment.", speaker_tag="VHV.Participant.Instructor"),
             ]),
+        "DA_Conversation_HBCT_SelfMonitoring_AdjustedWalk": (
+            "HBCT_SelfMonitoring_AdjustedWalkConversation", [
+                text("SMAdjustedWalk_01", "Uncle Chai", "I planned to walk for 30 minutes today, but work at the market took longer than expected.",
+                     "SMAdjustedWalk_02", "VHV.Participant.UncleChai"),
+                text("SMAdjustedWalk_02", "Uncle Chai", "I only have about 10 minutes free now. Normally, I'd just skip walking altogether.",
+                     "SMAdjustedWalk_03", "VHV.Participant.UncleChai"),
+                text("SMAdjustedWalk_03", "Player", "Let's look at your walking record. We noticed this happens often on busy market days.",
+                     "SMAdjustedWalk_04"),
+                text("SMAdjustedWalk_04", "Uncle Chai", "You're right. I keep missing the same kind of day. But what should I do when I don't have enough time?",
+                     "SMAdjustedWalk_Decision", "VHV.Participant.UncleChai"),
+                learn("SMAdjustedWalk_Decision", "VHV.Activity.HBCT.SelfMonitoring.AdjustedRoutineDecision",
+                      "SMAdjustedWalk_05", TOPIC_ID),
+                text("SMAdjustedWalk_05", "Player", "Let's use the time you have. A shorter walk is better than abandoning the routine, and we'll record exactly what you complete.",
+                     "SMAdjustedWalk_06"),
+                text("SMAdjustedWalk_06", "Uncle Chai", "That sounds manageable. I can walk for 10 minutes now, then plan my next full session.",
+                     speaker_tag="VHV.Participant.UncleChai", completion_effects=[effect(
+                         "VHV.Story.Flag.HBCT.SelfMonitoring.SMAdjustedWalkConversationComplete")]),
+                text("SMAdjustedWalk_RecordIntro", "Uncle Chai", "I managed a shorter walk today. How should we record it?",
+                     "SMAdjustedWalk_RecordDecision", "VHV.Participant.UncleChai"),
+                learn("SMAdjustedWalk_RecordDecision", "VHV.Activity.HBCT.SelfMonitoring.AdjustedWalkRecording",
+                      "SMAdjustedWalk_07", TOPIC_ID),
+                text("SMAdjustedWalk_07", "Uncle Chai", "Now I understand. I did walk today, but it wasn't the full 30 minutes. I should record what really happened.",
+                     "SMAdjustedWalk_08", "VHV.Participant.UncleChai"),
+                text("SMAdjustedWalk_08", "Player", "Exactly. Your record isn't a score or a punishment. It shows what works and what needs adjusting.",
+                     "SMAdjustedWalk_09"),
+                text("SMAdjustedWalk_09", "Uncle Chai", "On busy market days, I can plan a different time or a shorter walk when necessary. Then I can review my record and plan the next session.",
+                     "SMAdjustedWalk_10", "VHV.Participant.UncleChai"),
+                text("SMAdjustedWalk_10", "Player", "That's self-monitoring. We observe, record, compare with the goal, and use what we learn to adjust the plan.",
+                     "SMAdjustedWalk_11"),
+                text("SMAdjustedWalk_11", "Uncle Chai", "So instead of guessing or giving up, I can make decisions based on my own progress.",
+                     "SMAdjustedWalk_Summary", "VHV.Participant.UncleChai"),
+                learning_with_effect(
+                    "SMAdjustedWalk_Summary",
+                    "VHV.Activity.HBCT.SelfMonitoring.AdjustedRoutineSummary",
+                    "VHV.Story.Flag.HBCT.SelfMonitoring.SMAdjustedRoutineReflectionComplete"),
+            ]),
         "DA_Conversation_HBCT_SelfMonitoring_ProgressGraph": (
             "HBCT_SelfMonitoring_ProgressGraph", [
                 learn("SMGraph_Activity", "VHV.Activity.HBCT.SelfMonitoring.ProgressGraphOrdering", "SMGraph_01", TOPIC_ID),
@@ -412,6 +549,10 @@ def create_conversations():
     for name, (conversation_id, nodes) in specs.items():
         asset = hbct.load_or_create(CONVERSATION_DIR, name, unreal.VHVConversationDataAsset)
         hbct.set_conversation(asset, conversation_id, nodes)
+        if name == "DA_Conversation_HBCT_SelfMonitoring_AdjustedWalk":
+            conversation = asset.get_editor_property("conversation")
+            conversation.set_editor_property("use_world_space_speech_bubbles", True)
+            asset.set_editor_property("conversation", conversation)
         assets[name] = asset
     return assets
 
@@ -656,14 +797,45 @@ def configure_arc(arc, conversations):
                       ensure_participant_present_at_location=True,
                       conversation=conversations["DA_Conversation_HBCT_SelfMonitoring_Adjustment"],
                       entry_node_id="SMAdjust_Activity", auto_start=False),
-            objective("O14_PracticeAdjustedRoutine", "Help Uncle Chai adapt his walking plan on a busy day", q.CUSTOM_EVENT,
+            objective("O14_PracticeAdjustedRoutine", "Help Uncle Chai put his adjusted walking plan into practice", q.CUSTOM_EVENT,
                       custom_event_tag=tag("VHV.CustomEvent.HBCT.SelfMonitoring.AdjustedRoutineComplete"),
+                      participant_tag=tag("VHV.Participant.UncleChai"),
+                      location_tag=tag("VHV.Location.HBCT.SelfMonitoring.SMAdjustedWalkStart"),
+                      prepare_activation_npc_readiness_before_exposure=True,
+                      activation_npc_readiness=[npc_move(
+                          "VHV.Participant.UncleChai",
+                          "VHV.Location.HBCT.SelfMonitoring.SMAdjustedWalkStart")],
+                      contextual_conversations=[
+                          contextual(
+                              "VHV.Participant.UncleChai",
+                              conversations["DA_Conversation_HBCT_SelfMonitoring_AdjustedWalk"],
+                              "SMAdjustedWalk_01",
+                              "VHV.Story.Flag.HBCT.SelfMonitoring.SMAdjustedWalkConversationComplete"),
+                          contextual_when(
+                              "VHV.Participant.UncleChai",
+                              conversations["DA_Conversation_HBCT_SelfMonitoring_AdjustedWalk"],
+                              "SMAdjustedWalk_RecordIntro",
+                              [flag_condition("VHV.Story.Flag.HBCT.SelfMonitoring.SMAdjustedWalkRouteComplete"),
+                               flag_condition("VHV.Story.Flag.HBCT.SelfMonitoring.SMAdjustedWalkRecordedAccurately", False),
+                               flag_condition("VHV.Story.Flag.HBCT.SelfMonitoring.SMAdjustedRoutineReflectionComplete", False)]),
+                          contextual_when(
+                              "VHV.Participant.UncleChai",
+                              conversations["DA_Conversation_HBCT_SelfMonitoring_AdjustedWalk"],
+                              "SMAdjustedWalk_07",
+                              [flag_condition("VHV.Story.Flag.HBCT.SelfMonitoring.SMAdjustedWalkRecordedAccurately"),
+                               flag_condition("VHV.Story.Flag.HBCT.SelfMonitoring.SMAdjustedRoutineReflectionComplete", False)]),
+                      ],
+                      npc_move_stage_activation_conditions=condition_set([
+                          flag_condition("VHV.Story.Flag.HBCT.SelfMonitoring.SMAdjustedWalkConversationComplete"),
+                          flag_condition("VHV.Story.Flag.HBCT.SelfMonitoring.SMAdjustedWalkRouteComplete", False)]),
                       npc_travel_mode=unreal.VHVQuestNPCTravelMode.FREE_ROAM,
                       npc_move_stages=[
                           move_stage([npc_move("VHV.Participant.UncleChai", "VHV.Location.HBCT.SelfMonitoring.SMAdjustedWalkMid", True, 180.0)],
-                                     "VHV.WorldReceiver.HBCT.SelfMonitoring.AdjustedWalk"),
+                                     ""),
                           move_stage([npc_move("VHV.Participant.UncleChai", "VHV.Location.HBCT.SelfMonitoring.SMAdjustedWalkEnd", True, 180.0)]),
-                      ], complete_after_npc_move_stages=True,
+                      ], complete_after_npc_move_stages=False,
+                      completion_conditions=all_flags(
+                          "VHV.Story.Flag.HBCT.SelfMonitoring.SMAdjustedRoutineReflectionComplete"),
                       completion_effects=[effect("VHV.Story.Flag.HBCT.SelfMonitoring.SMAdjustedRoutinePracticed")]),
             objective("O15_BuildProgressGraph", "Turn Uncle Chai's records into a progress graph", q.CONVERSATION,
                       ensure_participant_present_at_location=True,
@@ -1187,6 +1359,11 @@ def configure_map(ambient_assets):
             ambient_assets["DA_Ambient_HBCT_SelfMonitoring_" + suffix],
             "VHV.WorldReceiver.HBCT.SelfMonitoring." + suffix,
             bindings, scene_folder, preserve)
+        if suffix in ("EveningWalk", "AdjustedWalk"):
+            # These scenes are dispatched by their quest NPC-move stages, not a
+            # location volume. Keep the receiver enabled, but do not claim the
+            # location-trigger-only authoring contract.
+            ambient_actor.set_editor_property("requires_explicit_trigger", False)
         if suffix == "SelfMonitorPayoff":
             ambient_actor.set_editor_properties({
                 "requires_explicit_trigger": False,
@@ -1244,6 +1421,9 @@ def validate_authored_data(level, arc, conversations, ambient_assets):
         "VHV.Activity.HBCT.SelfMonitoring.PatternSweetDrinks": unreal.TextbookActivityType.SINGLE_CHOICE,
         "VHV.Activity.HBCT.SelfMonitoring.PatternWalkingGoal": unreal.TextbookActivityType.SINGLE_CHOICE,
         "VHV.Activity.HBCT.SelfMonitoring.PatternAdjustmentMatching": unreal.TextbookActivityType.MATCHING,
+        "VHV.Activity.HBCT.SelfMonitoring.AdjustedRoutineDecision": unreal.TextbookActivityType.SINGLE_CHOICE,
+        "VHV.Activity.HBCT.SelfMonitoring.AdjustedWalkRecording": unreal.TextbookActivityType.SINGLE_CHOICE,
+        "VHV.Activity.HBCT.SelfMonitoring.AdjustedRoutineSummary": unreal.TextbookActivityType.OBSERVATION,
         "VHV.Activity.HBCT.SelfMonitoring.ProgressGraphOrdering": unreal.TextbookActivityType.ORDERING,
         "VHV.Activity.HBCT.SelfMonitoring.ReminderChoice": unreal.TextbookActivityType.SINGLE_CHOICE,
     }
@@ -1324,6 +1504,10 @@ def validate_map():
         actor = find_actor("HBCT_SM_Ambient_" + suffix)
         if not actor.get_editor_property("preserve_participant_behavior"):
             raise RuntimeError("{} must preserve NPC movement".format(actor.get_actor_label()))
+        if suffix in ("EveningWalk", "AdjustedWalk") and actor.get_editor_property(
+                "requires_explicit_trigger"):
+            raise RuntimeError("{} is quest-stage-started, not location-triggered".format(
+                actor.get_actor_label()))
 
     validate_world_text()
 

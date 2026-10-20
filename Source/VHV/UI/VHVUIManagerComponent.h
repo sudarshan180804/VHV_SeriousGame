@@ -23,14 +23,13 @@ class UVHVMatchingCardWidget;
 class UVHVTextbookSubsystem;
 class UVHVQuestSubsystem;
 class UVHVQuestTrackerWidget;
-class UVHVObjectiveDirectionWidget;
 class UVHVMajorQuestStingerWidget;
 class UVHVStoryStateSubsystem;
 class UVHVSupportTypeOverlayWidget;
 class UVHVSupportNetworkWidget;
 class UVHVSocialSupportHUDWidget;
 class UUserWidget;
-class AVHVObjectiveTrackingMarker;
+class AVHVNavigationGuidanceActor;
 class AVHVQuestLocationVolume;
 class AActor;
 struct FVHVDialogueCheckpointSaveState;
@@ -53,11 +52,10 @@ UENUM(BlueprintType)
 enum class EVHVObjectiveTrackingMode : uint8
 {
     Off,
-    WorldMarker,
-    WorldMarkerAndDirection
+    Active
 };
 
-UCLASS(ClassGroup=(VHV), meta=(BlueprintSpawnableComponent))
+UCLASS(ClassGroup=(VHV), Config=Game, meta=(BlueprintSpawnableComponent))
 class VHV_API UVHVUIManagerComponent : public UActorComponent
 {
     GENERATED_BODY()
@@ -291,7 +289,7 @@ public:
     /** Reconciles the newly active quest's UI and releases the transition bypass. */
     void FinishDeveloperQuestSkip();
 
-    /** Enhanced Input entry point for the Off -> beam -> beam+arrow cycle. */
+    /** Enhanced Input entry point for toggling destination and route guidance. */
     void ToggleObjectiveTracking();
 
     void ShowSocialSupportObservationProgress(int32 CompletedCount);
@@ -321,13 +319,20 @@ protected:
     TObjectPtr<UVHVStoryStateSubsystem> StoryStateSubsystem;
 
     UPROPERTY(Transient)
-    TObjectPtr<AVHVObjectiveTrackingMarker> ObjectiveTrackingMarker;
-
-    UPROPERTY(Transient)
-    TObjectPtr<UVHVObjectiveDirectionWidget> ObjectiveDirectionWidget;
+    TObjectPtr<AVHVNavigationGuidanceActor> NavigationGuidanceActor;
 
     UPROPERTY(Transient)
     EVHVObjectiveTrackingMode ObjectiveTrackingMode = EVHVObjectiveTrackingMode::Off;
+
+    /** Distance fallback used when the objective has no authored arrival volume. */
+    UPROPERTY(EditAnywhere, Config, Category = "VHV|Navigation Guidance",
+        meta = (ClampMin = "50.0", UIMin = "150.0", UIMax = "800.0"))
+    float GuidanceArrivalRadius = 300.0f;
+
+    /** Cheap arrival/path service interval; NavMesh queries are throttled again by the presentation actor. */
+    UPROPERTY(EditAnywhere, Config, Category = "VHV|Navigation Guidance",
+        meta = (ClampMin = "0.1", UIMin = "0.2", UIMax = "1.0"))
+    float GuidanceUpdateInterval = 0.5f;
 
     FName TrackedLocationQuestID;
     FName TrackedLocationObjectiveID;
@@ -337,13 +342,6 @@ protected:
     TWeakObjectPtr<AActor> TrackedLocationActor;
     TWeakObjectPtr<AVHVQuestLocationVolume> TrackedLocationVolume;
     FTimerHandle ObjectiveTrackingProximityTimer;
-    FTimerHandle ObjectiveTrackingTemporaryRevealTimer;
-    bool bObjectiveTrackingProximitySuppressed = false;
-    bool bObjectiveTrackingTemporaryReveal = false;
-
-    static constexpr float ObjectiveTrackingFallbackArrivalDistance = 300.0f;
-    static constexpr float ObjectiveTrackingProximityCheckInterval = 0.10f;
-    static constexpr float ObjectiveTrackingTemporaryRevealDuration = 2.5f;
 
     bool bCurrentDialogueNodeCompleted = false;
     bool bAwaitingContinuousTeachingResult = false;
@@ -395,8 +393,6 @@ protected:
     bool IsPlayerAtObjectiveTrackingTarget() const;
     void UpdateObjectiveTrackingProximity();
     void ApplyObjectiveTrackingVisualState();
-    void BeginObjectiveTrackingTemporaryReveal();
-    void EndObjectiveTrackingTemporaryReveal();
     void ClearObjectiveTracking(bool bObjectiveChanged = false);
     void StageSelfMonitoringParticipants(FName ObjectiveID);
     bool StageQuestParticipantAtLocation(FName ParticipantID, FName LocationID);

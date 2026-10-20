@@ -4,6 +4,7 @@
 #include "UI/Textbook/SVHVChoiceCard.h"
 #include "UI/Textbook/VHVActivityUIStyle.h"
 #include "NPC/Components/VHVAmbientSpeechComponent.h"
+#include "Quest/Components/VHVQuestParticipantComponent.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
@@ -11,6 +12,10 @@
 #include "Components/VerticalBox.h"
 #include "Components/TextBlock.h"
 #include "InputCoreTypes.h"
+#include "EngineUtils.h"
+#include "GameFramework/PlayerController.h"
+#include "GameFramework/Pawn.h"
+#include "VHV.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SConstraintCanvas.h"
@@ -393,6 +398,7 @@ void UVHVDialogueWidget::ShowDialogue(const FDialogueData& InDialogue)
 
 void UVHVDialogueWidget::ShowConversation(const FDialogueConversation& InConversation, const FString& InStartNodeID)
 {
+    ClearWorldSpaceSpeechPresentation();
     CurrentDialogue = FDialogueData();
     CurrentConversation = InConversation;
     CurrentLineIndex = 0;
@@ -421,6 +427,7 @@ void UVHVDialogueWidget::ShowConversation(const FDialogueConversation& InConvers
 
 void UVHVDialogueWidget::HideDialogue()
 {
+    ClearWorldSpaceSpeechPresentation();
     SetPlayerThoughtPresentation(false);
     SetActivityChoicePresentation(false);
     CurrentConversation = FDialogueConversation();
@@ -558,9 +565,19 @@ void UVHVDialogueWidget::UpdateFromNode()
         && OwningUIManager
         && OwningUIManager->IsDialogueChoiceLearningActivity(CurrentConversation.ConversationID, CurrentNodeID));
 
-    const bool bIsThought = CurrentNode->NodeType == EVHVDialogueNodeType::Text
+    const bool bUseWorldSpaceSpeech = CurrentConversation.bUseWorldSpaceSpeechBubbles
+        && CurrentNode->NodeType == EVHVDialogueNodeType::Text
+        && CurrentNode->Presentation == EVHVDialoguePresentation::Spoken;
+    const bool bIsThought = !bUseWorldSpaceSpeech
+        && CurrentNode->NodeType == EVHVDialogueNodeType::Text
         && CurrentNode->Presentation == EVHVDialoguePresentation::Thought;
     SetPlayerThoughtPresentation(bIsThought, CurrentNode->Text);
+    const bool bPresentedOverSpeaker = bUseWorldSpaceSpeech
+        && SetWorldSpaceSpeechPresentation(*CurrentNode);
+    if (!bUseWorldSpaceSpeech)
+    {
+        ClearWorldSpaceSpeechPresentation();
+    }
 
     if (SpeakerNameText)
     {
@@ -630,6 +647,9 @@ void UVHVDialogueWidget::UpdateFromNode()
     UpdateNormalDialogueText(
         CurrentNode->SpeakerName.IsEmpty() ? FText::FromString(TEXT("Instructor")) : CurrentNode->SpeakerName,
         CurrentNode->Text);
+
+    bWorldSpaceSpeechPresentation = bPresentedOverSpeaker;
+    RefreshNormalPresentationVisibility();
 
     UpdateActivityChoicePresentation();
 }
@@ -740,12 +760,79 @@ void UVHVDialogueWidget::SetPlayerThoughtPresentation(const bool bEnabled, const
     RefreshNormalPresentationVisibility();
 }
 
+bool UVHVDialogueWidget::SetWorldSpaceSpeechPresentation(const FDialogueNode& Node)
+{
+    ClearWorldSpaceSpeechPresentation();
+
+    UVHVAmbientSpeechComponent* SpeechComponent = nullptr;
+    const FString SpeakerID = Node.GetEffectiveSpeakerID();
+    const bool bPlayerSpeaker = SpeakerID.Equals(TEXT("Player"), ESearchCase::IgnoreCase)
+        || (SpeakerID.IsEmpty() && Node.SpeakerName.ToString().Equals(TEXT("Player"), ESearchCase::IgnoreCase));
+    if (bPlayerSpeaker)
+    {
+        if (const APlayerController* PlayerController = GetOwningPlayer())
+        {
+            if (const APawn* PlayerPawn = PlayerController->GetPawn())
+            {
+                SpeechComponent = PlayerPawn->FindComponentByClass<UVHVAmbientSpeechComponent>();
+            }
+        }
+    }
+    else if (!SpeakerID.IsEmpty() && GetWorld())
+    {
+        AActor* ResolvedSpeaker = nullptr;
+        for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+        {
+            const UVHVQuestParticipantComponent* Participant =
+                It->FindComponentByClass<UVHVQuestParticipantComponent>();
+            if (!Participant || Participant->GetEffectiveParticipantID().ToString() != SpeakerID)
+            {
+                continue;
+            }
+            if (ResolvedSpeaker)
+            {
+                UE_LOG(LogVHV, Warning,
+                    TEXT("[VHVDialogue] World-space speaker '%s' is ambiguous; using the normal dialogue card."),
+                    *SpeakerID);
+                return false;
+            }
+            ResolvedSpeaker = *It;
+        }
+        if (ResolvedSpeaker)
+        {
+            SpeechComponent = ResolvedSpeaker->FindComponentByClass<UVHVAmbientSpeechComponent>();
+        }
+    }
+
+    if (!SpeechComponent || !SpeechComponent->ShowBubble(
+            Node.SpeakerName, Node.Text, EVHVAmbientSpeechType::Speech, true))
+    {
+        UE_LOG(LogVHV, Warning,
+            TEXT("[VHVDialogue] Could not resolve world-space bubble owner for node '%s' speaker '%s'; using the normal dialogue card."),
+            *Node.NodeID, *SpeakerID);
+        return false;
+    }
+
+    ActiveWorldSpaceSpeechComponent = SpeechComponent;
+    return true;
+}
+
+void UVHVDialogueWidget::ClearWorldSpaceSpeechPresentation(const bool bImmediate)
+{
+    if (UVHVAmbientSpeechComponent* SpeechComponent = ActiveWorldSpaceSpeechComponent.Get())
+    {
+        SpeechComponent->HideBubble(bImmediate);
+    }
+    ActiveWorldSpaceSpeechComponent.Reset();
+    bWorldSpaceSpeechPresentation = false;
+}
+
 void UVHVDialogueWidget::RefreshNormalPresentationVisibility()
 {
     if (NormalDialoguePresentation)
     {
         NormalDialoguePresentation->SetVisibility(
-            bActivityChoicePresentation || bPlayerThoughtPresentation
+            bActivityChoicePresentation || bPlayerThoughtPresentation || bWorldSpaceSpeechPresentation
                 ? EVisibility::Collapsed
                 : EVisibility::Visible);
     }

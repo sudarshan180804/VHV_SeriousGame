@@ -262,6 +262,7 @@ private:
     bool ExecuteActiveWorldAction();
     void ClearActiveWorldActionTracking();
     void DispatchNPCMoves(const TArray<FVHVQuestNPCMoveRequest>& Moves);
+    void FaceAdjustedRoutineChaiTowardPlayer();
     void TryStartMotivationInstructorWalk();
     void TryStageMotivationFinalDebriefInstructor();
     void ClearMotivationFinalDebriefInstructorWait();

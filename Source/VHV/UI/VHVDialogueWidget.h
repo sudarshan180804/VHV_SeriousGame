@@ -8,6 +8,7 @@
 #include "VHVDialogueWidget.generated.h"
 
 class UVHVUIManagerComponent;
+class UVHVAmbientSpeechComponent;
 class SBox;
 class SConstraintCanvas;
 class STextBlock;
@@ -69,6 +70,8 @@ protected:
     void ClearChoices();
     void SetActivityChoicePresentation(bool bEnabled);
     void SetPlayerThoughtPresentation(bool bEnabled, const FText& Text = FText::GetEmpty());
+    bool SetWorldSpaceSpeechPresentation(const FDialogueNode& Node);
+    void ClearWorldSpaceSpeechPresentation(bool bImmediate = true);
     void RefreshNormalPresentationVisibility();
     void UpdateNormalDialogueText(const FText& SpeakerName, const FText& Text);
     void RebuildActivityChoiceCards();
@@ -86,6 +89,7 @@ protected:
     TArray<TSharedPtr<SVHVChoiceCard>> ActivityChoiceCards;
     bool bActivityChoicePresentation = false;
     bool bPlayerThoughtPresentation = false;
+    bool bWorldSpaceSpeechPresentation = false;
     float ActivityEntranceElapsed = 0.0f;
 
     TSharedPtr<SBox> NormalDialoguePresentation;
@@ -118,4 +122,6 @@ protected:
 
     UPROPERTY()
     TObjectPtr<UVHVUIManagerComponent> OwningUIManager;
+
+    TWeakObjectPtr<UVHVAmbientSpeechComponent> ActiveWorldSpaceSpeechComponent;
 };

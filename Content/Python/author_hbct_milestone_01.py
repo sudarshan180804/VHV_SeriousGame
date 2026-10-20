@@ -1183,14 +1183,14 @@ def create_conversations():
     specs["DA_Conversation_HBCT_GoalSetting_RoadsidePractice"] = (
         "HBCT_GoalSetting_RoadsidePractice",
         [
-            text_node("GSRoad_01", "Villager", "You're helping people with their health goals, right?", "GSRoad_02", "VHV.Participant.GoalSetting.RoadVillager"),
+            text_node("GSRoad_01", "Villager", "You're helping people with their health goals, right?", "GSRoad_02", "VHV.Participant.GoalSetting.GoalSettingRoadVillager"),
             text_node("GSRoad_02", "Player", "I'm learning how to help people make their plans clearer.", "GSRoad_03"),
-            text_node("GSRoad_03", "Villager", "I've been telling myself I should exercise more.", "GSRoad_04", "VHV.Participant.GoalSetting.RoadVillager"),
-            text_node("GSRoad_04", "Villager", "But I'm not really sure what that should look like.", "GSRoad_05", "VHV.Participant.GoalSetting.RoadVillager"),
+            text_node("GSRoad_03", "Villager", "I've been telling myself I should exercise more.", "GSRoad_04", "VHV.Participant.GoalSetting.GoalSettingRoadVillager"),
+            text_node("GSRoad_04", "Villager", "But I'm not really sure what that should look like.", "GSRoad_05", "VHV.Participant.GoalSetting.GoalSettingRoadVillager"),
             learning_node("GSRoad_05", "VHV.Activity.HBCT.GoalSetting.FinalTransfer", "GSRoad_06", goal_topic),
-            text_node("GSRoad_06", "Villager", "That makes sense. I need something clearer than just saying 'exercise more.'", "GSRoad_07", "VHV.Participant.GoalSetting.RoadVillager"),
+            text_node("GSRoad_06", "Villager", "That makes sense. I need something clearer than just saying 'exercise more.'", "GSRoad_07", "VHV.Participant.GoalSetting.GoalSettingRoadVillager"),
             text_node("GSRoad_07", "Player", "Start with something specific and realistic that you can actually follow.", "GSRoad_08"),
-            text_node("GSRoad_08", "Villager", "I'll think about what would fit my week. Thanks.", speaker_tag="VHV.Participant.GoalSetting.RoadVillager"),
+            text_node("GSRoad_08", "Villager", "I'll think about what would fit my week. Thanks.", speaker_tag="VHV.Participant.GoalSetting.GoalSettingRoadVillager"),
         ])
     specs["DA_Conversation_HBCT_GoalSetting_FinalDebrief"] = (
         "HBCT_GoalSetting_FinalDebrief",
@@ -1343,11 +1343,11 @@ def create_conversations():
     specs["DA_Conversation_HBCT_RoleModel_Roadside"] = (
         "HBCT_RoleModel_Roadside",
         [
-            text_node("RMRoad_01", "Villager", "My mother wants to become more active once her knee feels better.", "RMRoad_02", "VHV.Participant.RoleModel.RoadVillager"),
-            text_node("RMRoad_02", "Villager", "I found a video of a competitive runner.", "RMRoad_03", "VHV.Participant.RoleModel.RoadVillager"),
-            text_node("RMRoad_03", "Villager", "Would that be a good example for her?", "RMRoad_Activity", "VHV.Participant.RoleModel.RoadVillager"),
+            text_node("RMRoad_01", "Villager", "My mother wants to become more active once her knee feels better.", "RMRoad_02", "VHV.Participant.RoleModel.RoleModelRoadVillager"),
+            text_node("RMRoad_02", "Villager", "I found a video of a competitive runner.", "RMRoad_03", "VHV.Participant.RoleModel.RoleModelRoadVillager"),
+            text_node("RMRoad_03", "Villager", "Would that be a good example for her?", "RMRoad_Activity", "VHV.Participant.RoleModel.RoleModelRoadVillager"),
             learning_node("RMRoad_Activity", "VHV.Activity.HBCT.RoleModel.FinalApplication", "RMRoad_04", role_topic),
-            text_node("RMRoad_04", "Villager", "That makes sense. She needs an example that feels possible for her.", speaker_tag="VHV.Participant.RoleModel.RoadVillager"),
+            text_node("RMRoad_04", "Villager", "That makes sense. She needs an example that feels possible for her.", speaker_tag="VHV.Participant.RoleModel.RoleModelRoadVillager"),
         ])
     specs["DA_Conversation_HBCT_RoleModel_FinalDebrief"] = (
         "HBCT_RoleModel_FinalDebrief",
@@ -1769,6 +1769,8 @@ def configure_arc(arc, level, conversations):
     goal_setting = [
         objective("O01_ReachHealthPost", "Meet the Instructor at the community health post", q.CONVERSATION,
                   participant_tag=tag("VHV.Participant.Instructor"),
+                  location_tag=tag("VHV.Location.HBCT.HealthPost"),
+                  ensure_participant_present_at_location=True,
                   conversation=conversations["DA_Conversation_HBCT_GoalSetting_Arrival"],
                   entry_node_id="GSArrival_01", auto_start=False),
         objective("O02_ObserveGoalConversation", "Approach the nearby VHV and observe how an intention becomes a goal", q.WORLD_ACTION,
@@ -1779,6 +1781,8 @@ def configure_arc(arc, level, conversations):
                   activity_tag=tag("VHV.Activity.HBCT.GoalSetting.GoalParts"), auto_start=True),
         objective("O04_LearnGoalSetting", "Talk to the Instructor about what goal setting means", q.CONVERSATION,
                   participant_tag=tag("VHV.Participant.Instructor"),
+                  location_tag=tag("VHV.Location.HBCT.HealthPost"),
+                  ensure_participant_present_at_location=True,
                   conversation=conversations["DA_Conversation_HBCT_GoalSetting_Lesson"],
                   entry_node_id="GSLesson_01", auto_start=False),
         objective("O05_ComparePatients", "Visit both nearby villagers and compare a person with a goal and one without", q.CUSTOM_EVENT,
@@ -1788,6 +1792,8 @@ def configure_arc(arc, level, conversations):
                       "VHV.Story.Counter.HBCT.GoalSetting.ComparisonObserved", 2)),
         objective("O06_ReflectOnDirection", "Talk to the Instructor about why goals matter", q.CONVERSATION,
                   participant_tag=tag("VHV.Participant.Instructor"),
+                  location_tag=tag("VHV.Location.HBCT.HealthPost"),
+                  ensure_participant_present_at_location=True,
                   conversation=conversations["DA_Conversation_HBCT_GoalSetting_ComparisonReflection"],
                   entry_node_id="GSCompare_01", auto_start=False),
         objective("O07_ObserveGoalMethods", "Visit both demonstration areas and observe two ways of setting goals", q.CUSTOM_EVENT,
@@ -1797,11 +1803,15 @@ def configure_arc(arc, level, conversations):
         objective("O08_IdentifyGoalMethods", "Talk to the Instructor about the two goal-setting methods", q.CONVERSATION,
                   "VHV.Story.Flag.HBCT.GoalSetting.MethodsLearned",
                   participant_tag=tag("VHV.Participant.Instructor"),
+                  location_tag=tag("VHV.Location.HBCT.HealthPost"),
+                  ensure_participant_present_at_location=True,
                   conversation=conversations["DA_Conversation_HBCT_GoalSetting_Methods"],
                   entry_node_id="GSMethods_01", auto_start=False),
         objective("O09_EvaluateGoals", "Meet the Instructor at the goal board and evaluate the example goals", q.CONVERSATION,
                   "VHV.Story.Flag.HBCT.GoalSetting.GoodGoalsLearned",
                   participant_tag=tag("VHV.Participant.Instructor"),
+                  location_tag=tag("VHV.Location.HBCT.GoalSetting.FinalInstructor"),
+                  ensure_participant_present_at_location=True,
                   conversation=conversations["DA_Conversation_HBCT_GoalSetting_GoodGoals"],
                   entry_node_id="GSGood_01", auto_start=False),
         objective("O10_ReturnToMali", "Visit Aunt Mali and check how reducing sugar is going", q.CONVERSATION,
@@ -1826,12 +1836,14 @@ def configure_arc(arc, level, conversations):
                   conversation=conversations["DA_Conversation_HBCT_GoalSetting_MaliReview"],
                   entry_node_id="GSMaliReview_01", auto_start=False),
         objective("O15B_RoadsidePractice", "Talk to the villager on the road", q.CONVERSATION,
-                  participant_tag=tag("VHV.Participant.GoalSetting.RoadVillager"),
+                  participant_tag=tag("VHV.Participant.GoalSetting.GoalSettingRoadVillager"),
                   conversation=conversations["DA_Conversation_HBCT_GoalSetting_RoadsidePractice"],
                   entry_node_id="GSRoad_01", auto_start=False),
         objective("O16_FinalDebrief", "Report back to the Instructor", q.CONVERSATION,
                   "VHV.Story.Flag.HBCT.GoalSetting.Completed",
                   participant_tag=tag("VHV.Participant.Instructor"),
+                  location_tag=tag("VHV.Location.HBCT.GoalSetting.FinalInstructor"),
+                  ensure_participant_present_at_location=True,
                   conversation=conversations["DA_Conversation_HBCT_GoalSetting_FinalDebrief"],
                   entry_node_id="GSFinal_01", auto_start=False,
                   completion_npc_moves=[
@@ -1886,7 +1898,7 @@ def configure_arc(arc, level, conversations):
                   activity_tag=tag("VHV.Activity.HBCT.RoleModel.ReconstructProgression"), auto_start=True),
         objective("O11_PrepareDemonstration", "Prepare Somchai's role-model session", q.CONVERSATION,
                   participant_tag=tag("VHV.Participant.Instructor"),
-                  location_tag=tag("VHV.Location.HBCT.ExercisePark"),
+                  location_tag=tag("VHV.Location.HBCT.RoleModel.RMInstructorPrepare"),
                   ensure_participant_present_at_location=True,
                   conversation=conversations["DA_Conversation_HBCT_RoleModel_Prepare"],
                   entry_node_id="RMPrepare_01", auto_start=False),
@@ -1924,18 +1936,19 @@ def configure_arc(arc, level, conversations):
                       ),
                   ]),
         objective("O15_FinalApplication", "Help another villager choose a useful model", q.CONVERSATION,
-                  participant_tag=tag("VHV.Participant.RoleModel.RoadVillager"),
+                  participant_tag=tag("VHV.Participant.RoleModel.RoleModelRoadVillager"),
                   conversation=conversations["DA_Conversation_HBCT_RoleModel_Roadside"],
                   entry_node_id="RMRoad_01", auto_start=False),
         objective("O16_FinalDebrief", "Talk to the Instructor", q.CONVERSATION,
                   "VHV.Story.Flag.HBCT.RoleModel.Completed",
                   participant_tag=tag("VHV.Participant.Instructor"),
-                  location_tag=tag("VHV.Location.HBCT.ExercisePark"),
+                  location_tag=tag("VHV.Location.HBCT.RoleModel.RMInstructorFinalDebrief"),
                   ensure_participant_present_at_location=True,
                   conversation=conversations["DA_Conversation_HBCT_RoleModel_FinalDebrief"],
                   entry_node_id="RMFinal_01", auto_start=False),
     ]
     for tracking_quest_id, tracking_objectives in (
+            ("Q_HBCT_00_INTRO", intro),
             ("Q_HBCT_01_MOTIVATION", motivation),
             ("Q_HBCT_02_GOAL_SETTING", goal_setting),
             ("Q_HBCT_03_ROLE_MODEL", role_model)):
@@ -2280,6 +2293,10 @@ def configure_map(ambient_assets, conversations):
 
     instructor_start = instructor.get_actor_location()
     configure_semantic_npc_location(
+        "HBCT_Location_IntroInstructor",
+        (instructor_start.x, instructor_start.y, instructor_start.z),
+        "VHV.Location.HBCT.Intro.Instructor")
+    configure_semantic_npc_location(
         "HBCT_Location_VillageEntrance",
         (instructor_start.x, instructor_start.y, instructor_start.z),
         "VHV.Location.HBCT.VillageEntrance")
@@ -2395,7 +2412,7 @@ def configure_map(ambient_assets, conversations):
         mali_location.z)
     road_villager = spawn_npc(
         npc_class, "HBCT_GoalSetting_RoadVillager", roadside_location, -135.0,
-        "VHV.Participant.GoalSetting.RoadVillager", preserve_existing_transform=True)
+        "VHV.Participant.GoalSetting.GoalSettingRoadVillager", preserve_existing_transform=True)
     road_interaction = road_villager.get_npc_interaction_component()
     road_interaction.modify()
     road_interaction.set_editor_properties({
@@ -2628,6 +2645,20 @@ def configure_map(ambient_assets, conversations):
         "HBCT_Location_RoleModel_SomchaiIntro", (0.0, 4100.0, 100.0),
         "VHV.Location.HBCT.RoleModel.SomchaiIntro")
     set_actor_folder(find_actor("HBCT_Location_RoleModel_SomchaiIntro"), role_root + "/Somchai")
+    instructor_staging = (
+        ("HBCT_Location_RoleModel_InstructorPrepare",
+         (758.0, 19784.0, 195.0), -90.0,
+         "VHV.Location.HBCT.RoleModel.RMInstructorPrepare"),
+        ("HBCT_Location_RoleModel_InstructorFinalDebrief",
+         (-3981.0, 19167.0, 219.0), -13.4,
+         "VHV.Location.HBCT.RoleModel.RMInstructorFinalDebrief"),
+    )
+    for label, location, yaw, location_tag in instructor_staging:
+        anchor = configure_semantic_npc_location(label, location, location_tag)
+        anchor.set_actor_location(unreal.Vector(*location), False, False)
+        anchor.set_actor_rotation(
+            unreal.Rotator(pitch=0.0, yaw=yaw, roll=0.0), False)
+        set_actor_folder(anchor, role_root + "/Instructor")
     athlete = set_actor_folder(spawn_npc(
         npc_class, "HBCT_RoleModel_YoungAthlete", (8750.0, -1800.0, 100.0), 180.0,
         "VHV.Participant.RoleModel.YoungAthlete", preserve_existing_transform=True), role_root + "/Candidates")
@@ -2745,7 +2776,7 @@ def configure_map(ambient_assets, conversations):
 
     road_villager_role = set_actor_folder(spawn_npc(
         npc_class, "HBCT_RoleModel_RoadVillager", (12700.0, -1400.0, 100.0), 180.0,
-        "VHV.Participant.RoleModel.RoadVillager", preserve_existing_transform=True),
+        "VHV.Participant.RoleModel.RoleModelRoadVillager", preserve_existing_transform=True),
         role_root + "/FinalApplication")
     road_role_interaction = road_villager_role.get_npc_interaction_component()
     road_role_interaction.modify()
@@ -3044,10 +3075,10 @@ def validate_map_and_defaults(level, arc):
         "VHV.Participant.UnclePrasert",
         "VHV.Participant.AuntSaeng",
         "VHV.Participant.AuntMali",
-        "VHV.Participant.GoalSetting.RoadVillager",
+        "VHV.Participant.GoalSetting.GoalSettingRoadVillager",
         "VHV.Participant.UncleSomchai",
         "VHV.Participant.RoleModel.YoungAthlete",
-        "VHV.Participant.RoleModel.RoadVillager",
+        "VHV.Participant.RoleModel.RoleModelRoadVillager",
     }
     if set(participant_tags) != expected_participants:
         raise RuntimeError("Unexpected production quest participant set: {}".format(participant_tags))
@@ -3720,7 +3751,7 @@ def validate_content_integrity(level, conversations, arc):
         roadside_objective.get_editor_property("participant_tag")))
     if (roadside_objective.get_editor_property("objective_type")
             != unreal.VHVQuestObjectiveType.CONVERSATION
-            or roadside_participant != "VHV.Participant.GoalSetting.RoadVillager"
+            or roadside_participant != "VHV.Participant.GoalSetting.GoalSettingRoadVillager"
             or str(roadside_objective.get_editor_property("entry_node_id")) != "GSRoad_01"
             or roadside_objective.get_editor_property("auto_start")):
         raise RuntimeError("Roadside practice objective must wait for interaction with its villager")
@@ -3827,6 +3858,17 @@ def validate_content_integrity(level, conversations, arc):
                 or objective_data.get_editor_property("auto_start")):
             raise RuntimeError("Quest 3 Instructor objective {} must wait for normal Talk interaction".format(
                 objective_id))
+    expected_instructor_locations = {
+        "O11_PrepareDemonstration": "VHV.Location.HBCT.RoleModel.RMInstructorPrepare",
+        "O16_FinalDebrief": "VHV.Location.HBCT.RoleModel.RMInstructorFinalDebrief",
+    }
+    for objective_id, expected_location in expected_instructor_locations.items():
+        objective_data = role_objectives[objective_id]
+        actual_location = str(unreal.GameplayTagLibrary.get_tag_name(
+            objective_data.get_editor_property("location_tag")))
+        if (actual_location != expected_location
+                or not objective_data.get_editor_property("ensure_participant_present_at_location")):
+            raise RuntimeError("Quest 3 Instructor objective {} has invalid staging".format(objective_id))
     for objective_id, counter_value in (
             ("O02_DiscoverRoleModels", 4), ("O06_InspectCandidates", 3),
             ("O09_SeeChangeOverTime", 5)):

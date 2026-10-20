@@ -23,6 +23,7 @@
 #include "EngineUtils.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/PlayerController.h"
 #include "NavigationPath.h"
 #include "NavigationSystem.h"
 #include "TimerManager.h"
@@ -250,6 +251,55 @@ bool UVHVQuestSubsystem::ResolveCurrentObjectiveTrackingTarget(
     if (!Objective->bEnableLocationTracking)
     {
         return false;
+    }
+
+    // The Prologue's first meeting and market debrief are both conversations
+    // with the persistent Instructor.  Their authored tracking tag retains
+    // the shared semantic identity ("Instructor"), but that identity is not
+    // a guaranteed runtime location-volume registry entry in Lvl_Village_Main.
+    // Resolve the already-authored participant directly so the beacon follows
+    // the Instructor's current placed position without moving or duplicating
+    // the NPC.  Keep this narrowly scoped: all other Prologue and quest
+    // objectives continue through the normal semantic-location resolver.
+    static const FName IntroQuestID(TEXT("Q_HBCT_00_INTRO"));
+    static const FName MeetInstructorObjectiveID(TEXT("O01_MeetInstructor"));
+    static const FName ReportToInstructorObjectiveID(TEXT("O04_ReportToInstructor"));
+    static const FName PrologueInstructorParticipantID(TEXT("Instructor"));
+    if (RuntimeState.ActiveQuestID == IntroQuestID
+        && (Objective->ObjectiveID == MeetInstructorObjectiveID
+            || Objective->ObjectiveID == ReportToInstructorObjectiveID))
+    {
+        AVHVNPCCharacter* Instructor = nullptr;
+        for (TActorIterator<AVHVNPCCharacter> It(World); It; ++It)
+        {
+            const UVHVQuestParticipantComponent* Participant = It->GetQuestParticipantComponent();
+            if (!Participant || Participant->GetEffectiveParticipantID() != PrologueInstructorParticipantID)
+            {
+                continue;
+            }
+            if (Instructor)
+            {
+                UE_LOG(LogVHV, Error,
+                    TEXT("[VHVTracking] Prologue Instructor target is ambiguous: multiple participants use '%s'."),
+                    *PrologueInstructorParticipantID.ToString());
+                return false;
+            }
+            Instructor = *It;
+        }
+        if (!Instructor)
+        {
+            UE_LOG(LogVHV, Warning,
+                TEXT("[VHVTracking] Prologue Instructor participant '%s' is unavailable for objective '%s'."),
+                *PrologueInstructorParticipantID.ToString(), *Objective->ObjectiveID.ToString());
+            return false;
+        }
+
+        OutQuestID = RuntimeState.ActiveQuestID;
+        OutObjectiveID = Objective->ObjectiveID;
+        OutLocationID = PrologueInstructorParticipantID;
+        OutWorldLocation = Instructor->GetActorLocation();
+        OutTargetActor = Instructor;
+        return true;
     }
 
     // Q1's final debrief is staged from an editable TargetPoint at runtime, so its
@@ -1477,11 +1527,42 @@ void UVHVQuestSubsystem::HandleTextbookActivityCompleted()
 
 void UVHVQuestSubsystem::HandleStoryFlagChanged(const FName FlagID, const bool bValue)
 {
-    (void)bValue;
     const FVHVQuestObjectiveDefinition* Objective = GetActiveObjective();
     const bool bTrackingTargetMayHaveChanged = Objective
         && DoesTrackingDestinationReferenceState(*Objective, FlagID);
-    TryStartActiveObjectiveNPCMoveSequenceFromConditions();
+    static const FName SelfMonitoringQuestID(TEXT("Q_HBCT_05_SELF_MONITORING"));
+    static const FName AdjustedRoutineObjectiveID(TEXT("O14_PracticeAdjustedRoutine"));
+    static const FName ConversationCompleteFlag(TEXT("SMAdjustedWalkConversationComplete"));
+    static const FName RouteCompleteFlag(TEXT("SMAdjustedWalkRouteComplete"));
+    static const FName RecordedFlag(TEXT("SMAdjustedWalkRecordedAccurately"));
+    static const FName ReflectionCompleteFlag(TEXT("SMAdjustedRoutineReflectionComplete"));
+    const bool bAdjustedRoutineObjective = Objective
+        && RuntimeState.ActiveQuestID == SelfMonitoringQuestID
+        && Objective->ObjectiveID == AdjustedRoutineObjectiveID;
+    const bool bAdjustedRoutinePhaseChanged = bAdjustedRoutineObjective
+        && (FlagID == ConversationCompleteFlag
+            || FlagID == RouteCompleteFlag
+            || FlagID == RecordedFlag
+            || FlagID == ReflectionCompleteFlag);
+
+    // This flag is applied immediately before the final intro bubble closes.
+    // Defer route dispatch one frame so Chai cannot walk away under that bubble.
+    if (bAdjustedRoutineObjective && bValue && FlagID == ConversationCompleteFlag && GetWorld())
+    {
+        const uint32 ExpectedActivationSerial = ObjectiveActivationSerial;
+        GetWorld()->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(
+            this, [this, ExpectedActivationSerial]()
+            {
+                if (ObjectiveActivationSerial == ExpectedActivationSerial)
+                {
+                    TryStartActiveObjectiveNPCMoveSequenceFromConditions();
+                }
+            }));
+    }
+    else
+    {
+        TryStartActiveObjectiveNPCMoveSequenceFromConditions();
+    }
     if (!TryCompleteCurrentObjectiveFromStoryState())
     {
         if (bTrackingTargetMayHaveChanged && Objective)
@@ -1490,6 +1571,10 @@ void UVHVQuestSubsystem::HandleStoryFlagChanged(const FName FlagID, const bool b
             OnQuestUpdated.Broadcast(RuntimeState.ActiveQuestID);
         }
         ReevaluateWaitingObjective();
+    }
+    if (bAdjustedRoutinePhaseChanged)
+    {
+        OnQuestUpdated.Broadcast(RuntimeState.ActiveQuestID);
     }
 }
 
@@ -2150,8 +2235,9 @@ bool UVHVQuestSubsystem::EnsureParticipantPresentAtLocation(
     if (ParticipantActor)
     {
         UE_LOG(LogVHV, Log,
-            TEXT("[VHVQuest] Required participant '%s' resolved from participant registry."),
-            *ParticipantID.ToString());
+            TEXT("[VHVQuest] Required participant '%s' resolved from registry as actor '%s' at %s."),
+            *ParticipantID.ToString(), *GetNameSafe(ParticipantActor),
+            *ParticipantActor->GetActorLocation().ToCompactString());
     }
 
     // Registry misses are exceptional. Search VHV NPCs exactly once for this
@@ -2190,8 +2276,9 @@ bool UVHVQuestSubsystem::EnsureParticipantPresentAtLocation(
             }
             ParticipantActor = WorldMatch;
             UE_LOG(LogVHV, Log,
-                TEXT("[VHVQuest] Required participant '%s' missing from registry; recovered existing world actor and re-registered it."),
-                *ParticipantID.ToString());
+                TEXT("[VHVQuest] Required participant '%s' missing from registry; recovered actor '%s' at %s and re-registered it."),
+                *ParticipantID.ToString(), *GetNameSafe(ParticipantActor),
+                *ParticipantActor->GetActorLocation().ToCompactString());
         }
     }
 
@@ -2305,14 +2392,18 @@ bool UVHVQuestSubsystem::EnsureParticipantPresentAtLocation(
     if (bInside)
     {
         UE_LOG(LogVHV, Log,
-            TEXT("[VHVQuest] Required participant '%s' already present for objective '%s'."),
-            *ParticipantID.ToString(), *ObjectiveID.ToString());
+            TEXT("[VHVQuest] Required participant '%s' actor '%s' already present at %s for objective '%s'."),
+            *ParticipantID.ToString(), *GetNameSafe(ParticipantActor),
+            *ParticipantActor->GetActorLocation().ToCompactString(), *ObjectiveID.ToString());
         return true;
     }
 
     UE_LOG(LogVHV, Log,
-        TEXT("[VHVQuest] Relocating required participant '%s' to '%s' before exposing objective '%s'."),
-        *ParticipantID.ToString(), *LocationID.ToString(), *ObjectiveID.ToString());
+        TEXT("[VHVQuest] Relocating participant '%s' actor '%s' from %s to anchor '%s' actor '%s' at %s before exposing objective '%s'."),
+        *ParticipantID.ToString(), *GetNameSafe(ParticipantActor),
+        *ParticipantActor->GetActorLocation().ToCompactString(), *LocationID.ToString(),
+        *GetNameSafe(RequiredLocation), *RequiredLocation->GetActorLocation().ToCompactString(),
+        *ObjectiveID.ToString());
 
     // ObjectiveActivationSerial has already advanced and objective-owned delegates were
     // detached by ActivateCurrentObjective. Cancelling here therefore cannot let the old
@@ -2336,8 +2427,10 @@ bool UVHVQuestSubsystem::EnsureParticipantPresentAtLocation(
     {
         ParticipantActor->ForceNetUpdate();
         UE_LOG(LogVHV, Log,
-            TEXT("[VHVQuest] Relocated required participant '%s' to '%s' before exposing objective."),
-            *ParticipantID.ToString(), *LocationID.ToString());
+            TEXT("[VHVQuest] Relocated participant '%s' actor '%s' to %s (rotation %s) before exposing objective."),
+            *ParticipantID.ToString(), *GetNameSafe(ParticipantActor),
+            *ParticipantActor->GetActorLocation().ToCompactString(),
+            *ParticipantActor->GetActorRotation().ToCompactString());
     }
     else
     {
@@ -2424,6 +2517,7 @@ void UVHVQuestSubsystem::ContinueActiveObjectiveAfterNPCMoves()
 
     TryStartMotivationInstructorWalk();
     TryStageMotivationFinalDebriefInstructor();
+    FaceAdjustedRoutineChaiTowardPlayer();
 
     if (Objective->ObjectiveType == EVHVQuestObjectiveType::NPCAction)
     {
@@ -3119,13 +3213,59 @@ void UVHVQuestSubsystem::FinishActiveObjectiveNPCMoveStage()
     UE_LOG(LogVHV, Log, TEXT("[VHVQuest] Quest '%s' objective '%s' completed all NPC movement stages."),
         *ActiveObjectiveNPCMoveQuestID.ToString(), *ActiveObjectiveNPCMoveObjectiveID.ToString());
     const bool bCompleteAfterStages = Objective && Objective->bCompleteAfterNPCMoveStages;
+    const bool bFinishedAdjustedRoutineRoute = Objective
+        && RuntimeState.ActiveQuestID == FName(TEXT("Q_HBCT_05_SELF_MONITORING"))
+        && Objective->ObjectiveID == FName(TEXT("O14_PracticeAdjustedRoutine"));
     ClearActiveObjectiveNPCMoveTracking(false);
+    if (bFinishedAdjustedRoutineRoute && StoryStateSubsystem)
+    {
+        StoryStateSubsystem->SetFlag(TEXT("SMAdjustedWalkRouteComplete"));
+        FaceAdjustedRoutineChaiTowardPlayer();
+        UE_LOG(LogVHV, Log,
+            TEXT("[VHVQuest] O14 adjusted walk reached its endpoint; recording and reflection remain required."));
+    }
     if (bCompleteAfterStages)
     {
         CompleteCurrentObjective();
         return;
     }
     ContinueActiveObjectiveAfterNPCMoves();
+}
+
+void UVHVQuestSubsystem::FaceAdjustedRoutineChaiTowardPlayer()
+{
+    static const FName SelfMonitoringQuestID(TEXT("Q_HBCT_05_SELF_MONITORING"));
+    static const FName AdjustedRoutineObjectiveID(TEXT("O14_PracticeAdjustedRoutine"));
+    static const FName RouteCompleteFlag(TEXT("SMAdjustedWalkRouteComplete"));
+    const FVHVQuestObjectiveDefinition* Objective = GetActiveObjective();
+    if (!Objective
+        || RuntimeState.ActiveQuestID != SelfMonitoringQuestID
+        || Objective->ObjectiveID != AdjustedRoutineObjectiveID
+        || !StoryStateSubsystem
+        || !StoryStateSubsystem->HasFlag(RouteCompleteFlag))
+    {
+        return;
+    }
+
+    UVHVNPCQuestCommandComponent* ChaiCommand = FindNPCCommandComponent(GetWorld(), TEXT("UncleChai"));
+    AActor* Chai = ChaiCommand ? ChaiCommand->GetOwner() : nullptr;
+    APlayerController* PlayerController = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
+    APawn* PlayerPawn = PlayerController ? PlayerController->GetPawn() : nullptr;
+    if (!Chai || !PlayerPawn)
+    {
+        return;
+    }
+
+    const FVector ToPlayer = PlayerPawn->GetActorLocation() - Chai->GetActorLocation();
+    if (ToPlayer.IsNearlyZero())
+    {
+        return;
+    }
+    FRotator FacingRotation = ToPlayer.Rotation();
+    FacingRotation.Pitch = 0.0f;
+    FacingRotation.Roll = 0.0f;
+    Chai->SetActorRotation(FacingRotation, ETeleportType::TeleportPhysics);
+    Chai->ForceNetUpdate();
 }
 
 void UVHVQuestSubsystem::FailActiveObjectiveNPCMoveSequence(
@@ -3410,6 +3550,28 @@ bool UVHVQuestSubsystem::BuildJournalEntry(const FVHVQuestDefinition& Definition
     {
         const FVHVQuestObjectiveDefinition& Objective = Definition.Objectives[State.CurrentObjectiveIndex];
         OutEntry.CurrentObjectiveText = Objective.ObjectiveText;
+        static const FName SelfMonitoringQuestID(TEXT("Q_HBCT_05_SELF_MONITORING"));
+        static const FName AdjustedRoutineObjectiveID(TEXT("O14_PracticeAdjustedRoutine"));
+        if (Definition.QuestID == SelfMonitoringQuestID
+            && Objective.ObjectiveID == AdjustedRoutineObjectiveID
+            && StoryStateSubsystem)
+        {
+            if (StoryStateSubsystem->HasFlag(TEXT("SMAdjustedWalkRecordedAccurately")))
+            {
+                OutEntry.CurrentObjectiveText = NSLOCTEXT(
+                    "VHVQuest", "AdjustedRoutineReflect", "Review the result with Uncle Chai.");
+            }
+            else if (StoryStateSubsystem->HasFlag(TEXT("SMAdjustedWalkRouteComplete")))
+            {
+                OutEntry.CurrentObjectiveText = NSLOCTEXT(
+                    "VHVQuest", "AdjustedRoutineRecord", "Record what actually happened during Uncle Chai's shorter walk.");
+            }
+            else if (StoryStateSubsystem->HasFlag(TEXT("SMAdjustedWalkConversationComplete")))
+            {
+                OutEntry.CurrentObjectiveText = NSLOCTEXT(
+                    "VHVQuest", "AdjustedRoutineWalk", "Walk with Uncle Chai and observe his adjusted routine.");
+            }
+        }
         if (!Objective.TrackingDestinations.IsEmpty())
         {
             OutEntry.CurrentObjectiveText = FText::Format(

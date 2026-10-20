@@ -704,6 +704,7 @@ def configure_arc(arc, conversations):
                 "O11_OneMonthLater", "Return to Uncle Chai", q.CONVERSATION,
                 activation_stinger=hbct.major_stinger("", "ONE MONTH LATER", "", 1.8),
                 participant_tag=tag("VHV.Participant.UncleChai"),
+                location_tag=tag("VHV.Location.HBCT.SocialSupport.SSOneMonthLater"),
                 conversation=conversations["DA_Conversation_HBCT_SocialSupport_OneMonthLater"],
                 entry_node_id="SSMonth_01", auto_start=False,
                 ensure_participant_present_at_location=True,
@@ -1128,8 +1129,11 @@ def configure_map(ambient_assets):
                   track_as_objective=True)
     spawn_trigger("HBCT_SS_Trigger_BackupWife", (14800, 1800, 100),
                   "VHV.Location.HBCT.SocialSupport.SSBackupWife", "O10_FindBackupSupport")
-    spawn_trigger("HBCT_SS_Trigger_OneMonthLater", (17200, 1800, 100),
-                  "VHV.Location.HBCT.SocialSupport.SSOneMonthLater", "O11_OneMonthLater")
+    one_month_later = spawn_trigger(
+        "HBCT_SS_Trigger_OneMonthLater", (-7023.0, 19303.0, 196.0),
+        "VHV.Location.HBCT.SocialSupport.SSOneMonthLater", "O11_OneMonthLater")
+    one_month_later.set_actor_rotation(
+        unreal.Rotator(pitch=0.0, yaw=0.0, roll=0.0), False)
     spawn_trigger("HBCT_SS_Trigger_FinalDebrief", (18200, 1800, 100),
                   "VHV.Location.HBCT.SocialSupport.SSFinalDebrief", "O13_FinalDebrief")
 

@@ -1,7 +1,8 @@
 """Idempotent production authoring for the central objective-location tracker.
 
-Owns only IA_LocateObjective, its X mapping, the beam material, the player
-controller action reference, and tracking metadata on Quest 1-6 objectives.
+Owns only IA_LocateObjective, its X mapping, the player controller action
+reference, and tracking metadata on the prologue plus Quest 1-6 objectives.
+Guidance visuals are owned by author_navigation_guidance.py.
 """
 
 import traceback
@@ -13,12 +14,19 @@ ARC_PATH = "/Game/VHV_Stuff/HBCT/Quests/DA_QuestArc_HBCT"
 INPUT_ACTION_PATH = "/Game/Input/Actions/IA_LocateObjective"
 INPUT_CONTEXT_PATH = "/Game/Input/IMC_Default"
 PLAYER_CONTROLLER_PATH = "/Game/ThirdPerson/Blueprints/BP_ThirdPersonPlayerController"
-MATERIAL_DIR = "/Game/VHV_Stuff/UI/Tracking"
-MATERIAL_PATH = MATERIAL_DIR + "/M_VHV_ObjectiveTrackingBeam"
 MAP_PATH = "/Game/VHV_Stuff/Maps/Lvl_Village_Blockout"
+# The prologue runs in the production village map.  Keep its semantic location
+# anchor there; MAP_PATH remains the authoring map for the later quest anchors.
+PROLOGUE_MAP_PATH = "/Game/VHV_Stuff/Maps/Lvl_Village_Main"
 
 
 TRACKING_LOCATIONS = {
+    "Q_HBCT_00_INTRO": {
+        "O01_MeetInstructor": "VHV.Location.HBCT.Intro.Instructor",
+        "O02_ReachMarket": "VHV.Location.HBCT.Market",
+        "O03_ObserveMarket": "VHV.Location.HBCT.Market",
+        "O04_ReportToInstructor": "VHV.Location.HBCT.Intro.Instructor",
+    },
     "Q_HBCT_01_MOTIVATION": {
         "O01_ReachPrasertHouse": "VHV.Location.HBCT.PrasertHouse",
         "O02_ObservePrasert": "VHV.Location.HBCT.PrasertHouse",
@@ -39,7 +47,7 @@ TRACKING_LOCATIONS = {
         "O06_ReflectOnDirection": "VHV.Location.HBCT.HealthPost",
         "O07_ObserveGoalMethods": "VHV.Location.HBCT.GoalSetting.SelfSet",
         "O08_IdentifyGoalMethods": "VHV.Location.HBCT.HealthPost",
-        "O09_EvaluateGoals": "VHV.Location.HBCT.GoalSetting.GoodGoalBoard",
+        "O09_EvaluateGoals": "VHV.Location.HBCT.GoalSetting.FinalInstructor",
         "O10_ReturnToMali": "VHV.Location.HBCT.GoalSetting.MaliCheckIn",
         "O15_ReviewGoalPlan": "VHV.Location.HBCT.GoalSetting.MaliPlanReview",
         "O15B_RoadsidePractice": "VHV.Location.HBCT.GoalSetting.RoadsidePractice",
@@ -52,11 +60,11 @@ TRACKING_LOCATIONS = {
         "O04_MeetSomchai": "VHV.Location.HBCT.RoleModel.SomchaiIntro",
         "O06_InspectCandidates": "VHV.Location.HBCT.RoleModel.AthleteCandidate",
         "O09_SeeChangeOverTime": "VHV.Location.HBCT.RoleModel.Timeline.Before",
-        "O11_PrepareDemonstration": "VHV.Location.HBCT.ExercisePark",
+        "O11_PrepareDemonstration": "VHV.Location.HBCT.RoleModel.RMInstructorPrepare",
         "O12_ObserveSaeng": "VHV.Location.HBCT.RoleModel.SaengDemo",
         "O13_SupportImitation": "VHV.Location.HBCT.RoleModel.SomchaiDemo",
         "O14_PracticeTogether": "VHV.Location.HBCT.RoleModel.SaengDemo",
-        "O16_FinalDebrief": "VHV.Location.HBCT.ExercisePark",
+        "O16_FinalDebrief": "VHV.Location.HBCT.RoleModel.RMInstructorFinalDebrief",
     },
     "Q_HBCT_04_SOCIAL_SUPPORT": {
         "O01_ObserveVillageSupport": "VHV.Location.HBCT.SocialSupport.SSMealScene",
@@ -200,11 +208,6 @@ MISSING_LOCATION_ANCHORS = {
 }
 
 
-def ensure_directory(path):
-    if not unreal.EditorAssetLibrary.does_directory_exist(path):
-        unreal.EditorAssetLibrary.make_directory(path)
-
-
 def save(asset):
     if not unreal.EditorAssetLibrary.save_loaded_asset(asset, only_if_is_dirty=False):
         raise RuntimeError("Could not save {}".format(asset.get_path_name()))
@@ -268,37 +271,6 @@ def configure_input(action):
     controller_cdo.modify()
     controller_cdo.set_editor_property("locate_objective_action", action)
     save(controller_bp)
-
-
-def load_or_create_beam_material():
-    ensure_directory(MATERIAL_DIR)
-    material = unreal.EditorAssetLibrary.load_asset(MATERIAL_PATH)
-    if not material:
-        material = unreal.AssetToolsHelpers.get_asset_tools().create_asset(
-            "M_VHV_ObjectiveTrackingBeam", MATERIAL_DIR,
-            unreal.Material, unreal.MaterialFactoryNew())
-    if not material:
-        raise RuntimeError("Could not create objective tracking beam material")
-
-    material.modify()
-    unreal.MaterialEditingLibrary.delete_all_material_expressions(material)
-    material.set_editor_property("blend_mode", unreal.BlendMode.BLEND_TRANSLUCENT)
-    material.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_UNLIT)
-    material.set_editor_property("two_sided", True)
-
-    color = unreal.MaterialEditingLibrary.create_material_expression(
-        material, unreal.MaterialExpressionConstant3Vector, -260, -40)
-    color.set_editor_property("constant", unreal.LinearColor(0.02, 4.0, 8.0, 1.0))
-    opacity = unreal.MaterialEditingLibrary.create_material_expression(
-        material, unreal.MaterialExpressionConstant, -260, 100)
-    opacity.set_editor_property("r", 0.42)
-    unreal.MaterialEditingLibrary.connect_material_property(
-        color, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
-    unreal.MaterialEditingLibrary.connect_material_property(
-        opacity, "", unreal.MaterialProperty.MP_OPACITY)
-    unreal.MaterialEditingLibrary.recompile_material(material)
-    save(material)
-    return material
 
 
 def apply_tracking_metadata_to_objectives(quest_id, objectives):
@@ -458,6 +430,59 @@ def ensure_quest12_tracking_anchors():
     unreal.log("{} Quest 1/2 tracking anchors and semantic identities are ready.".format(LOG))
 
 
+def ensure_prologue_tracking_anchor():
+    """Keep the prologue's talk destinations in the shared location resolver."""
+    if not unreal.EditorLoadingAndSavingUtils.load_map(PROLOGUE_MAP_PATH):
+        raise RuntimeError("Could not load {}".format(PROLOGUE_MAP_PATH))
+    actor_subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+    by_label = {actor.get_actor_label(): actor
+                for actor in actor_subsystem.get_all_level_actors()}
+    instructor = by_label.get("HBCT_Intro_Instructor")
+    if not instructor:
+        raise RuntimeError("Missing HBCT_Intro_Instructor for prologue tracking")
+
+    anchor = by_label.get("HBCT_Location_IntroInstructor")
+    if anchor and not isinstance(anchor, unreal.VHVQuestLocationVolume):
+        raise RuntimeError("HBCT_Location_IntroInstructor is not a semantic location volume")
+    changed = False
+    if not anchor:
+        anchor = actor_subsystem.spawn_actor_from_class(
+            unreal.VHVQuestLocationVolume,
+            instructor.get_actor_location(), instructor.get_actor_rotation())
+        if not anchor:
+            raise RuntimeError("Could not create prologue Instructor tracking anchor")
+        anchor.set_actor_label("HBCT_Location_IntroInstructor")
+        anchor.set_folder_path("01_Prologue/Locations")
+        anchor.get_editor_property("box_component").set_box_extent(
+            unreal.Vector(300.0, 300.0, 220.0), True)
+        changed = True
+
+    desired_tag = gameplay_tag("VHV.Location.HBCT.Intro.Instructor")
+    if str(anchor.get_effective_location_id()) != "Instructor":
+        anchor.modify()
+        anchor.set_editor_property("location_tag", desired_tag)
+        changed = True
+    anchor.set_editor_properties({
+        "enabled": False,
+        "trigger_world_action": False,
+        "activate_current_objective": False,
+        "required_active_quest_id": "",
+        "required_active_objective_id": "",
+    })
+    anchor_location = anchor.get_actor_location()
+    instructor_location = instructor.get_actor_location()
+    delta_x = anchor_location.x - instructor_location.x
+    delta_y = anchor_location.y - instructor_location.y
+    delta_z = anchor_location.z - instructor_location.z
+    if delta_x * delta_x + delta_y * delta_y + delta_z * delta_z > 1.0:
+        anchor.set_actor_location(instructor_location, False, False)
+        anchor.set_actor_rotation(instructor.get_actor_rotation(), False)
+        changed = True
+    if changed and not unreal.EditorLevelLibrary.save_current_level():
+        raise RuntimeError("Could not save {}".format(PROLOGUE_MAP_PATH))
+    unreal.log("{} Prologue Instructor tracking anchor is ready.".format(LOG))
+
+
 def ensure_missing_location_anchors():
     if not unreal.EditorLoadingAndSavingUtils.load_map(MAP_PATH):
         raise RuntimeError("Could not load {}".format(MAP_PATH))
@@ -571,14 +596,14 @@ def ensure_role_model_completion_flags():
 def run():
     action = load_or_create_input_action()
     configure_input(action)
-    load_or_create_beam_material()
     configure_quest_metadata()
+    ensure_prologue_tracking_anchor()
     ensure_quest12_tracking_anchors()
     ensure_role_model_tracking_anchors()
     ensure_role_model_completion_flags()
     ensure_missing_location_anchors()
     validate_tracking_locations()
-    unreal.log("{} Authored X input, beam material, controller binding, and Quest 1-5 metadata.".format(LOG))
+    unreal.log("{} Authored X input, controller binding, and prologue/Quest 1-6 metadata.".format(LOG))
 
 
 if __name__ == "__main__":

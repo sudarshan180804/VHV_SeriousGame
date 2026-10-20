@@ -12,8 +12,7 @@
 #include "UI/SocialSupport/VHVSocialSupportHUDWidget.h"
 #include "UI/SocialSupport/VHVSupportNetworkWidget.h"
 #include "UI/SocialSupport/VHVSupportTypeOverlayWidget.h"
-#include "UI/Quest/VHVObjectiveDirectionWidget.h"
-#include "World/Tracking/VHVObjectiveTrackingMarker.h"
+#include "World/Tracking/VHVNavigationGuidanceActor.h"
 #include "Core/VHVDialogueTypes.h"
 #include "VHV.h"
 #include "GameFramework/PlayerController.h"
@@ -121,14 +120,6 @@ void UVHVUIManagerComponent::BeginPlay()
     if (!PC)
     {
         return;
-    }
-
-    ObjectiveDirectionWidget = CreateWidget<UVHVObjectiveDirectionWidget>(
-        PC, UVHVObjectiveDirectionWidget::StaticClass());
-    if (ObjectiveDirectionWidget)
-    {
-        ObjectiveDirectionWidget->AddToPlayerScreen(40);
-        ObjectiveDirectionWidget->HideDirection();
     }
 
     if (MainHUDClass)
@@ -284,10 +275,10 @@ void UVHVUIManagerComponent::BeginPlay()
 void UVHVUIManagerComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
     ClearObjectiveTracking();
-    if (ObjectiveTrackingMarker)
+    if (NavigationGuidanceActor)
     {
-        ObjectiveTrackingMarker->Destroy();
-        ObjectiveTrackingMarker = nullptr;
+        NavigationGuidanceActor->Destroy();
+        NavigationGuidanceActor = nullptr;
     }
 
     if (MajorQuestStingerWidget)
@@ -2431,38 +2422,26 @@ bool UVHVUIManagerComponent::DismissActiveQuestTransitionForDeveloper()
 
 bool UVHVUIManagerComponent::EnsureObjectiveTrackingPresentation()
 {
-    APlayerController* PlayerController = Cast<APlayerController>(GetOwner());
     UWorld* World = GetWorld();
-    if (!PlayerController || !World)
+    if (!World)
     {
         return false;
     }
 
-    if (!ObjectiveDirectionWidget)
-    {
-        ObjectiveDirectionWidget = CreateWidget<UVHVObjectiveDirectionWidget>(
-            PlayerController, UVHVObjectiveDirectionWidget::StaticClass());
-        if (ObjectiveDirectionWidget)
-        {
-            ObjectiveDirectionWidget->AddToPlayerScreen(40);
-            ObjectiveDirectionWidget->HideDirection();
-        }
-    }
-
-    if (!ObjectiveTrackingMarker)
+    if (!NavigationGuidanceActor)
     {
         FActorSpawnParameters SpawnParameters;
-        SpawnParameters.Name = TEXT("VHV_ObjectiveTrackingMarker");
+        SpawnParameters.Name = TEXT("VHV_NavigationGuidance");
         SpawnParameters.ObjectFlags |= RF_Transient;
         SpawnParameters.SpawnCollisionHandlingOverride =
             ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-        ObjectiveTrackingMarker = World->SpawnActor<AVHVObjectiveTrackingMarker>(
-            AVHVObjectiveTrackingMarker::StaticClass(),
+        NavigationGuidanceActor = World->SpawnActor<AVHVNavigationGuidanceActor>(
+            AVHVNavigationGuidanceActor::StaticClass(),
             FTransform::Identity,
             SpawnParameters);
     }
 
-    return ObjectiveTrackingMarker && ObjectiveDirectionWidget;
+    return NavigationGuidanceActor != nullptr;
 }
 
 bool UVHVUIManagerComponent::RefreshActiveObjectiveTrackingTarget(
@@ -2492,21 +2471,15 @@ bool UVHVUIManagerComponent::RefreshActiveObjectiveTrackingTarget(
     TrackedParticipantID = QuestSubsystem->GetCurrentObjective(Objective)
         ? Objective.GetEffectiveParticipantID()
         : NAME_None;
-    if (ObjectiveTrackingMarker)
+    if (NavigationGuidanceActor)
     {
-        ObjectiveTrackingMarker->SetTrackingLocation(TrackedLocation);
+        NavigationGuidanceActor->SetDestination(TrackedLocation);
     }
 
-    bObjectiveTrackingProximitySuppressed = false;
-    bObjectiveTrackingTemporaryReveal = false;
-    if (UWorld* World = GetWorld())
-    {
-        World->GetTimerManager().ClearTimer(ObjectiveTrackingTemporaryRevealTimer);
-    }
     UpdateObjectiveTrackingProximity();
     ApplyObjectiveTrackingVisualState();
     UE_LOG(LogVHV, Log,
-        TEXT("[VHVTracking] Objective '%s' advanced to semantic destination '%s'."),
+        TEXT("[VHVGuidance] Objective '%s' advanced to semantic destination '%s'."),
         *ObjectiveID.ToString(), *LocationID.ToString());
     return true;
 }
@@ -2529,13 +2502,13 @@ void UVHVUIManagerComponent::ToggleObjectiveTracking()
             GetWorld(), QuestID, ObjectiveID, LocationID, WorldLocation, TargetActor))
         {
             UE_LOG(LogVHV, Log,
-                TEXT("[VHVTracking] Current objective has no trackable location."));
+                TEXT("[VHVGuidance] Current objective has no trackable location."));
             return;
         }
         if (!EnsureObjectiveTrackingPresentation())
         {
             UE_LOG(LogVHV, Warning,
-                TEXT("[VHVTracking] Could not create objective tracking presentation."));
+                TEXT("[VHVGuidance] Could not create navigation guidance presentation."));
             return;
         }
 
@@ -2549,46 +2522,27 @@ void UVHVUIManagerComponent::ToggleObjectiveTracking()
         TrackedParticipantID = QuestSubsystem->GetCurrentObjective(Objective)
             ? Objective.GetEffectiveParticipantID()
             : NAME_None;
-        ObjectiveTrackingMarker->SetTrackingLocation(TrackedLocation);
-        ObjectiveTrackingMode = EVHVObjectiveTrackingMode::WorldMarker;
-        bObjectiveTrackingProximitySuppressed = false;
-        bObjectiveTrackingTemporaryReveal = false;
+        NavigationGuidanceActor->SetDestination(TrackedLocation);
+        ObjectiveTrackingMode = EVHVObjectiveTrackingMode::Active;
+        ApplyObjectiveTrackingVisualState();
         GetWorld()->GetTimerManager().SetTimer(
             ObjectiveTrackingProximityTimer,
             this,
             &UVHVUIManagerComponent::UpdateObjectiveTrackingProximity,
-            ObjectiveTrackingProximityCheckInterval,
+            GuidanceUpdateInterval,
             true);
         UpdateObjectiveTrackingProximity();
-        ApplyObjectiveTrackingVisualState();
-        UE_LOG(LogVHV, Log,
-            TEXT("[VHVTracking] Tracking objective '%s' at '%s'; mode=WorldMarker."),
-            *TrackedLocationObjectiveID.ToString(), *TrackedLocationID.ToString());
-        return;
-    }
-
-    if (!bObjectiveTrackingProximitySuppressed && IsPlayerAtObjectiveTrackingTarget())
-    {
-        bObjectiveTrackingProximitySuppressed = true;
-        ApplyObjectiveTrackingVisualState();
-    }
-    if (bObjectiveTrackingProximitySuppressed)
-    {
-        BeginObjectiveTrackingTemporaryReveal();
-        return;
-    }
-
-    if (ObjectiveTrackingMode == EVHVObjectiveTrackingMode::WorldMarker)
-    {
-        ObjectiveTrackingMode = EVHVObjectiveTrackingMode::WorldMarkerAndDirection;
-        ApplyObjectiveTrackingVisualState();
-        UE_LOG(LogVHV, Log,
-            TEXT("[VHVTracking] mode=WorldMarkerAndDirection."));
+        if (ObjectiveTrackingMode != EVHVObjectiveTrackingMode::Off)
+        {
+            UE_LOG(LogVHV, Log,
+                TEXT("[VHVGuidance] Guidance active for objective '%s' at '%s'."),
+                *TrackedLocationObjectiveID.ToString(), *TrackedLocationID.ToString());
+        }
         return;
     }
 
     ClearObjectiveTracking();
-    UE_LOG(LogVHV, Log, TEXT("[VHVTracking] Tracking disabled."));
+    UE_LOG(LogVHV, Log, TEXT("[VHVGuidance] Guidance disabled by player."));
 }
 
 bool UVHVUIManagerComponent::IsPlayerAtObjectiveTrackingTarget() const
@@ -2600,10 +2554,11 @@ bool UVHVUIManagerComponent::IsPlayerAtObjectiveTrackingTarget() const
         return false;
     }
 
-    if (const AVHVQuestLocationVolume* Volume = TrackedLocationVolume.Get())
+    if (const AVHVQuestLocationVolume* Volume = TrackedLocationVolume.Get();
+        Volume && Volume->BoxComponent
+        && Volume->BoxComponent->Bounds.GetBox().IsInsideOrOn(PlayerPawn->GetActorLocation()))
     {
-        return Volume->BoxComponent
-            && Volume->BoxComponent->Bounds.GetBox().IsInsideOrOn(PlayerPawn->GetActorLocation());
+        return true;
     }
 
     if (!TrackedParticipantID.IsNone() && CurrentInteractionTarget
@@ -2619,8 +2574,8 @@ bool UVHVUIManagerComponent::IsPlayerAtObjectiveTrackingTarget() const
         }
     }
 
-    return FVector::DistSquared(PlayerPawn->GetActorLocation(), TrackedLocation)
-        <= FMath::Square(ObjectiveTrackingFallbackArrivalDistance);
+    return FVector::DistSquared2D(PlayerPawn->GetActorLocation(), TrackedLocation)
+        <= FMath::Square(GuidanceArrivalRadius);
 }
 
 void UVHVUIManagerComponent::UpdateObjectiveTrackingProximity()
@@ -2630,106 +2585,50 @@ void UVHVUIManagerComponent::UpdateObjectiveTrackingProximity()
         return;
     }
 
-    // These objectives deliberately track persistent NPC actors rather than
-    // obsolete/static semantic locations. Keep their cached marker positions
-    // synchronized with the actual runtime actor location.
-    const bool bTracksRuntimeNPC =
-        (TrackedLocationQuestID == FName(TEXT("Q_HBCT_01_MOTIVATION"))
-            && TrackedLocationObjectiveID == FName(TEXT("O14_FinalDebrief")))
-        || (TrackedLocationQuestID == FName(TEXT("Q_HBCT_03_ROLE_MODEL"))
-            && TrackedLocationObjectiveID == FName(TEXT("O15_FinalApplication")));
-    if (bTracksRuntimeNPC)
+    // Semantic volumes stay fixed, while NPC-backed targets can move.
+    if (!TrackedLocationVolume.IsValid())
     {
         if (const AActor* TrackedActor = TrackedLocationActor.Get())
         {
             const FVector CurrentActorLocation = TrackedActor->GetActorLocation();
-            if (!CurrentActorLocation.Equals(TrackedLocation, 0.1f))
+            if (!CurrentActorLocation.Equals(TrackedLocation, 25.0f))
             {
                 TrackedLocation = CurrentActorLocation;
-                if (ObjectiveTrackingMarker)
+                if (NavigationGuidanceActor)
                 {
-                    ObjectiveTrackingMarker->SetTrackingLocation(TrackedLocation);
-                }
-                if (ObjectiveDirectionWidget
-                    && ObjectiveTrackingMode == EVHVObjectiveTrackingMode::WorldMarkerAndDirection)
-                {
-                    ObjectiveDirectionWidget->ShowDirectionTo(TrackedLocation);
+                    NavigationGuidanceActor->SetDestination(TrackedLocation);
                 }
             }
         }
     }
 
-    const bool bArrived = IsPlayerAtObjectiveTrackingTarget();
-    if (bObjectiveTrackingProximitySuppressed == bArrived)
+    if (IsPlayerAtObjectiveTrackingTarget())
     {
+        const FName ArrivedObjectiveID = TrackedLocationObjectiveID;
+        const FName ArrivedLocationID = TrackedLocationID;
+        ClearObjectiveTracking();
+        UE_LOG(LogVHV, Log,
+            TEXT("[VHVGuidance] Arrived at objective '%s' location '%s'; guidance will remain off until X is pressed."),
+            *ArrivedObjectiveID.ToString(), *ArrivedLocationID.ToString());
         return;
     }
 
-    bObjectiveTrackingProximitySuppressed = bArrived;
-    if (!bArrived)
+    const APlayerController* PlayerController = Cast<APlayerController>(GetOwner());
+    APawn* PlayerPawn = PlayerController ? PlayerController->GetPawn() : nullptr;
+    if (NavigationGuidanceActor && PlayerPawn)
     {
-        bObjectiveTrackingTemporaryReveal = false;
-        if (UWorld* World = GetWorld())
-        {
-            World->GetTimerManager().ClearTimer(ObjectiveTrackingTemporaryRevealTimer);
-        }
+        NavigationGuidanceActor->RefreshPathFrom(
+            PlayerPawn->GetActorLocation(), PlayerPawn, false);
     }
-    ApplyObjectiveTrackingVisualState();
 }
 
 void UVHVUIManagerComponent::ApplyObjectiveTrackingVisualState()
 {
-    const bool bTracking = ObjectiveTrackingMode != EVHVObjectiveTrackingMode::Off;
-    const bool bSuppressed = bObjectiveTrackingProximitySuppressed
-        && !bObjectiveTrackingTemporaryReveal;
-    const bool bShowMarker = bTracking && !bSuppressed;
-    const bool bShowDirection = bShowMarker
-        && ObjectiveTrackingMode == EVHVObjectiveTrackingMode::WorldMarkerAndDirection;
-
-    if (ObjectiveTrackingMarker)
+    if (NavigationGuidanceActor)
     {
-        ObjectiveTrackingMarker->SetTrackingVisible(bShowMarker);
+        NavigationGuidanceActor->SetGuidanceVisible(
+            ObjectiveTrackingMode == EVHVObjectiveTrackingMode::Active);
     }
-    if (ObjectiveDirectionWidget)
-    {
-        if (bShowDirection)
-        {
-            ObjectiveDirectionWidget->ShowDirectionTo(TrackedLocation);
-        }
-        else
-        {
-            ObjectiveDirectionWidget->HideDirection();
-        }
-    }
-}
-
-void UVHVUIManagerComponent::BeginObjectiveTrackingTemporaryReveal()
-{
-    UWorld* World = GetWorld();
-    if (!World || ObjectiveTrackingMode == EVHVObjectiveTrackingMode::Off
-        || !bObjectiveTrackingProximitySuppressed)
-    {
-        return;
-    }
-
-    bObjectiveTrackingTemporaryReveal = true;
-    ApplyObjectiveTrackingVisualState();
-    World->GetTimerManager().SetTimer(
-        ObjectiveTrackingTemporaryRevealTimer,
-        this,
-        &UVHVUIManagerComponent::EndObjectiveTrackingTemporaryReveal,
-        ObjectiveTrackingTemporaryRevealDuration,
-        false);
-    UE_LOG(LogVHV, Log,
-        TEXT("[VHVTracking] Temporarily revealing arrived target for %.1f seconds."),
-        ObjectiveTrackingTemporaryRevealDuration);
-}
-
-void UVHVUIManagerComponent::EndObjectiveTrackingTemporaryReveal()
-{
-    bObjectiveTrackingTemporaryReveal = false;
-    UpdateObjectiveTrackingProximity();
-    ApplyObjectiveTrackingVisualState();
 }
 
 void UVHVUIManagerComponent::ClearObjectiveTracking(const bool bObjectiveChanged)
@@ -2743,18 +2642,15 @@ void UVHVUIManagerComponent::ClearObjectiveTracking(const bool bObjectiveChanged
     TrackedLocation = FVector::ZeroVector;
     TrackedLocationActor.Reset();
     TrackedLocationVolume.Reset();
-    bObjectiveTrackingProximitySuppressed = false;
-    bObjectiveTrackingTemporaryReveal = false;
     if (UWorld* World = GetWorld())
     {
         World->GetTimerManager().ClearTimer(ObjectiveTrackingProximityTimer);
-        World->GetTimerManager().ClearTimer(ObjectiveTrackingTemporaryRevealTimer);
     }
     ApplyObjectiveTrackingVisualState();
     if (bObjectiveChanged && bWasTracking)
     {
         UE_LOG(LogVHV, Log,
-            TEXT("[VHVTracking] Objective changed; clearing previous tracking target."));
+            TEXT("[VHVGuidance] Objective changed; previous guidance cleared."));
     }
 }
 

@@ -116,6 +116,10 @@ struct VHV_API FDialogueConversation
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
     TArray<FDialogueNode> Nodes;
+
+    /** Present spoken text over the resolved speaker actor instead of in the shared dialogue card. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue|Presentation")
+    bool bUseWorldSpaceSpeechBubbles = false;
 };
 
 USTRUCT(BlueprintType)
