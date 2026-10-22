@@ -10,6 +10,7 @@
 #include "NPC/Components/VHVNPCPatrolComponent.h"
 #include "NPC/Components/VHVNPCPresentationComponent.h"
 #include "NPC/Components/VHVNPCQuestCommandComponent.h"
+#include "NPC/Animation/VHVMixamoNPCAnimInstance.h"
 #include "NPC/VHVNPCAIController.h"
 #include "Player/Components/VHVInteractionComponent.h"
 #include "Quest/Components/VHVQuestParticipantComponent.h"
@@ -63,6 +64,16 @@ void AVHVNPCCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 	HomeTransform = GetActorTransform();
+
+	if (AnimationProfile)
+	{
+		CurrentPosture = AnimationProfile->InitialPosture;
+		if (UVHVMixamoNPCAnimInstance* AnimInstance = Cast<UVHVMixamoNPCAnimInstance>(GetMesh()->GetAnimInstance()))
+		{
+			AnimInstance->SetAnimationProfile(AnimationProfile);
+			AnimInstance->SetRequestedPosture(CurrentPosture);
+		}
+	}
 }
 
 FTransform AVHVNPCCharacter::GetHomeTransform() const
@@ -128,4 +139,32 @@ UVHVAmbientSpeechComponent* AVHVNPCCharacter::GetAmbientSpeechComponent() const
 UVHVNPCNameplateComponent* AVHVNPCCharacter::GetNameplateComponent() const
 {
 	return NameplateComponent;
+}
+
+UVHVNPCAnimationProfile* AVHVNPCCharacter::GetAnimationProfile() const
+{
+	return AnimationProfile;
+}
+
+void AVHVNPCCharacter::SetAnimationProfile(UVHVNPCAnimationProfile* NewAnimationProfile)
+{
+	AnimationProfile = NewAnimationProfile;
+	if (UVHVMixamoNPCAnimInstance* AnimInstance = Cast<UVHVMixamoNPCAnimInstance>(GetMesh()->GetAnimInstance()))
+	{
+		AnimInstance->SetAnimationProfile(AnimationProfile);
+	}
+}
+
+EVHVNPCPosture AVHVNPCCharacter::GetNPCPosture() const
+{
+	return CurrentPosture;
+}
+
+void AVHVNPCCharacter::SetNPCPosture(const EVHVNPCPosture NewPosture)
+{
+	CurrentPosture = NewPosture;
+	if (UVHVMixamoNPCAnimInstance* AnimInstance = Cast<UVHVMixamoNPCAnimInstance>(GetMesh()->GetAnimInstance()))
+	{
+		AnimInstance->SetRequestedPosture(CurrentPosture);
+	}
 }

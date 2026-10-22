@@ -206,6 +206,14 @@ enum class ETextbookTeachingCategory : uint8
     Reflection UMETA(DisplayName = "Reflection")
 };
 
+/** Explicit presentation variants for authored teaching pages. */
+UENUM(BlueprintType)
+enum class ETextbookTeachingLayout : uint8
+{
+    Standard UMETA(DisplayName = "Standard"),
+    BehaviorChangeTextLesson UMETA(DisplayName = "Behaviour Change Text Lesson")
+};
+
 USTRUCT(BlueprintType)
 struct FTeachingContent
 {
@@ -213,6 +221,10 @@ struct FTeachingContent
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Teaching")
     ETextbookTeachingCategory Category = ETextbookTeachingCategory::Lesson;
+
+    /** Selects an authored native-text presentation without affecting other lessons. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Teaching")
+    ETextbookTeachingLayout Layout = ETextbookTeachingLayout::Standard;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Teaching")
     FString Title;

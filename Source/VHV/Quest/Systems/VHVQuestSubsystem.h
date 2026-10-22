@@ -273,6 +273,9 @@ private:
 #endif
     bool BuildJournalEntry(const FVHVQuestDefinition& Definition, const FVHVQuestRuntimeState& State, FVHVQuestJournalEntry& OutEntry) const;
     FName GetFirstIncompleteTrackingLocationID(const FVHVQuestObjectiveDefinition& Objective) const;
+    bool IsTrackingDestinationComplete(
+        const FVHVQuestObjectiveDefinition& Objective,
+        const FVHVQuestTrackingDestination& Destination) const;
     bool DoesTrackingDestinationReferenceState(const FVHVQuestObjectiveDefinition& Objective, FName StateID) const;
     int32 CountCompletedTrackingDestinations(const FVHVQuestObjectiveDefinition& Objective) const;
     FName GetRequiredConversationID(const FVHVQuestObjectiveDefinition& Objective) const;

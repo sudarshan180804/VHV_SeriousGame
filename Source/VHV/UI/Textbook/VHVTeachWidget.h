@@ -64,6 +64,7 @@ protected:
 private:
     void PopulateTeachingContent();
     void RefreshSlateContent();
+    void BuildBehaviorChangeTextLesson();
     FReply HandleContinueClicked();
 
     FTeachingContent TeachingContent;

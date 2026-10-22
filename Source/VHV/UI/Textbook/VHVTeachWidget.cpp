@@ -34,6 +34,11 @@ namespace
     constexpr float ContentFadeInDuration = 0.18f;
     constexpr float ContentTransitionOffset = 8.0f;
 
+    bool SplitTeachingSection(const FString& Source, FString& OutHeading, FString& OutBody)
+    {
+        return Source.Split(TEXT("|"), &OutHeading, &OutBody, ESearchCase::CaseSensitive);
+    }
+
     FText TeachingCategoryText(const ETextbookTeachingCategory Category)
     {
         switch (Category)
@@ -463,6 +468,12 @@ void UVHVTeachWidget::RefreshSlateContent()
     LoadedMediaTextures.Reset();
     LoadedLargeMediaTexture = TeachingContent.MediaTexture.LoadSynchronous();
 
+    if (TeachingContent.Layout == ETextbookTeachingLayout::BehaviorChangeTextLesson)
+    {
+        BuildBehaviorChangeTextLesson();
+        return;
+    }
+
     if (LoadedLargeMediaTexture)
     {
         ContentTextSlate.Reset();
@@ -698,6 +709,165 @@ void UVHVTeachWidget::RefreshSlateContent()
         [
             TakeawayGrid
         ];
+}
+
+void UVHVTeachWidget::BuildBehaviorChangeTextLesson()
+{
+    if (!ReadingAreaSlate)
+    {
+        return;
+    }
+
+    const FLinearColor HeadingColor = VHVActivityUIStyle::HeaderGold();
+    const FLinearColor InkColor = VHVActivityUIStyle::MatchingInk();
+    const FSlateBrush* CardBrushes[] =
+    {
+        &TakeawayGreenBrush,
+        &TakeawayGoldBrush,
+        &TakeawayTealBrush
+    };
+
+    ReadingAreaSlate->AddSlot()
+        .AutoHeight()
+        .Padding(FMargin(0.0f, 0.0f, 0.0f, 15.0f))
+        [
+            SNew(STextBlock)
+            .Font(VHVActivityUIStyle::RegularFont(21))
+            .ColorAndOpacity(InkColor)
+            .AutoWrapText(true)
+            .LineHeightPercentage(1.18f)
+            .Text(FText::FromString(TeachingContent.Content))
+        ];
+
+    TSharedRef<SUniformGridPanel> SectionGrid = SNew(SUniformGridPanel)
+        .SlotPadding(FMargin(7.0f));
+    const int32 PanelCount = FMath::Min(3, TeachingContent.KeyTakeaways.Num());
+    for (int32 Index = 0; Index < PanelCount; ++Index)
+    {
+        FString Heading;
+        FString Body;
+        if (!SplitTeachingSection(TeachingContent.KeyTakeaways[Index], Heading, Body))
+        {
+            continue;
+        }
+
+        TSharedPtr<SBorder> Card;
+        SectionGrid->AddSlot(Index, 0)
+        [
+            SAssignNew(Card, SBorder)
+            .BorderImage(CardBrushes[Index])
+            .Padding(FMargin(18.0f, 15.0f))
+            [
+                SNew(SVerticalBox)
+                + SVerticalBox::Slot()
+                .AutoHeight()
+                .Padding(FMargin(0.0f, 0.0f, 0.0f, 8.0f))
+                [
+                    SNew(STextBlock)
+                    .Font(VHVActivityUIStyle::MediumFont(14))
+                    .ColorAndOpacity(HeadingColor)
+                    .AutoWrapText(true)
+                    .Text(FText::FromString(Heading))
+                ]
+                + SVerticalBox::Slot()
+                .AutoHeight()
+                [
+                    SNew(STextBlock)
+                    .Font(VHVActivityUIStyle::RegularFont(16))
+                    .ColorAndOpacity(InkColor)
+                    .AutoWrapText(true)
+                    .LineHeightPercentage(1.16f)
+                    .Text(FText::FromString(Body))
+                ]
+            ]
+        ];
+        Card->SetRenderOpacity(0.0f);
+        TakeawayCardsSlate.Add(Card);
+    }
+
+    ReadingAreaSlate->AddSlot()
+        .AutoHeight()
+        [
+            SectionGrid
+        ];
+
+    if (TeachingContent.KeyTakeaways.Num() > 3)
+    {
+        FString Heading;
+        FString Body;
+        if (SplitTeachingSection(TeachingContent.KeyTakeaways[3], Heading, Body))
+        {
+            ReadingAreaSlate->AddSlot()
+                .AutoHeight()
+                .Padding(FMargin(0.0f, 15.0f, 0.0f, 11.0f))
+                [
+                    SNew(SBorder)
+                    .BorderImage(&MediaSurfaceBrush)
+                    .Padding(FMargin(20.0f, 14.0f))
+                    [
+                        SNew(SVerticalBox)
+                        + SVerticalBox::Slot()
+                        .AutoHeight()
+                        .Padding(FMargin(0.0f, 0.0f, 0.0f, 6.0f))
+                        [
+                            SNew(STextBlock)
+                            .Font(VHVActivityUIStyle::MediumFont(16))
+                            .ColorAndOpacity(HeadingColor)
+                            .Text(FText::FromString(Heading))
+                        ]
+                        + SVerticalBox::Slot()
+                        .AutoHeight()
+                        [
+                            SNew(STextBlock)
+                            .Font(VHVActivityUIStyle::RegularFont(17))
+                            .ColorAndOpacity(InkColor)
+                            .AutoWrapText(true)
+                            .LineHeightPercentage(1.16f)
+                            .Text(FText::FromString(Body))
+                        ]
+                    ]
+                ];
+        }
+    }
+
+    if (TeachingContent.KeyTakeaways.Num() > 4)
+    {
+        FString Heading;
+        FString Body;
+        if (SplitTeachingSection(TeachingContent.KeyTakeaways[4], Heading, Body))
+        {
+            ReadingAreaSlate->AddSlot()
+                .AutoHeight()
+                [
+                    SNew(SBorder)
+                    .BorderImage(&TakeawayGoldBrush)
+                    .Padding(FMargin(20.0f, 12.0f))
+                    [
+                        SNew(SHorizontalBox)
+                        + SHorizontalBox::Slot()
+                        .AutoWidth()
+                        .VAlign(VAlign_Top)
+                        .Padding(FMargin(0.0f, 1.0f, 14.0f, 0.0f))
+                        [
+                            SNew(STextBlock)
+                            .Font(VHVActivityUIStyle::MediumFont(14))
+                            .ColorAndOpacity(HeadingColor)
+                            .Text(FText::FromString(Heading))
+                        ]
+                        + SHorizontalBox::Slot()
+                        .FillWidth(1.0f)
+                        [
+                            SNew(STextBlock)
+                            .Font(VHVActivityUIStyle::MediumFont(17))
+                            .ColorAndOpacity(InkColor)
+                            .AutoWrapText(true)
+                            .LineHeightPercentage(1.12f)
+                            .Text(FText::FromString(Body))
+                        ]
+                    ]
+                ];
+        }
+    }
 }
 
 FReply UVHVTeachWidget::HandleContinueClicked()

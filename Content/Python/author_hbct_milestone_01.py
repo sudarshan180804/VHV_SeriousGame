@@ -120,12 +120,15 @@ def ordering_items(items):
     ]
 
 
-def teaching(title, content, takeaways, category=None, media_texture=None, media_caption=""):
+def teaching(title, content, takeaways, category=None, media_texture=None, media_caption="", layout=None):
     if category is None:
         category = unreal.TextbookTeachingCategory.LESSON
+    if layout is None:
+        layout = unreal.TextbookTeachingLayout.STANDARD
     return struct(
         unreal.TeachingContent,
         category=category,
+        layout=layout,
         title=title,
         content=content,
         key_takeaways=takeaways,
@@ -228,10 +231,6 @@ def build_activities():
     observation = unreal.TextbookActivityType.OBSERVATION
     single = unreal.TextbookActivityType.SINGLE_CHOICE
     matching = unreal.TextbookActivityType.MATCHING
-    why_behavior_media = unreal.load_asset(
-        "/Game/VHV_Stuff/UI/Teaching/Media/T_UI_HBCT_WhyBehaviorChange")
-    if not why_behavior_media:
-        raise RuntimeError("Missing Why Behavior Change teaching media")
     return [
         activity(
             "VHV.Activity.HBCT.Intro.MarketObservation",
@@ -281,10 +280,16 @@ def build_activities():
             "Review what helps a person move from knowing to doing.",
             teaching(
                 "WHY BEHAVIOR CHANGE IS DIFFICULT",
-                "",
-                [],
+                "Knowing what is healthy does not always make changing our behaviour easy.",
+                [
+                    "HABITS AND CONVENIENCE|Daily habits are familiar and comfortable. People may continue unhealthy routines even when they understand the risks.",
+                    "EVERYDAY CHALLENGES|Busy schedules, family responsibilities, social pressure, and limited resources can make healthy choices difficult.",
+                    "CONFIDENCE AND MOTIVATION|People may want to change but feel unsure where to begin, lack confidence, or struggle to stay motivated after setbacks.",
+                    "HOW CAN A VHV HELP?|A Village Health Volunteer should listen without judging, understand what matters to the person, explore their difficulties, and help them choose realistic steps toward better health.",
+                    "FINAL KEY TAKEAWAY|Successful behaviour change begins with understanding the person — not simply telling them what to do.",
+                ],
                 unreal.TextbookTeachingCategory.LESSON,
-                why_behavior_media)),
+                layout=unreal.TextbookTeachingLayout.BEHAVIOR_CHANGE_TEXT_LESSON)),
         activity(
             "VHV.Activity.HBCT.Motivation.TechniqueTitle",
             "TECHNIQUE 1",
@@ -1490,7 +1495,8 @@ def create_ambient_assets():
                 ambient_line("Nuan", "Three walking days this week. I know exactly what I'm trying to do.", 4.0, thought=True),
             ],
             "show_names": True,
-            "effects": [counter_effect("VHV.Story.Counter.HBCT.GoalSetting.ComparisonObserved")],
+            "effects": [effect("VHV.Story.Flag.HBCT.GoalSetting.ClearGoalObserved"),
+                        counter_effect("VHV.Story.Counter.HBCT.GoalSetting.ComparisonObserved")],
         },
         "DA_Ambient_HBCT_GoalSetting_NoGoal": {
             "id": "HBCT_GoalSetting_NoGoal",
@@ -1502,7 +1508,8 @@ def create_ambient_assets():
                 ambient_line("Chai", "I don't really know what I'm supposed to be doing.", 3.4, thought=True),
             ],
             "show_names": True,
-            "effects": [counter_effect("VHV.Story.Counter.HBCT.GoalSetting.ComparisonObserved")],
+            "effects": [effect("VHV.Story.Flag.HBCT.GoalSetting.NoGoalObserved"),
+                        counter_effect("VHV.Story.Counter.HBCT.GoalSetting.ComparisonObserved")],
         },
         "DA_Ambient_HBCT_GoalSetting_SelfSet": {
             "id": "HBCT_GoalSetting_SelfSet",
@@ -1517,7 +1524,8 @@ def create_ambient_assets():
                 ambient_line("Patient", "Yes. That's the goal I want to try.", 3.0, look_at=True),
             ],
             "show_names": True,
-            "effects": [counter_effect("VHV.Story.Counter.HBCT.GoalSetting.MethodsObserved")],
+            "effects": [effect("VHV.Story.Flag.HBCT.GoalSetting.SelfSetObserved"),
+                        counter_effect("VHV.Story.Counter.HBCT.GoalSetting.MethodsObserved")],
         },
         "DA_Ambient_HBCT_GoalSetting_Joint": {
             "id": "HBCT_GoalSetting_Joint",
@@ -1534,7 +1542,8 @@ def create_ambient_assets():
                 ambient_line("Patient", "Three days sounds possible. I can try that.", 3.2, look_at=True),
             ],
             "show_names": True,
-            "effects": [counter_effect("VHV.Story.Counter.HBCT.GoalSetting.MethodsObserved")],
+            "effects": [effect("VHV.Story.Flag.HBCT.GoalSetting.JointObserved"),
+                        counter_effect("VHV.Story.Counter.HBCT.GoalSetting.MethodsObserved")],
         },
         "DA_Ambient_HBCT_RoleModel_Exercise": {
             "id": "HBCT_RoleModel_Exercise",
@@ -3594,12 +3603,13 @@ def validate_content_integrity(level, conversations, arc):
         raise RuntimeError("Passive Observation unexpectedly enables evidence tagging")
 
     intro_teaching = activities_by_id["IntroLesson"].get_editor_property("teaching")
-    intro_media = intro_teaching.get_editor_property("media_texture")
-    if (not intro_media
-            or intro_media.get_path_name() != "/Game/VHV_Stuff/UI/Teaching/Media/T_UI_HBCT_WhyBehaviorChange.T_UI_HBCT_WhyBehaviorChange"
+    if (intro_teaching.get_editor_property("layout")
+            != unreal.TextbookTeachingLayout.BEHAVIOR_CHANGE_TEXT_LESSON
+            or intro_teaching.get_editor_property("media_texture")
             or str(intro_teaching.get_editor_property("content")).strip()
-            or intro_teaching.get_editor_property("key_takeaways")):
-        raise RuntimeError("IntroLesson must use only the authored Why Behavior Change media body")
+                != "Knowing what is healthy does not always make changing our behaviour easy."
+            or len(intro_teaching.get_editor_property("key_takeaways")) != 5):
+        raise RuntimeError("IntroLesson must use the authored native behaviour-change text layout")
 
     for asset in conversations.values():
         conversation = asset.get_editor_property("conversation")

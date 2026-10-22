@@ -359,9 +359,7 @@ FName UVHVQuestSubsystem::GetFirstIncompleteTrackingLocationID(
     {
         for (const FVHVQuestTrackingDestination& Destination : Objective.TrackingDestinations)
         {
-            const bool bComplete = StoryStateSubsystem
-                && StoryStateSubsystem->EvaluateConditionSet(Destination.CompletionConditions);
-            if (!bComplete)
+            if (!IsTrackingDestinationComplete(Objective, Destination))
             {
                 return Destination.GetEffectiveLocationID();
             }
@@ -369,6 +367,31 @@ FName UVHVQuestSubsystem::GetFirstIncompleteTrackingLocationID(
         return NAME_None;
     }
     return Objective.GetEffectiveTrackingLocationID();
+}
+
+bool UVHVQuestSubsystem::IsTrackingDestinationComplete(
+    const FVHVQuestObjectiveDefinition& Objective,
+    const FVHVQuestTrackingDestination& Destination) const
+{
+    if (!StoryStateSubsystem)
+    {
+        return false;
+    }
+    if (StoryStateSubsystem->EvaluateConditionSet(Destination.CompletionConditions))
+    {
+        return true;
+    }
+
+    // Q0 market observations originally persisted fully-qualified FName keys.
+    // Accept those keys when restoring an older partial save while newly
+    // completed observations also publish the semantic leaf used by the data.
+    static const FName IntroQuestID(TEXT("Q_HBCT_00_INTRO"));
+    static const FName ObserveMarketObjectiveID(TEXT("O03_ObserveMarket"));
+    const FName DestinationID = Destination.GetEffectiveLocationID();
+    return RuntimeState.ActiveQuestID == IntroQuestID
+        && Objective.ObjectiveID == ObserveMarketObjectiveID
+        && AVHVMarketObservationTrigger::IsObservationComplete(
+            StoryStateSubsystem, DestinationID);
 }
 
 bool UVHVQuestSubsystem::DoesTrackingDestinationReferenceState(
@@ -402,7 +425,7 @@ int32 UVHVQuestSubsystem::CountCompletedTrackingDestinations(
     int32 CompletedCount = 0;
     for (const FVHVQuestTrackingDestination& Destination : Objective.TrackingDestinations)
     {
-        if (StoryStateSubsystem->EvaluateConditionSet(Destination.CompletionConditions))
+        if (IsTrackingDestinationComplete(Objective, Destination))
         {
             ++CompletedCount;
         }
@@ -1321,7 +1344,28 @@ AActor* UVHVQuestSubsystem::FindNPCMovementTarget(const UWorld* World, const FNa
         }
         FoundLocation = *It;
     }
-    return FoundLocation;
+    if (FoundLocation)
+    {
+        return FoundLocation;
+    }
+
+    AVHVMarketObservationTrigger* FoundMarketTrigger = nullptr;
+    for (TActorIterator<AVHVMarketObservationTrigger> It(World); It; ++It)
+    {
+        if (It->GetTrackingLocationID() != TargetID)
+        {
+            continue;
+        }
+        if (FoundMarketTrigger)
+        {
+            UE_LOG(LogVHV, Error,
+                TEXT("[VHVTracking] Multiple market observation triggers resolve destination '%s'."),
+                *TargetID.ToString());
+            return nullptr;
+        }
+        FoundMarketTrigger = *It;
+    }
+    return FoundMarketTrigger;
 }
 
 bool UVHVQuestSubsystem::RegisterNPCCommandComponent(UVHVNPCQuestCommandComponent* CommandComponent)

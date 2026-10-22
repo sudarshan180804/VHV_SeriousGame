@@ -64,8 +64,18 @@ void AVHVMarketObservationTrigger::ResetObservationProgress(UVHVStoryStateSubsys
     for (const FName ID : GetRequiredObservationIDs())
     {
         StoryState->ClearFlag(FName(*(MarketObservationFlagPrefix + ID.ToString())));
+        StoryState->ClearFlag(ID);
     }
     StoryState->SetCounter(MarketObservationCounter, 0);
+}
+
+bool AVHVMarketObservationTrigger::IsObservationComplete(
+    const UVHVStoryStateSubsystem* StoryState,
+    const FName InObservationID)
+{
+    return StoryState && GetRequiredObservationIDs().Contains(InObservationID)
+        && (StoryState->HasFlag(InObservationID)
+            || StoryState->HasFlag(FName(*(MarketObservationFlagPrefix + InObservationID.ToString()))));
 }
 
 void AVHVMarketObservationTrigger::BeginPlay()
@@ -115,7 +125,7 @@ void AVHVMarketObservationTrigger::HandleBoxBeginOverlap(
 
     if (!Cast<AVHVCharacter>(OtherActor) || bAwaitingConversationCompletion
         || !ConversationActor || !StoryStateSubsystem || !IsIntendedObjectiveActive()
-        || StoryStateSubsystem->HasFlag(GetCompletionFlagID()))
+        || IsObservationComplete(StoryStateSubsystem, ObservationID))
     {
         return;
     }
@@ -141,12 +151,15 @@ void AVHVMarketObservationTrigger::HandleConversationFinished(const bool bSucces
     if (!bAwaitingConversationCompletion) return;
     bAwaitingConversationCompletion = false;
     if (!bSuccess || !StoryStateSubsystem || !QuestSubsystem || !IsIntendedObjectiveActive()
-        || StoryStateSubsystem->HasFlag(GetCompletionFlagID()))
+        || IsObservationComplete(StoryStateSubsystem, ObservationID))
     {
         return;
     }
 
     StoryStateSubsystem->SetFlag(GetCompletionFlagID());
+    // Keep the original fully-qualified flag for existing saves and expose the
+    // stable observation leaf used by condition-driven destination tracking.
+    StoryStateSubsystem->SetFlag(ObservationID);
     const int32 CompletedCount = CountCompletedObservations();
     StoryStateSubsystem->SetCounter(MarketObservationCounter, CompletedCount);
 
@@ -227,7 +240,7 @@ int32 AVHVMarketObservationTrigger::CountCompletedObservations() const
     int32 Count = 0;
     for (const FName ID : GetRequiredObservationIDs())
     {
-        Count += StoryStateSubsystem->HasFlag(FName(*(MarketObservationFlagPrefix + ID.ToString()))) ? 1 : 0;
+        Count += IsObservationComplete(StoryStateSubsystem, ID) ? 1 : 0;
     }
     return Count;
 }

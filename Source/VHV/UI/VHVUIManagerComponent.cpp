@@ -337,16 +337,19 @@ void UVHVUIManagerComponent::HandleLearningPhaseChanged(ELearningPhase NewPhase)
         if (TextbookSubsystem && TextbookSubsystem->IsActivityActive())
         {
             const FTextbookActivityData CurrentActivity = TextbookSubsystem->GetCurrentActivity();
-            const bool bDirectMediaLesson = CurrentActivity.ActivityType == ETextbookActivityType::Observation
+            const bool bDirectTeachingLesson = CurrentActivity.ActivityType == ETextbookActivityType::Observation
                 && !CurrentActivity.EvidenceTagging.bUseEvidenceTagging
                 && CurrentActivity.Teaching.Category != ETextbookTeachingCategory::Technique
-                && !CurrentActivity.Teaching.MediaTexture.IsNull();
-            if (bDirectMediaLesson
+                && (!CurrentActivity.Teaching.MediaTexture.IsNull()
+                    || CurrentActivity.Teaching.Layout
+                        == ETextbookTeachingLayout::BehaviorChangeTextLesson);
+            if (bDirectTeachingLesson
                 || (bAwaitingContinuousTeachingResult && IsContinuousTeachingPage(CurrentActivity)))
             {
                 // Passive lesson entries use Observation as their launch shell.
-                // A primary media image is already the complete teaching page,
-                // so bypass the otherwise empty Observation prompt page.
+                // A primary media image or explicitly authored text lesson is
+                // already the complete teaching page, so bypass the otherwise
+                // empty Observation prompt page.
                 TextbookSubsystem->EnterTeachPhase();
                 return;
             }

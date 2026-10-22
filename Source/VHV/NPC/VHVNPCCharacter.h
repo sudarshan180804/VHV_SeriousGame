@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "NPC/Animation/VHVNPCAnimationProfile.h"
 #include "VHVNPCCharacter.generated.h"
 
 class UVHVInteractionComponent;
@@ -63,11 +64,30 @@ public:
 	UFUNCTION(BlueprintPure, Category = "VHV|NPC|Components")
 	UVHVNPCNameplateComponent* GetNameplateComponent() const;
 
+	UFUNCTION(BlueprintPure, Category = "VHV|NPC|Animation")
+	UVHVNPCAnimationProfile* GetAnimationProfile() const;
+
+	UFUNCTION(BlueprintCallable, Category = "VHV|NPC|Animation")
+	void SetAnimationProfile(UVHVNPCAnimationProfile* NewAnimationProfile);
+
+	UFUNCTION(BlueprintPure, Category = "VHV|NPC|Animation")
+	EVHVNPCPosture GetNPCPosture() const;
+
+	UFUNCTION(BlueprintCallable, Category = "VHV|NPC|Animation")
+	void SetNPCPosture(EVHVNPCPosture NewPosture);
+
 private:
 	virtual void BeginPlay() override;
 
 	UPROPERTY(Transient)
 	FTransform HomeTransform;
+
+	/** Optional. When unset, the NPC keeps its existing animation behavior unchanged. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|NPC|Animation", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UVHVNPCAnimationProfile> AnimationProfile;
+
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "VHV|NPC|Animation", meta = (AllowPrivateAccess = "true"))
+	EVHVNPCPosture CurrentPosture = EVHVNPCPosture::Standing;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VHV|NPC|Components", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UVHVInteractionComponent> InteractionComponent;

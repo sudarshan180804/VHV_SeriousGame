@@ -118,6 +118,25 @@ TRACKING_LOCATIONS = {
 # Ordered preference only; gameplay remains non-linear wherever the authored
 # triggers already allow it. Each entry is skipped as soon as its condition passes.
 MULTI_TRACKING_DESTINATIONS = {
+    "Q_HBCT_00_INTRO": {
+        "O03_ObserveMarket": [
+            ("VHV.Location.HBCT.Intro.MarketObservation.Market_VendorConversation", "flag", "VHV.Story.Flag.HBCT.Intro.MarketObservation.Market_VendorConversation", 0),
+            ("VHV.Location.HBCT.Intro.MarketObservation.Market_Smoker", "flag", "VHV.Story.Flag.HBCT.Intro.MarketObservation.Market_Smoker", 0),
+            ("VHV.Location.HBCT.Intro.MarketObservation.Market_SweetDrink", "flag", "VHV.Story.Flag.HBCT.Intro.MarketObservation.Market_SweetDrink", 0),
+            ("VHV.Location.HBCT.Intro.MarketObservation.Market_Motorbike", "flag", "VHV.Story.Flag.HBCT.Intro.MarketObservation.Market_Motorbike", 0),
+            ("VHV.Location.HBCT.Intro.MarketObservation.Market_JunkFood", "flag", "VHV.Story.Flag.HBCT.Intro.MarketObservation.Market_JunkFood", 0),
+        ],
+    },
+    "Q_HBCT_02_GOAL_SETTING": {
+        "O05_ComparePatients": [
+            ("VHV.Location.HBCT.GoalSetting.ClearGoal", "flag", "VHV.Story.Flag.HBCT.GoalSetting.ClearGoalObserved", 0),
+            ("VHV.Location.HBCT.GoalSetting.NoGoal", "flag", "VHV.Story.Flag.HBCT.GoalSetting.NoGoalObserved", 0),
+        ],
+        "O07_ObserveGoalMethods": [
+            ("VHV.Location.HBCT.GoalSetting.SelfSet", "flag", "VHV.Story.Flag.HBCT.GoalSetting.SelfSetObserved", 0),
+            ("VHV.Location.HBCT.GoalSetting.Joint", "flag", "VHV.Story.Flag.HBCT.GoalSetting.JointObserved", 0),
+        ],
+    },
     "Q_HBCT_03_ROLE_MODEL": {
         "O02_DiscoverRoleModels": [
             ("VHV.Location.HBCT.RoleModel.ExerciseObservation", "flag", "VHV.Story.Flag.HBCT.RoleModel.ExerciseObserved", 0),
@@ -324,6 +343,11 @@ def configure_quest_metadata():
 def validate_tracking_locations():
     if not unreal.EditorLoadingAndSavingUtils.load_map(MAP_PATH):
         raise RuntimeError("Could not load {}".format(MAP_PATH))
+    market_observation_ids = {
+        location_name.rsplit(".", 1)[-1]
+        for location_name, _, _, _ in
+        MULTI_TRACKING_DESTINATIONS["Q_HBCT_00_INTRO"]["O03_ObserveMarket"]
+    }
     required_ids = {
         location_name.rsplit(".", 1)[-1]
         for objectives in TRACKING_LOCATIONS.values()
@@ -334,6 +358,7 @@ def validate_tracking_locations():
         for objectives in MULTI_TRACKING_DESTINATIONS.values()
         for destinations in objectives.values()
         for location_name, _, _, _ in destinations)
+    required_ids.difference_update(market_observation_ids)
     matches = {location_id: [] for location_id in required_ids}
     actor_subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
     for actor in actor_subsystem.get_all_level_actors():
@@ -356,6 +381,27 @@ def validate_tracking_locations():
             unreal.log("{} {} {} -> {} -> {} @ ({:.1f}, {:.1f}, {:.1f})".format(
                 LOG, quest_id, objective_id, tag_name, actor.get_actor_label(),
                 position.x, position.y, position.z))
+
+    # Q0 market destinations are the existing specialized observation triggers
+    # in the production map, not duplicate quest-location volumes.
+    if not unreal.EditorLoadingAndSavingUtils.load_map(PROLOGUE_MAP_PATH):
+        raise RuntimeError("Could not load {}".format(PROLOGUE_MAP_PATH))
+    market_matches = {location_id: [] for location_id in market_observation_ids}
+    for actor in actor_subsystem.get_all_level_actors():
+        if not isinstance(actor, unreal.VHVMarketObservationTrigger):
+            continue
+        observation_id = str(actor.get_editor_property("observation_id"))
+        if observation_id in market_matches:
+            market_matches[observation_id].append(actor)
+    invalid_market = {
+        location_id: [actor.get_actor_label() for actor in actors]
+        for location_id, actors in market_matches.items() if len(actors) != 1
+    }
+    if invalid_market:
+        raise RuntimeError("Market tracking destinations must resolve exactly once: {}".format(
+            invalid_market))
+    unreal.log("{} Validated {} existing market observation destinations.".format(
+        LOG, len(market_observation_ids)))
 
 
 def ensure_quest12_tracking_anchors():

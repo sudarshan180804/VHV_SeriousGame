@@ -42,6 +42,14 @@ public:
 
     static const TArray<FName>& GetRequiredObservationIDs();
 
+    /** Semantic tracking ID used by the objective navigator for this existing trigger. */
+    FName GetTrackingLocationID() const { return ObservationID; }
+
+    /** Accepts both the original fully-qualified save key and the new semantic leaf key. */
+    static bool IsObservationComplete(
+        const UVHVStoryStateSubsystem* StoryState,
+        FName InObservationID);
+
 protected:
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
