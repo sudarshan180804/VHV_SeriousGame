@@ -12,7 +12,9 @@ enum class EVHVMixamoAnimationState : uint8
 {
 	StandingIdle UMETA(DisplayName = "Standing Idle"),
 	Walking UMETA(DisplayName = "Walking"),
-	SittingIdle UMETA(DisplayName = "Sitting Idle")
+	Running UMETA(DisplayName = "Running"),
+	SittingIdle UMETA(DisplayName = "Sitting Idle"),
+	SpecialAction UMETA(DisplayName = "Special Action")
 };
 
 /**
@@ -40,6 +42,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "VHV|NPC|Animation")
 	EVHVNPCPosture GetRequestedPosture() const;
 
+	UFUNCTION(BlueprintCallable, Category = "VHV|NPC|Animation")
+	void SetSpecialActionActive(bool bActive);
+
+	UFUNCTION(BlueprintPure, Category = "VHV|NPC|Animation")
+	bool IsSpecialActionActive() const;
+
 	UFUNCTION(BlueprintPure, Category = "VHV|NPC|Animation")
 	EVHVMixamoAnimationState GetCurrentAnimationState() const;
 
@@ -59,6 +67,9 @@ private:
 
 	UPROPERTY(Transient)
 	EVHVNPCPosture RequestedPosture = EVHVNPCPosture::Standing;
+
+	UPROPERTY(Transient)
+	bool bSpecialActionActive = false;
 
 	UPROPERTY(Transient)
 	EVHVMixamoAnimationState CurrentAnimationState = EVHVMixamoAnimationState::StandingIdle;

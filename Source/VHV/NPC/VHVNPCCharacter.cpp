@@ -17,6 +17,10 @@
 #include "VHV/Core/VHVCollisionChannels.h"
 #include "Components/SphereComponent.h"
 
+#if WITH_EDITOR
+#include "UObject/UnrealType.h"
+#endif
+
 AVHVNPCCharacter::AVHVNPCCharacter()
 {
 	PrimaryActorTick.bCanEverTick = false;
@@ -60,6 +64,18 @@ AVHVNPCCharacter::AVHVNPCCharacter()
 	InteractionCollision->CanCharacterStepUpOn = ECB_No;
 }
 
+void AVHVNPCCharacter::OnConstruction(const FTransform& Transform)
+{
+	Super::OnConstruction(Transform);
+	ApplyRequestedAnimationState(
+#if WITH_EDITOR
+		GetWorld() && !GetWorld()->IsGameWorld()
+#else
+		false
+#endif
+	);
+}
+
 void AVHVNPCCharacter::BeginPlay()
 {
 	Super::BeginPlay();
@@ -67,12 +83,9 @@ void AVHVNPCCharacter::BeginPlay()
 
 	if (AnimationProfile)
 	{
-		CurrentPosture = AnimationProfile->InitialPosture;
-		if (UVHVMixamoNPCAnimInstance* AnimInstance = Cast<UVHVMixamoNPCAnimInstance>(GetMesh()->GetAnimInstance()))
-		{
-			AnimInstance->SetAnimationProfile(AnimationProfile);
-			AnimInstance->SetRequestedPosture(CurrentPosture);
-		}
+		CurrentPosture = bIsSitting ? EVHVNPCPosture::Sitting : AnimationProfile->InitialPosture;
+		bSpecialAnimationActionActive = AnimationProfile->bUseSpecialActionOutsideDialogue;
+		ApplyRequestedAnimationState();
 	}
 }
 
@@ -149,10 +162,10 @@ UVHVNPCAnimationProfile* AVHVNPCCharacter::GetAnimationProfile() const
 void AVHVNPCCharacter::SetAnimationProfile(UVHVNPCAnimationProfile* NewAnimationProfile)
 {
 	AnimationProfile = NewAnimationProfile;
-	if (UVHVMixamoNPCAnimInstance* AnimInstance = Cast<UVHVMixamoNPCAnimInstance>(GetMesh()->GetAnimInstance()))
-	{
-		AnimInstance->SetAnimationProfile(AnimationProfile);
-	}
+	CurrentPosture = bIsSitting
+		? EVHVNPCPosture::Sitting
+		: AnimationProfile ? AnimationProfile->InitialPosture : EVHVNPCPosture::Standing;
+	ApplyRequestedAnimationState();
 }
 
 EVHVNPCPosture AVHVNPCCharacter::GetNPCPosture() const
@@ -167,4 +180,89 @@ void AVHVNPCCharacter::SetNPCPosture(const EVHVNPCPosture NewPosture)
 	{
 		AnimInstance->SetRequestedPosture(CurrentPosture);
 	}
+}
+
+void AVHVNPCCharacter::SetIsSitting(const bool bNewIsSitting)
+{
+	bIsSitting = bNewIsSitting;
+	CurrentPosture = bIsSitting
+		? EVHVNPCPosture::Sitting
+		: AnimationProfile ? AnimationProfile->InitialPosture : EVHVNPCPosture::Standing;
+	ApplyRequestedAnimationState(
+#if WITH_EDITOR
+		GetWorld() && !GetWorld()->IsGameWorld()
+#else
+		false
+#endif
+	);
+}
+
+void AVHVNPCCharacter::ApplyRequestedAnimationState(const bool bPreviewInEditor)
+{
+	if (bIsSitting && AnimationProfile && !AnimationProfile->SittingIdleAnimation)
+	{
+		UE_LOG(LogAnimation, Warning,
+			TEXT("VHV NPC '%s' requested Is Sitting, but profile '%s' has no compatible Sitting Idle; using Standing Idle."),
+			*GetName(), *GetNameSafe(AnimationProfile));
+	}
+
+	USkeletalMeshComponent* MeshComponent = GetMesh();
+	if (!MeshComponent)
+	{
+		return;
+	}
+
+#if WITH_EDITOR
+	if (bPreviewInEditor && MeshComponent->GetAnimationMode() == EAnimationMode::AnimationBlueprint)
+	{
+		MeshComponent->InitAnim(true);
+	}
+#endif
+
+	if (UVHVMixamoNPCAnimInstance* AnimInstance =
+		Cast<UVHVMixamoNPCAnimInstance>(MeshComponent->GetAnimInstance()))
+	{
+		AnimInstance->SetAnimationProfile(AnimationProfile);
+		AnimInstance->SetRequestedPosture(CurrentPosture);
+		AnimInstance->SetSpecialActionActive(bSpecialAnimationActionActive);
+	}
+
+#if WITH_EDITOR
+	if (bPreviewInEditor)
+	{
+		MeshComponent->TickAnimation(1.0f / 30.0f, false);
+		MeshComponent->RefreshBoneTransforms();
+		MeshComponent->MarkRenderDynamicDataDirty();
+	}
+#endif
+}
+
+#if WITH_EDITOR
+void AVHVNPCCharacter::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+{
+	Super::PostEditChangeProperty(PropertyChangedEvent);
+	const FName PropertyName = PropertyChangedEvent.GetPropertyName();
+	if (PropertyName == GET_MEMBER_NAME_CHECKED(AVHVNPCCharacter, bIsSitting)
+		|| PropertyName == GET_MEMBER_NAME_CHECKED(AVHVNPCCharacter, AnimationProfile))
+	{
+		CurrentPosture = bIsSitting
+			? EVHVNPCPosture::Sitting
+			: AnimationProfile ? AnimationProfile->InitialPosture : EVHVNPCPosture::Standing;
+		ApplyRequestedAnimationState(true);
+	}
+}
+#endif
+
+void AVHVNPCCharacter::SetSpecialAnimationActionActive(const bool bActive)
+{
+	bSpecialAnimationActionActive = bActive;
+	if (UVHVMixamoNPCAnimInstance* AnimInstance = Cast<UVHVMixamoNPCAnimInstance>(GetMesh()->GetAnimInstance()))
+	{
+		AnimInstance->SetSpecialActionActive(bSpecialAnimationActionActive);
+	}
+}
+
+bool AVHVNPCCharacter::IsSpecialAnimationActionActive() const
+{
+	return bSpecialAnimationActionActive;
 }

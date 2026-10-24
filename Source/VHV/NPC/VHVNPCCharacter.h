@@ -24,6 +24,7 @@ class VHV_API AVHVNPCCharacter : public ACharacter
 
 public:
 	AVHVNPCCharacter();
+	virtual void OnConstruction(const FTransform& Transform) override;
 
 	UFUNCTION(BlueprintPure, Category = "VHV|NPC|Behavior")
 	FTransform GetHomeTransform() const;
@@ -76,8 +77,26 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "VHV|NPC|Animation")
 	void SetNPCPosture(EVHVNPCPosture NewPosture);
 
+	UFUNCTION(BlueprintCallable, Category = "VHV|Animation")
+	void SetIsSitting(bool bNewIsSitting);
+
+	UFUNCTION(BlueprintPure, Category = "VHV|Animation")
+	bool IsSitting() const { return bIsSitting; }
+
+	UFUNCTION(BlueprintCallable, Category = "VHV|NPC|Animation")
+	void SetSpecialAnimationActionActive(bool bActive);
+
+	UFUNCTION(BlueprintPure, Category = "VHV|NPC|Animation")
+	bool IsSpecialAnimationActionActive() const;
+
 private:
 	virtual void BeginPlay() override;
+
+#if WITH_EDITOR
+	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+#endif
+
+	void ApplyRequestedAnimationState(bool bPreviewInEditor = false);
 
 	UPROPERTY(Transient)
 	FTransform HomeTransform;
@@ -88,6 +107,14 @@ private:
 
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "VHV|NPC|Animation", meta = (AllowPrivateAccess = "true"))
 	EVHVNPCPosture CurrentPosture = EVHVNPCPosture::Standing;
+
+	/** Uses the profile's Sitting Idle whenever this placed NPC is stationary. */
+	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "VHV|Animation",
+		meta = (AllowPrivateAccess = "true", DisplayName = "Is Sitting"))
+	bool bIsSitting = false;
+
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "VHV|NPC|Animation", meta = (AllowPrivateAccess = "true"))
+	bool bSpecialAnimationActionActive = false;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VHV|NPC|Components", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UVHVInteractionComponent> InteractionComponent;

@@ -2276,6 +2276,7 @@ bool UVHVQuestSubsystem::EnsureParticipantPresentAtLocation(
     AVHVNPCCharacter* ParticipantActor = CommandComponent
         ? Cast<AVHVNPCCharacter>(CommandComponent->GetOwner())
         : nullptr;
+    bool bSpawnedParticipant = false;
     if (ParticipantActor)
     {
         UE_LOG(LogVHV, Log,
@@ -2377,6 +2378,7 @@ bool UVHVQuestSubsystem::EnsureParticipantPresentAtLocation(
                 *ParticipantID.ToString(), *LocationID.ToString());
             return false;
         }
+        bSpawnedParticipant = true;
 
         UVHVQuestParticipantComponent* Participant = ParticipantActor->GetQuestParticipantComponent();
         CommandComponent = ParticipantActor->GetQuestCommandComponent();
@@ -2412,6 +2414,9 @@ bool UVHVQuestSubsystem::EnsureParticipantPresentAtLocation(
             Nameplate->bShowNameplate = true;
         }
 
+        // Set the posture while spawning is still deferred so BeginPlay applies it
+        // with the actor's animation profile before the NPC can be rendered.
+        ParticipantActor->SetIsSitting(RequiredLocation->bIsSitting);
         ParticipantActor->FinishSpawning(SpawnTransform);
         if (!RegisterNPCCommandComponent(CommandComponent))
         {
@@ -2425,6 +2430,13 @@ bool UVHVQuestSubsystem::EnsureParticipantPresentAtLocation(
         UE_LOG(LogVHV, Warning,
             TEXT("[VHVQuest] Required participant '%s' absent from registry/world; spawned fallback participant for objective '%s'."),
             *ParticipantID.ToString(), *ObjectiveID.ToString());
+    }
+
+    // A placed or previously spawned participant is reactivated through the same
+    // presence path. Apply the trigger's initial request once for this activation.
+    if (!bSpawnedParticipant)
+    {
+        ParticipantActor->SetIsSitting(RequiredLocation->bIsSitting);
     }
 
     const FVector LocalPosition = RequiredLocation->BoxComponent->GetComponentTransform()

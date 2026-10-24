@@ -10,14 +10,20 @@ bool UVHVNPCAnimationProfile::IsCompatibleWithSkeleton(const USkeleton* Skeleton
 		return false;
 	}
 
-	return StandingIdleAnimation->GetSkeleton() == Skeleton
-		&& WalkingAnimation->GetSkeleton() == Skeleton
-		&& SittingIdleAnimation->GetSkeleton() == Skeleton;
+	const auto UsesSkeleton = [Skeleton](const UAnimSequence* Sequence)
+	{
+		return !Sequence || Sequence->GetSkeleton() == Skeleton;
+	};
+	return UsesSkeleton(StandingIdleAnimation)
+		&& UsesSkeleton(WalkingAnimation)
+		&& UsesSkeleton(RunningAnimation)
+		&& UsesSkeleton(SittingIdleAnimation)
+		&& UsesSkeleton(SpecialActionAnimation);
 }
 
 bool UVHVNPCAnimationProfile::HasAllRequiredAnimations() const
 {
-	return StandingIdleAnimation != nullptr
-		&& WalkingAnimation != nullptr
-		&& SittingIdleAnimation != nullptr;
+	// Standing is the only universal state. Locomotion, sitting, and actions are
+	// optional because several production Mixamo imports intentionally omit them.
+	return StandingIdleAnimation != nullptr;
 }

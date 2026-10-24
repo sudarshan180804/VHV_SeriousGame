@@ -74,9 +74,9 @@ def validate_mixamo_compatibility(skeletal_mesh, animation_profile, compatible_a
     if not skeleton:
         raise ValueError("Skeletal Mesh has no skeleton")
     if not profile.has_all_required_animations():
-        raise ValueError("Animation Profile must contain Standing, Walking, and Sitting sequences")
+        raise ValueError("Animation Profile must contain a Standing sequence")
     if not profile.is_compatible_with_skeleton(skeleton):
-        raise ValueError("One or more profile animations use a different skeleton than the mesh")
+        raise ValueError("One or more assigned profile animations use a different skeleton than the mesh")
     if anim_bp.get_editor_property("target_skeleton") != skeleton:
         raise ValueError(
             "Animation Blueprint target skeleton differs from the mesh. Create a skeleton-specific "

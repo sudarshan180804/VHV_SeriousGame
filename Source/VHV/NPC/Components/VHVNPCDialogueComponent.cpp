@@ -4,8 +4,10 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "NPC/Components/VHVNPCBehaviorComponent.h"
+#include "NPC/Animation/VHVNPCAnimationProfile.h"
 #include "NPC/Types/VHVNPCBehaviorTypes.h"
 #include "NPC/VHVNPCAIController.h"
+#include "NPC/VHVNPCCharacter.h"
 #include "Quest/Components/VHVQuestParticipantComponent.h"
 #include "Quest/Systems/VHVQuestSubsystem.h"
 #include "UI/VHVUIManagerComponent.h"
@@ -156,6 +158,11 @@ bool UVHVNPCDialogueComponent::BeginDialogueSession(UVHVUIManagerComponent* UIMa
 	}
 	ActiveUIManager = UIManager;
 	ActiveUIManager->OnConversationSessionEnded.AddUniqueDynamic(this, &UVHVNPCDialogueComponent::HandleConversationSessionEnded);
+	if (AVHVNPCCharacter* NPC = Cast<AVHVNPCCharacter>(GetOwner()))
+	{
+		const UVHVNPCAnimationProfile* Profile = NPC->GetAnimationProfile();
+		NPC->SetSpecialAnimationActionActive(Profile && Profile->bUseSpecialActionDuringDialogue);
+	}
 	return true;
 }
 
@@ -165,6 +172,11 @@ void UVHVNPCDialogueComponent::CancelDialogueSessionBinding()
 	{
 		ActiveUIManager->OnConversationSessionEnded.RemoveDynamic(this, &UVHVNPCDialogueComponent::HandleConversationSessionEnded);
 		ActiveUIManager = nullptr;
+	}
+	if (AVHVNPCCharacter* NPC = Cast<AVHVNPCCharacter>(GetOwner()))
+	{
+		const UVHVNPCAnimationProfile* Profile = NPC->GetAnimationProfile();
+		NPC->SetSpecialAnimationActionActive(Profile && Profile->bUseSpecialActionOutsideDialogue);
 	}
 }
 
@@ -220,6 +232,11 @@ UVHVUIManagerComponent* UVHVNPCDialogueComponent::ResolveUIManager(AActor* Inter
 
 void UVHVNPCDialogueComponent::RestoreNPCState()
 {
+	if (AVHVNPCCharacter* NPC = Cast<AVHVNPCCharacter>(GetOwner()))
+	{
+		const UVHVNPCAnimationProfile* Profile = NPC->GetAnimationProfile();
+		NPC->SetSpecialAnimationActionActive(Profile && Profile->bUseSpecialActionOutsideDialogue);
+	}
 	if (ActiveUIManager)
 	{
 		ActiveUIManager->OnConversationSessionEnded.RemoveDynamic(this, &UVHVNPCDialogueComponent::HandleConversationSessionEnded);

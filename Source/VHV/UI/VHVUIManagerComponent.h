@@ -290,6 +290,7 @@ public:
     void FinishDeveloperQuestSkip();
 
     /** Enhanced Input entry point for toggling destination and route guidance. */
+    UFUNCTION(BlueprintCallable, Category = "VHV|UI|Input")
     void ToggleObjectiveTracking();
 
     void ShowSocialSupportObservationProgress(int32 CompletedCount);

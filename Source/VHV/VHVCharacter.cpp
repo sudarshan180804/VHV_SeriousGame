@@ -16,6 +16,8 @@
 #include "VHV.h"
 #include "VHV/Player/Components/VHVPlayerInteractionComponent.h"
 #include "VHV/NPC/Components/VHVAmbientSpeechComponent.h"
+#include "VHV/NPC/Animation/VHVMixamoNPCAnimInstance.h"
+#include "VHV/NPC/Animation/VHVNPCAnimationProfile.h"
 #include "VHV/UI/VHVUIManagerComponent.h"
 
 AVHVCharacter::AVHVCharacter()
@@ -34,7 +36,7 @@ AVHVCharacter::AVHVCharacter()
 	GetCharacterMovement()->RotationRate = FRotator(0.0f, 500.0f, 0.0f);
 
 	// Character movement settings
-	GetCharacterMovement()->JumpZVelocity = 500.f;
+	GetCharacterMovement()->JumpZVelocity = 0.f;
 	GetCharacterMovement()->AirControl = 0.35f;
 	GetCharacterMovement()->MaxWalkSpeed = 500.f;
 	GetCharacterMovement()->MinAnalogWalkSpeed = 20.f;
@@ -75,6 +77,22 @@ AVHVCharacter::AVHVCharacter()
 	// remain configured in the ThirdPersonCharacter Blueprint.
 }
 
+void AVHVCharacter::BeginPlay()
+{
+	Super::BeginPlay();
+
+	if (PlayerAnimationProfile)
+	{
+		if (UVHVMixamoNPCAnimInstance* AnimInstance =
+			Cast<UVHVMixamoNPCAnimInstance>(GetMesh()->GetAnimInstance()))
+		{
+			AnimInstance->SetAnimationProfile(PlayerAnimationProfile);
+			AnimInstance->SetRequestedPosture(EVHVNPCPosture::Standing);
+			AnimInstance->SetSpecialActionActive(false);
+		}
+	}
+}
+
 void AVHVCharacter::SetupPlayerInputComponent(
 	UInputComponent* PlayerInputComponent)
 {
@@ -82,21 +100,6 @@ void AVHVCharacter::SetupPlayerInputComponent(
 	if (UEnhancedInputComponent* EnhancedInputComponent =
 		Cast<UEnhancedInputComponent>(PlayerInputComponent))
 	{
-		// Jumping
-		EnhancedInputComponent->BindAction(
-			JumpAction,
-			ETriggerEvent::Started,
-			this,
-			&ACharacter::Jump
-		);
-
-		EnhancedInputComponent->BindAction(
-			JumpAction,
-			ETriggerEvent::Completed,
-			this,
-			&ACharacter::StopJumping
-		);
-
 		// Moving
 		EnhancedInputComponent->BindAction(
 			MoveAction,
@@ -194,14 +197,17 @@ void AVHVCharacter::DoLook(float Yaw, float Pitch)
 
 void AVHVCharacter::DoJumpStart()
 {
-	// Signal the character to jump
-	Jump();
+	// Jumping is deliberately disabled for the production player.
 }
 
 void AVHVCharacter::DoJumpEnd()
 {
-	// Signal the character to stop jumping
-	StopJumping();
+	// Retained as a no-op so inherited Blueprint calls cannot initiate jumping.
+}
+
+bool AVHVCharacter::CanJumpInternal_Implementation() const
+{
+	return false;
 }
 
 void AVHVCharacter::Interact()

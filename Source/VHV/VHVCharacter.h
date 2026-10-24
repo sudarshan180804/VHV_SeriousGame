@@ -12,6 +12,7 @@ class UCameraComponent;
 class UInputAction;
 class UVHVPlayerInteractionComponent;
 class UVHVAmbientSpeechComponent;
+class UVHVNPCAnimationProfile;
 
 struct FInputActionValue;
 
@@ -43,10 +44,12 @@ class VHV_API AVHVCharacter : public ACharacter
 	TObjectPtr<UVHVAmbientSpeechComponent> ThoughtSpeechComponent;
 
 protected:
+	virtual void BeginPlay() override;
+	virtual bool CanJumpInternal_Implementation() const override;
 
-	/** Jump Input Action */
-	UPROPERTY(EditAnywhere, Category = "Input")
-	UInputAction* JumpAction;
+	/** Character-specific Mixamo clips used by the production player visual. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "VHV|Player|Animation")
+	TObjectPtr<UVHVNPCAnimationProfile> PlayerAnimationProfile;
 
 	/** Move Input Action */
 	UPROPERTY(EditAnywhere, Category = "Input")
@@ -90,11 +93,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Input")
 	virtual void DoLook(float Yaw, float Pitch);
 
-	/** Handles jump pressed inputs from either controls or UI interfaces */
+	/** Intentionally disabled; retained as a no-op for Blueprint compatibility. */
 	UFUNCTION(BlueprintCallable, Category = "Input")
 	virtual void DoJumpStart();
 
-	/** Handles jump pressed inputs from either controls or UI interfaces */
+	/** Intentionally disabled; retained as a no-op for Blueprint compatibility. */
 	UFUNCTION(BlueprintCallable, Category = "Input")
 	virtual void DoJumpEnd();
 

@@ -8,6 +8,7 @@
 #include "NPC/Components/VHVAmbientSpeechComponent.h"
 #include "NPC/Components/VHVNPCBehaviorComponent.h"
 #include "NPC/Components/VHVNPCPresentationComponent.h"
+#include "NPC/Animation/VHVNPCAnimationProfile.h"
 #include "NPC/VHVNPCAIController.h"
 #include "NPC/VHVNPCCharacter.h"
 #include "Story/Systems/VHVStoryStateSubsystem.h"
@@ -364,7 +365,14 @@ void AVHVAmbientConversationActor::PrepareParticipants()
 
 void AVHVAmbientConversationActor::RestoreParticipants()
 {
-    ClearFacing();
+	ClearFacing();
+	for (const TPair<FName, TObjectPtr<AVHVNPCCharacter>>& Pair : ResolvedParticipants)
+	{
+		if (Pair.Value)
+		{
+			Pair.Value->SetSpecialAnimationActionActive(false);
+		}
+	}
     for (const TPair<TWeakObjectPtr<AVHVNPCCharacter>, FName>& Pair : StartedPresentationActions)
     {
         if (AVHVNPCCharacter* NPC = Pair.Key.Get())
@@ -422,8 +430,20 @@ void AVHVAmbientConversationActor::ShowCurrentLine()
             *GetName(), bPlaying ? TEXT("true") : TEXT("false"), *GetNameSafe(ConversationData), CurrentLineIndex);
         return;
     }
-    const FVHVAmbientSpeechLine& Line = ConversationData->Lines[CurrentLineIndex];
-    AVHVNPCCharacter* Speaker = FindParticipant(Line.SpeakerSlot);
+	const FVHVAmbientSpeechLine& Line = ConversationData->Lines[CurrentLineIndex];
+	AVHVNPCCharacter* Speaker = FindParticipant(Line.SpeakerSlot);
+	for (const TPair<FName, TObjectPtr<AVHVNPCCharacter>>& Pair : ResolvedParticipants)
+	{
+		if (Pair.Value)
+		{
+			Pair.Value->SetSpecialAnimationActionActive(false);
+		}
+	}
+	if (Speaker)
+	{
+		const UVHVNPCAnimationProfile* Profile = Speaker->GetAnimationProfile();
+		Speaker->SetSpecialAnimationActionActive(Profile && Profile->bUseSpecialActionDuringDialogue);
+	}
     UVHVAmbientSpeechComponent* Speech = Speaker
         ? Speaker->FindComponentByClass<UVHVAmbientSpeechComponent>() : nullptr;
     if (!Speech)

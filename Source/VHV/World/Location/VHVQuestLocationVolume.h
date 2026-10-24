@@ -86,6 +86,11 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VHV|Location")
     bool bEnabled = true;
 
+    /** Initial stationary posture for an NPC spawned or reactivated at this location. */
+    UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "VHV|Spawned NPC Animation",
+        meta = (DisplayName = "Is Sitting"))
+    bool bIsSitting = false;
+
     /** Require the player to press Interact instead of dispatching configured actions on overlap. */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|Location|Interaction")
     bool bRequirePlayerInteraction = false;
