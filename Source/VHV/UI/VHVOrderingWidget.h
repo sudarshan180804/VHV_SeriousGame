@@ -39,6 +39,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "VHV|Textbook")
     void ResetOrder();
 
+    /** Rearranges cards into the authored answer key and locks editing. */
+    void ShowCorrectAnswerReveal(const TArray<FString>& CorrectOrder);
+
     virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
     virtual bool NativeOnDragOver(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
     virtual bool NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
@@ -87,6 +90,7 @@ protected:
     int32 MouseInsertionIndex = INDEX_NONE;
     bool bKeyboardReorderMode = false;
     bool bMouseDragging = false;
+    bool bShowingAnswerReveal = false;
     int32 MouseDropTargetIndex = INDEX_NONE;
     FString FocusedItemID;
     FString MouseDragItemID;

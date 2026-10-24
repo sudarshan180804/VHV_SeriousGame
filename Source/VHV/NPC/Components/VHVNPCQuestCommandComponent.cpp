@@ -6,9 +6,11 @@
 #include "NPC/Components/VHVNPCBehaviorComponent.h"
 #include "NPC/Components/VHVNPCPatrolComponent.h"
 #include "NPC/Components/VHVNPCPresentationComponent.h"
+#include "NPC/VHVNPCCharacter.h"
 #include "NPC/Quest/VHVNPCBehaviorTarget.h"
 #include "Quest/Components/VHVQuestParticipantComponent.h"
 #include "Quest/Systems/VHVQuestSubsystem.h"
+#include "TimerManager.h"
 #include "World/Location/VHVQuestLocationVolume.h"
 #include "VHV.h"
 
@@ -37,6 +39,10 @@ void UVHVNPCQuestCommandComponent::BeginPlay()
 
 void UVHVNPCQuestCommandComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (GetWorld())
+	{
+		GetWorld()->GetTimerManager().ClearTimer(PresenceMoveTimeoutHandle);
+	}
 	UnregisterFromQuestSubsystem();
 	if (BehaviorComponent)
 	{
@@ -92,6 +98,38 @@ bool UVHVNPCQuestCommandComponent::MoveToLocation(
 	bFaceActiveDestinationRotation = bFaceDestinationRotation;
 	ActiveMoveDestinationRotation = DestinationRotation;
 	ActiveMoveSpeedOverride = FMath::Max(0.0f, MoveSpeedOverride);
+	return QueueOrExecuteActiveCommand();
+}
+
+bool UVHVNPCQuestCommandComponent::MoveToLocationForPresence(
+	const FVector Destination,
+	const FRotator DestinationRotation,
+	const bool bSitAtDestination,
+	const float AcceptanceRadius,
+	const float MoveSpeedOverride,
+	const float TimeoutSeconds)
+{
+	AVHVNPCCharacter* Character = Cast<AVHVNPCCharacter>(GetOwner());
+	if (!Character || Destination.ContainsNaN() || !BehaviorComponent)
+	{
+		return false;
+	}
+
+	BeginQuestOwnership();
+	AbortActiveCommand(true);
+	ActiveCommand = EVHVNPCQuestCommandType::MoveToTarget;
+	ActiveTargetID = NAME_None;
+	bUseDirectMoveDestination = true;
+	ActiveMoveDestination = Destination;
+	ActiveMoveAcceptanceRadius = FMath::Max(0.0f, AcceptanceRadius);
+	bFaceActiveDestinationRotation = true;
+	ActiveMoveDestinationRotation = DestinationRotation;
+	ActiveMoveSpeedOverride = FMath::Max(0.0f, MoveSpeedOverride);
+	bPresenceTransition = true;
+	bPresencePreviousSitting = Character->IsSitting();
+	bPresenceDestinationSitting = bSitAtDestination;
+	bPresenceTeleportOnTimeout = true;
+	PresenceMoveTimeoutSeconds = FMath::Max(0.5f, TimeoutSeconds);
 	return QueueOrExecuteActiveCommand();
 }
 
@@ -228,6 +266,13 @@ bool UVHVNPCQuestCommandComponent::ExecuteActiveCommand()
 	switch (ActiveCommand)
 	{
 	case EVHVNPCQuestCommandType::MoveToTarget:
+		if (bPresenceTransition)
+		{
+			if (AVHVNPCCharacter* Character = Cast<AVHVNPCCharacter>(GetOwner()))
+			{
+				Character->SetIsSitting(false);
+			}
+		}
 		ApplyActiveMoveSpeedOverride();
 		if (bUseDirectMoveDestination)
 		{
@@ -275,6 +320,16 @@ bool UVHVNPCQuestCommandComponent::ExecuteActiveCommand()
 	{
 		CompleteActiveCommand(false);
 	}
+	else if (bStarted && bPresenceTransition && ActiveCommand != EVHVNPCQuestCommandType::None
+		&& GetWorld())
+	{
+		GetWorld()->GetTimerManager().SetTimer(
+			PresenceMoveTimeoutHandle,
+			this,
+			&UVHVNPCQuestCommandComponent::HandlePresenceMoveTimeout,
+			PresenceMoveTimeoutSeconds,
+			false);
+	}
 	return bStarted;
 }
 
@@ -317,6 +372,10 @@ void UVHVNPCQuestCommandComponent::CompleteActiveCommand(const bool bSuccess)
 		return;
 	}
 	const EVHVNPCQuestCommandType CompletedCommand = ActiveCommand;
+	if (GetWorld())
+	{
+		GetWorld()->GetTimerManager().ClearTimer(PresenceMoveTimeoutHandle);
+	}
 	if (bSuccess && CompletedCommand == EVHVNPCQuestCommandType::MoveToTarget
 		&& !bUseDirectMoveDestination)
 	{
@@ -335,6 +394,7 @@ void UVHVNPCQuestCommandComponent::CompleteActiveCommand(const bool bSuccess)
 		GetOwner()->SetActorRotation(OwnerRotation);
 	}
 	RestoreMoveSpeedOverride();
+	RestorePresencePosture(bSuccess);
 	ActiveCommand = EVHVNPCQuestCommandType::None;
 	ActiveTargetID = NAME_None;
 	ActiveActionID = NAME_None;
@@ -356,7 +416,12 @@ void UVHVNPCQuestCommandComponent::AbortActiveCommand(const bool bBroadcastFailu
 {
 	if (ActiveCommand == EVHVNPCQuestCommandType::None)
 	{
+		if (GetWorld())
+		{
+			GetWorld()->GetTimerManager().ClearTimer(PresenceMoveTimeoutHandle);
+		}
 		RestoreMoveSpeedOverride();
+		RestorePresencePosture(false);
 		bBehaviorOperationActive = false;
 		bCommandPending = false;
 		return;
@@ -365,6 +430,11 @@ void UVHVNPCQuestCommandComponent::AbortActiveCommand(const bool bBroadcastFailu
 	const EVHVNPCQuestCommandType AbortedCommand = ActiveCommand;
 	const bool bShouldCancelBehavior = bBehaviorOperationActive;
 	RestoreMoveSpeedOverride();
+	if (GetWorld())
+	{
+		GetWorld()->GetTimerManager().ClearTimer(PresenceMoveTimeoutHandle);
+	}
+	RestorePresencePosture(false);
 	ActiveCommand = EVHVNPCQuestCommandType::None;
 	ActiveTargetID = NAME_None;
 	ActiveActionID = NAME_None;
@@ -391,6 +461,48 @@ void UVHVNPCQuestCommandComponent::AbortActiveCommand(const bool bBroadcastFailu
 		OnQuestCommandCompleted.Broadcast(AbortedCommand, false);
 		OnQuestCommandCompletedNative.Broadcast(this, AbortedCommand, false);
 	}
+}
+
+void UVHVNPCQuestCommandComponent::RestorePresencePosture(const bool bReachedDestination)
+{
+	if (!bPresenceTransition)
+	{
+		return;
+	}
+	if (AVHVNPCCharacter* Character = Cast<AVHVNPCCharacter>(GetOwner()))
+	{
+		Character->SetIsSitting(
+			bReachedDestination ? bPresenceDestinationSitting : bPresencePreviousSitting);
+	}
+	bPresenceTransition = false;
+	bPresencePreviousSitting = false;
+	bPresenceDestinationSitting = false;
+	bPresenceTeleportOnTimeout = false;
+	PresenceMoveTimeoutSeconds = 0.0f;
+}
+
+void UVHVNPCQuestCommandComponent::HandlePresenceMoveTimeout()
+{
+	if (!bPresenceTransition || ActiveCommand != EVHVNPCQuestCommandType::MoveToTarget)
+	{
+		return;
+	}
+
+	UE_LOG(LogVHV, Warning,
+		TEXT("[VHVNPC] Local presence move timed out for '%s'; applying bounded destination fallback."),
+		*GetNameSafe(GetOwner()));
+	if (BehaviorComponent)
+	{
+		BehaviorComponent->CancelCurrentBehavior();
+	}
+	const bool bRelocated = bPresenceTeleportOnTimeout && GetOwner()
+		&& GetOwner()->SetActorLocationAndRotation(
+			ActiveMoveDestination,
+			ActiveMoveDestinationRotation,
+			false,
+			nullptr,
+			ETeleportType::TeleportPhysics);
+	CompleteActiveCommand(bRelocated);
 }
 
 void UVHVNPCQuestCommandComponent::RegisterWithQuestSubsystem()
@@ -455,6 +567,17 @@ void UVHVNPCQuestCommandComponent::HandleBehaviorStateChanged(
 		&& bHasQuestOwnership
 		&& ActiveCommand != EVHVNPCQuestCommandType::None)
 	{
+		if (bPresenceTransition && bBehaviorOperationActive)
+		{
+			if (AVHVNPCCharacter* Character = Cast<AVHVNPCCharacter>(GetOwner()))
+			{
+				Character->SetIsSitting(bPresencePreviousSitting);
+			}
+			if (GetWorld())
+			{
+				GetWorld()->GetTimerManager().ClearTimer(PresenceMoveTimeoutHandle);
+			}
+		}
 		if (ActiveCommand == EVHVNPCQuestCommandType::PlayAction && PresentationComponent)
 		{
 			PresentationComponent->StopCurrentActionSilently();

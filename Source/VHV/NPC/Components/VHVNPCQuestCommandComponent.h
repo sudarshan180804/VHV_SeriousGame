@@ -45,6 +45,15 @@ public:
 		FRotator DestinationRotation = FRotator::ZeroRotator,
 		float MoveSpeedOverride = 0.0f);
 
+	/** Short, prevalidated quest-presence walk with posture restore and bounded fallback. */
+	bool MoveToLocationForPresence(
+		FVector Destination,
+		FRotator DestinationRotation,
+		bool bSitAtDestination,
+		float AcceptanceRadius = 45.0f,
+		float MoveSpeedOverride = 260.0f,
+		float TimeoutSeconds = 4.5f);
+
 	UFUNCTION(BlueprintCallable, Category = "VHV|NPC|Quest Commands")
 	bool Wait(float Duration);
 
@@ -105,12 +114,20 @@ private:
 	bool bBehaviorOperationActive = false;
 	bool bCommandPending = false;
 	bool bResumePatrolWhenIdle = false;
+	bool bPresenceTransition = false;
+	bool bPresencePreviousSitting = false;
+	bool bPresenceDestinationSitting = false;
+	bool bPresenceTeleportOnTimeout = false;
+	float PresenceMoveTimeoutSeconds = 0.0f;
+	FTimerHandle PresenceMoveTimeoutHandle;
 
 	void BeginQuestOwnership();
 	bool QueueOrExecuteActiveCommand();
 	bool ExecuteActiveCommand();
 	void ApplyActiveMoveSpeedOverride();
 	void RestoreMoveSpeedOverride();
+	void RestorePresencePosture(bool bReachedDestination);
+	void HandlePresenceMoveTimeout();
 	void CompleteActiveCommand(bool bSuccess);
 	void AbortActiveCommand(bool bBroadcastFailure);
 	void RegisterWithQuestSubsystem();

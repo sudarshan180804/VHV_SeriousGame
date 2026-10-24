@@ -56,6 +56,13 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|Ambient Conversation|Playback")
     bool bPreserveParticipantBehavior = false;
 
+    /**
+     * Scene-local casts opt into an explicit hidden-idle/visible-playing
+     * lifecycle. Persistent village NPCs leave this disabled.
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|Ambient Conversation|Playback")
+    bool bControlParticipantVisibility = false;
+
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VHV|Ambient Conversation|Playback")
     EVHVAmbientConversationLeavePolicy PlayerLeavePolicy = EVHVAmbientConversationLeavePolicy::Cancel;
 
@@ -73,6 +80,13 @@ public:
     /** Optional world presentation hidden when this conversation successfully starts. */
     UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "VHV|Ambient Conversation|Presentation")
     TArray<TObjectPtr<AActor>> ActorsHiddenWhenConversationStarts;
+
+    /**
+     * Identity-equivalent persistent actors suppressed only while this local cast
+     * owns presentation. Their exact hidden state is restored on every exit path.
+     */
+    UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "VHV|Ambient Conversation|Presentation")
+    TArray<TObjectPtr<AActor>> ActorsTemporarilyHiddenWhileConversationPlays;
 
     UFUNCTION(BlueprintCallable, Category = "VHV|Ambient Conversation")
     bool StartConversation();
@@ -103,6 +117,14 @@ public:
     UFUNCTION(BlueprintPure, Category = "VHV|Ambient Conversation|Debug")
     bool AreParticipantsValid() const;
 
+    /** Runtime diagnostic for the currently resolved cast, including component visibility. */
+    UFUNCTION(BlueprintPure, Category = "VHV|Ambient Conversation|Debug")
+    bool AreResolvedParticipantsVisible() const;
+
+    /** Returns the exact actor instance resolved for a dialogue slot during active playback. */
+    UFUNCTION(BlueprintPure, Category = "VHV|Ambient Conversation|Debug")
+    AVHVNPCCharacter* GetResolvedParticipant(FName SlotID) const;
+
     UPROPERTY(BlueprintAssignable, Category = "VHV|Ambient Conversation|Events")
     FOnVHVAmbientConversationStarted OnConversationStarted;
 
@@ -130,6 +152,8 @@ private:
 
     TMap<TWeakObjectPtr<AVHVNPCCharacter>, EVHVNPCBehaviorState> PreviousBehaviorStates;
     TMap<TWeakObjectPtr<AVHVNPCCharacter>, FName> StartedPresentationActions;
+    TMap<TWeakObjectPtr<AActor>, bool> TemporarilySuppressedActorHiddenStates;
+    TMap<TWeakObjectPtr<AVHVNPCCharacter>, FTransform> ControlledParticipantAuthoredTransforms;
     FTimerHandle SequenceTimerHandle;
     FGuid ActiveWorldActionRequestID;
     int32 CurrentLineIndex = INDEX_NONE;
@@ -153,6 +177,10 @@ private:
         bool bHonorPlayOnce,
         bool bApplyCompletionEffects);
     bool ResolveAndValidateParticipants(FString& OutError);
+    bool ActivateControlledParticipants(FString& OutError);
+    void HideControlledParticipants();
+    void ApplyTemporaryActorSuppression();
+    void RestoreTemporarilySuppressedActors();
     void PrepareParticipants();
     void RestoreParticipants();
     void AdvanceSequence();

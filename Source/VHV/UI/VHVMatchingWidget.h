@@ -37,6 +37,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "VHV|Textbook")
     TArray<FMatchingPair> GetCurrentMatches() const;
 
+    /** Displays every authored correct connection and locks editing. */
+    void ShowCorrectAnswerReveal();
+
     void HandleCardSelected(bool bIsLeftColumn, int32 ItemIndex);
     bool ActivateFocusedSelection();
     void BeginConnectionDrag(int32 LeftIndex, const FVector2D& ScreenPosition);
@@ -86,6 +89,7 @@ protected:
     FVector2D DragScreenPosition = FVector2D::ZeroVector;
     bool bLeftColumnFocused = true;
     bool bConnectionDragActive = false;
+    bool bShowingAnswerReveal = false;
     FString AuthoredPromptText;
     float EntranceElapsed = 0.0f;
     float ConnectionRevealElapsed = 1.0f;

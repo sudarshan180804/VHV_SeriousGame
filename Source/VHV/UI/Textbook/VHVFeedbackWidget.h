@@ -27,7 +27,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "VHV|Textbook")
 	void SetFeedbackText(const FText& InText);
 
-	void SetFeedbackPresentation(const FText& InText, ETone InTone, bool bIsHint = false);
+	void SetFeedbackPresentation(const FText& InText, ETone InTone, bool bIsHint = false, bool bIsSolutionReveal = false);
 	void SetOwningUIManager(UVHVUIManagerComponent* InUIManager);
 
 protected:
@@ -46,6 +46,7 @@ private:
 	FText CurrentText;
 	ETone CurrentTone = ETone::Neutral;
 	bool bCurrentIsHint = false;
+	bool bCurrentIsSolutionReveal = false;
 	bool bContinueActivated = false;
 	float EntranceElapsed = 0.0f;
 	TSharedPtr<class STextBlock> TitleTextSlate;

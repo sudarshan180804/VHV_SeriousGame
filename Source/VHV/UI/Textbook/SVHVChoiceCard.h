@@ -28,6 +28,7 @@ public:
 
     void Construct(const FArguments& InArgs);
     void SetPresentationState(bool bInFocused, bool bInSelected, bool bInEnabled, bool bInMultiChoice);
+    void SetAnswerRevealState(bool bInCorrectAnswer, bool bInIncorrectSelection);
 
     virtual void Tick(const FGeometry& AllottedGeometry, double InCurrentTime, float InDeltaTime) override;
     virtual FReply OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
@@ -60,6 +61,9 @@ private:
     bool bMultiChoice = false;
     bool bHovered = false;
     bool bPressed = false;
+    bool bAnswerReveal = false;
+    bool bCorrectAnswer = false;
+    bool bIncorrectSelection = false;
     float Emphasis = 0.0f;
     float EntranceDelay = 0.0f;
     float EntranceElapsed = 0.0f;

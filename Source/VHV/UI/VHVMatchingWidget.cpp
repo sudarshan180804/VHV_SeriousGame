@@ -312,6 +312,8 @@ void UVHVMatchingWidget::SetPromptText(const FString& InPromptText)
 
 void UVHVMatchingWidget::SetMatchingPairs(const TArray<FMatchingPair>& InPairs)
 {
+    bShowingAnswerReveal = false;
+    SetIsEnabled(true);
     MatchingPairs = InPairs;
     RightDisplayOrder.Reset();
     LeftToRight.Init(INDEX_NONE, MatchingPairs.Num());
@@ -330,6 +332,25 @@ void UVHVMatchingWidget::SetMatchingPairs(const TArray<FMatchingPair>& InPairs)
     EntranceElapsed = 0.0f;
     ConnectionRevealElapsed = 1.0f;
     RefreshDisplay();
+}
+
+void UVHVMatchingWidget::ShowCorrectAnswerReveal()
+{
+    bShowingAnswerReveal = true;
+    RightDisplayOrder.Reset();
+    LeftToRight.Reset();
+    for (int32 Index = 0; Index < MatchingPairs.Num(); ++Index)
+    {
+        RightDisplayOrder.Add(Index);
+        LeftToRight.Add(Index);
+    }
+    FocusedLeftIndex = INDEX_NONE;
+    FocusedRightDisplayIndex = INDEX_NONE;
+    PendingLeftIndex = INDEX_NONE;
+    bConnectionDragActive = false;
+    ConnectionRevealElapsed = 1.0f;
+    RefreshDisplay();
+    SetIsEnabled(false);
 }
 
 void UVHVMatchingWidget::SetOwningUIManager(UVHVUIManagerComponent* InUIManager)
@@ -814,8 +835,10 @@ void UVHVMatchingWidget::UpdateCardVisuals()
 
 void UVHVMatchingWidget::UpdateSubmitHint()
 {
-    const FText Hint = FText::FromString(FString::Printf(
-        TEXT("%d / %d pairs connected"), GetCurrentMatches().Num(), MatchingPairs.Num()));
+    const FText Hint = bShowingAnswerReveal
+        ? FText::FromString(TEXT("Correct connections shown — review them, then continue."))
+        : FText::FromString(FString::Printf(
+            TEXT("%d / %d pairs connected"), GetCurrentMatches().Num(), MatchingPairs.Num()));
     if (SubmitHintSlate)
     {
         SubmitHintSlate->SetText(Hint);

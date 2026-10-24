@@ -323,6 +323,11 @@ void UVHVUIManagerComponent::HandleInteractionTargetChanged(UVHVInteractionCompo
 
 void UVHVUIManagerComponent::HandleLearningPhaseChanged(ELearningPhase NewPhase)
 {
+    if (NewPhase != ELearningPhase::Feedback)
+    {
+        bFeedbackAdvanceInProgress = false;
+    }
+
     if (bStartingMajorStingerActivity && NewPhase == ELearningPhase::Ask)
     {
         HideQuestionUI();
@@ -337,10 +342,13 @@ void UVHVUIManagerComponent::HandleLearningPhaseChanged(ELearningPhase NewPhase)
         if (TextbookSubsystem && TextbookSubsystem->IsActivityActive())
         {
             const FTextbookActivityData CurrentActivity = TextbookSubsystem->GetCurrentActivity();
+            const bool bSelfMonitoringLesson = CurrentActivity.GetEffectiveActivityID().Equals(
+                TEXT("MonitoringLoop"), ESearchCase::CaseSensitive);
             const bool bDirectTeachingLesson = CurrentActivity.ActivityType == ETextbookActivityType::Observation
                 && !CurrentActivity.EvidenceTagging.bUseEvidenceTagging
                 && CurrentActivity.Teaching.Category != ETextbookTeachingCategory::Technique
-                && (!CurrentActivity.Teaching.MediaTexture.IsNull()
+                && (bSelfMonitoringLesson
+                    || !CurrentActivity.Teaching.MediaTexture.IsNull()
                     || CurrentActivity.Teaching.Layout
                         == ETextbookTeachingLayout::BehaviorChangeTextLesson);
             if (bDirectTeachingLesson
@@ -374,9 +382,16 @@ void UVHVUIManagerComponent::HandleLearningPhaseChanged(ELearningPhase NewPhase)
         EnsureFeedbackWidget();
         HideQuestionUI();
         HideObservationUI();
+        HideOrderingUI();
+        HideMatchingUI();
+        HideSupportNetworkUI();
         HideTeachUI();
         RefreshCurrentFeedbackUI();
-        ApplyUIState(EVHVUIState::LearningFeedback);
+        const bool bShowingSolution = TextbookSubsystem && TextbookSubsystem->IsActivityActive()
+            && TextbookSubsystem->GetRuntimeState().bAnswerRevealed;
+        ApplyUIState(bShowingSolution
+            ? EVHVUIState::LearningSolution
+            : EVHVUIState::LearningFeedback);
         return;
     }
 
@@ -839,7 +854,8 @@ UUserWidget* UVHVUIManagerComponent::ResolveModalFocusTarget(const EVHVUIState S
         return DialogueWidget;
     }
 
-    if (State == EVHVUIState::LearningFeedback || State == EVHVUIState::LearningHint)
+    if (State == EVHVUIState::LearningFeedback || State == EVHVUIState::LearningHint
+        || State == EVHVUIState::LearningSolution)
     {
         return FeedbackWidget;
     }
@@ -963,7 +979,10 @@ void UVHVUIManagerComponent::ApplyUIState(EVHVUIState NewState)
 
     if (FeedbackWidget)
     {
-        FeedbackWidget->SetVisibility(NewState == EVHVUIState::LearningFeedback || NewState == EVHVUIState::LearningHint ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+        const bool bShowFeedback = NewState == EVHVUIState::LearningFeedback
+            || NewState == EVHVUIState::LearningHint
+            || NewState == EVHVUIState::LearningSolution;
+        FeedbackWidget->SetVisibility(bShowFeedback ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
     }
 
     if (TeachWidget)
@@ -983,15 +1002,17 @@ void UVHVUIManagerComponent::ApplyUIState(EVHVUIState NewState)
 
     if (OrderingWidget)
     {
-        const bool bShouldShowOrdering = NewState == EVHVUIState::LearningAsk && TextbookSubsystem && TextbookSubsystem->IsActivityActive() && TextbookSubsystem->GetCurrentActivity().ActivityType == ETextbookActivityType::Ordering;
+        const bool bShouldShowOrdering = TextbookSubsystem && TextbookSubsystem->IsActivityActive()
+            && TextbookSubsystem->GetCurrentActivity().ActivityType == ETextbookActivityType::Ordering
+            && NewState == EVHVUIState::LearningAsk;
         OrderingWidget->SetVisibility(bShouldShowOrdering ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
     }
 
     if (MatchingWidget)
     {
-        const bool bShouldShowMatching = NewState == EVHVUIState::LearningAsk
-            && TextbookSubsystem && TextbookSubsystem->IsActivityActive()
+        const bool bShouldShowMatching = TextbookSubsystem && TextbookSubsystem->IsActivityActive()
             && TextbookSubsystem->GetCurrentActivity().ActivityType == ETextbookActivityType::Matching
+            && NewState == EVHVUIState::LearningAsk
             && TextbookSubsystem->GetCurrentActivity().PresentationStyle
                 == EVHVActivityPresentationStyle::Default;
         MatchingWidget->SetVisibility(bShouldShowMatching ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
@@ -999,12 +1020,12 @@ void UVHVUIManagerComponent::ApplyUIState(EVHVUIState NewState)
 
     if (SupportNetworkWidget)
     {
-        const bool bShouldShowNetwork = NewState == EVHVUIState::LearningAsk
-            && TextbookSubsystem && TextbookSubsystem->IsActivityActive()
+        const bool bShouldShowNetwork = TextbookSubsystem && TextbookSubsystem->IsActivityActive()
             && (TextbookSubsystem->GetCurrentActivity().PresentationStyle
                     == EVHVActivityPresentationStyle::SocialSupportNetwork
                 || TextbookSubsystem->GetCurrentActivity().PresentationStyle
-                    == EVHVActivityPresentationStyle::SocialSupportNetworkReadOnly);
+                    == EVHVActivityPresentationStyle::SocialSupportNetworkReadOnly)
+            && NewState == EVHVUIState::LearningAsk;
         SupportNetworkWidget->SetVisibility(bShouldShowNetwork
             ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
     }
@@ -1039,6 +1060,7 @@ void UVHVUIManagerComponent::ApplyUIState(EVHVUIState NewState)
     case EVHVUIState::LearningAsk:
     case EVHVUIState::LearningHint:
     case EVHVUIState::LearningFeedback:
+    case EVHVUIState::LearningSolution:
     case EVHVUIState::LearningTeach:
     {
         ApplyModalInputAndFocus(NewState);
@@ -1346,7 +1368,23 @@ void UVHVUIManagerComponent::RefreshCurrentFeedbackUI()
     }
 
     const FTextbookRuntimeState RuntimeState = TextbookSubsystem->GetRuntimeState();
-    const FString FeedbackText = TextbookSubsystem->GetCurrentResponseFeedbackText();
+    FString FeedbackText = TextbookSubsystem->GetCurrentResponseFeedbackText();
+    if (RuntimeState.bAnswerRevealed)
+    {
+        const FString SolutionText = TextbookSubsystem->GetCurrentCorrectSolutionText();
+        if (FeedbackText.TrimStartAndEnd().IsEmpty())
+        {
+            FeedbackText = TEXT("Review the correct solution before continuing.");
+        }
+        if (!SolutionText.IsEmpty())
+        {
+            FeedbackText += FString::Printf(TEXT("\n\nCorrect solution:\n%s"), *SolutionText);
+        }
+
+        // Render the key only in the exclusive solution widget. The assessed
+        // question, matching, and ordering widgets remain collapsed, which
+        // also removes their keyboard/gamepad handlers from the focus path.
+    }
     if (FeedbackText.TrimStartAndEnd().IsEmpty())
     {
         // Imported or legacy runtime state may still point at Feedback. Collapse
@@ -1359,7 +1397,9 @@ void UVHVUIManagerComponent::RefreshCurrentFeedbackUI()
 
     FeedbackWidget->SetFeedbackPresentation(
         FText::FromString(FeedbackText),
-        RuntimeState.bAnswerCorrect ? UVHVFeedbackWidget::ETone::Positive : UVHVFeedbackWidget::ETone::Caution);
+        RuntimeState.bAnswerCorrect ? UVHVFeedbackWidget::ETone::Positive : UVHVFeedbackWidget::ETone::Caution,
+        false,
+        RuntimeState.bAnswerRevealed);
     FeedbackWidget->SetVisibility(ESlateVisibility::Visible);
     MainHUD->SetInteractionPromptVisible(false);
 }
@@ -1604,7 +1644,9 @@ void UVHVUIManagerComponent::ReconcileUIStateAfterMajorStinger()
             ApplyUIState(EVHVUIState::LearningHint);
             return;
         case ELearningPhase::Feedback:
-            ApplyUIState(EVHVUIState::LearningFeedback);
+            ApplyUIState(TextbookSubsystem->GetRuntimeState().bAnswerRevealed
+                ? EVHVUIState::LearningSolution
+                : EVHVUIState::LearningFeedback);
             return;
         case ELearningPhase::Teach:
             ApplyUIState(EVHVUIState::LearningTeach);
@@ -1686,7 +1728,8 @@ void UVHVUIManagerComponent::RefreshCurrentTeachUI()
 
 void UVHVUIManagerComponent::AdvanceFeedback()
 {
-    if (!TextbookSubsystem || !TextbookSubsystem->IsActivityActive())
+    if (bFeedbackAdvanceInProgress || !TextbookSubsystem || !TextbookSubsystem->IsActivityActive()
+        || TextbookSubsystem->GetCurrentPhase() != ELearningPhase::Feedback)
     {
         return;
     }
@@ -1697,17 +1740,7 @@ void UVHVUIManagerComponent::AdvanceFeedback()
         return;
     }
 
-    const FTextbookActivityData CurrentActivity = TextbookSubsystem->GetCurrentActivity();
-    if (!CurrentActivity.AttemptPolicy.bEnabled
-        && CurrentActivity.bRequireCorrectAnswerToAdvance
-        && !RuntimeState.bAnswerCorrect
-        && RuntimeState.AttemptCount < 3)
-    {
-        TextbookSubsystem->EnterAskPhase();
-        HideFeedbackUI();
-        return;
-    }
-
+    bFeedbackAdvanceInProgress = true;
     TextbookSubsystem->EnterTeachPhase();
     HideFeedbackUI();
     RefreshInteractionPrompt();
@@ -2260,10 +2293,33 @@ bool UVHVUIManagerComponent::IsSupportNetworkSubmissionCorrect(
 void UVHVUIManagerComponent::CompleteSupportNetworkPlanning(
     const TArray<FMatchingPair>& Matches)
 {
-    if (TextbookSubsystem && TextbookSubsystem->IsMatchingSubmissionCorrect(Matches))
+    if (TextbookSubsystem)
     {
         TextbookSubsystem->SubmitMatching(Matches);
     }
+}
+
+bool UVHVUIManagerComponent::IsSolutionPresentationExclusive() const
+{
+    const bool bUnderlyingCollapsed = (!QuestionWidget || QuestionWidget->GetVisibility() == ESlateVisibility::Collapsed)
+        && (!ObservationWidget || ObservationWidget->GetVisibility() == ESlateVisibility::Collapsed)
+        && (!OrderingWidget || OrderingWidget->GetVisibility() == ESlateVisibility::Collapsed)
+        && (!MatchingWidget || MatchingWidget->GetVisibility() == ESlateVisibility::Collapsed)
+        && (!SupportNetworkWidget || SupportNetworkWidget->GetVisibility() == ESlateVisibility::Collapsed)
+        && (!TeachWidget || TeachWidget->GetVisibility() == ESlateVisibility::Collapsed);
+    return CurrentUIState == EVHVUIState::LearningSolution
+        && FeedbackWidget && FeedbackWidget->GetVisibility() == ESlateVisibility::Visible
+        && bUnderlyingCollapsed;
+}
+
+bool UVHVUIManagerComponent::SubmitQuestionOptionForDiagnostics(const int32 OptionIndex)
+{
+    if (CurrentUIState != EVHVUIState::LearningAsk || !QuestionWidget)
+    {
+        return false;
+    }
+    QuestionWidget->SetSelectedOptionIndex(OptionIndex);
+    return TrySubmitCurrentQuestionAnswer();
 }
 
 void UVHVUIManagerComponent::CompleteSocialSupportNetworkPayoff()
@@ -2292,6 +2348,7 @@ bool UVHVUIManagerComponent::CanAdvanceFromBackgroundClick() const
     }
     case EVHVUIState::LearningTeach:
     case EVHVUIState::LearningFeedback:
+    case EVHVUIState::LearningSolution:
     case EVHVUIState::LearningHint:
         return true;
     case EVHVUIState::LearningAsk:
@@ -2972,7 +3029,8 @@ void UVHVUIManagerComponent::ConfirmChoiceInput()
         return;
     }
 
-    if (CurrentUIState == EVHVUIState::LearningFeedback)
+    if (CurrentUIState == EVHVUIState::LearningFeedback
+        || CurrentUIState == EVHVUIState::LearningSolution)
     {
         AdvanceFeedback();
         return;

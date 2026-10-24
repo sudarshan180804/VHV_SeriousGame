@@ -144,6 +144,13 @@ public:
     UFUNCTION(BlueprintPure, Category = "VHV|Textbook")
     FString GetCurrentResponseFeedbackText() const;
 
+    /** Human-readable answer key used by the shared exhausted-attempt feedback. */
+    UFUNCTION(BlueprintPure, Category = "VHV|Textbook")
+    FString GetCurrentCorrectSolutionText() const;
+
+    /** Last submitted choice indices, retained only for answer-reveal presentation. */
+    const TSet<int32>& GetLastSubmittedChoiceIndices() const { return LastSubmittedChoiceOptionIndices; }
+
     UFUNCTION(BlueprintPure, Category = "VHV|Textbook")
     bool IsLearningActivityActive() const;
 
@@ -176,6 +183,10 @@ public:
 private:
 
     int32 LastSelectedSingleChoiceOptionIndex = INDEX_NONE;
+    TSet<int32> LastSubmittedChoiceOptionIndices;
+
+    int32 GetMaximumAttempts(const FTextbookActivityData& Activity) const;
+    bool SupportsAnswerReveal(ETextbookActivityType ActivityType) const;
 
     bool IsValidOrderingDefinition(const FTextbookActivityData& Activity) const;
     bool IsValidMatchingDefinition(const FTextbookActivityData& Activity) const;

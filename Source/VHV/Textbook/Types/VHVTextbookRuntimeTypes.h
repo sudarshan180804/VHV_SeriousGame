@@ -78,6 +78,10 @@ struct FTextbookRuntimeState
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Activity")
     bool bAnswerPartial = false;
 
+    /** True when attempts were exhausted and the authored solution is being taught. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Activity")
+    bool bAnswerRevealed = false;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Activity")
     bool bActivityActive = false;
 

@@ -330,14 +330,14 @@ struct FTextbookAttemptPolicy
 {
     GENERATED_BODY()
 
-    /** Enables retry behavior for assessed SingleChoice and MultiChoice activities. */
+    /** Enables authored retry behavior for choice, matching, and ordering activities. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attempts")
     bool bEnabled = false;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attempts", meta = (ClampMin = "1", EditCondition = "bEnabled"))
     int32 MaxAttempts = 2;
 
-    /** Opt-in assessed questions can keep coaching until the correct answer is chosen. */
+    /** Retained for authored compatibility; MaxAttempts remains the hard reveal threshold. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attempts", meta = (EditCondition = "bEnabled"))
     bool bRetryUntilCorrect = false;
 
@@ -451,7 +451,7 @@ struct FTextbookActivityData
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Progression")
     bool bRequireCorrectAnswerToAdvance = false;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Progression", meta = (EditCondition = "ActivityType == ETextbookActivityType::SingleChoice || ActivityType == ETextbookActivityType::MultiChoice", EditConditionHides))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Progression", meta = (EditCondition = "ActivityType == ETextbookActivityType::SingleChoice || ActivityType == ETextbookActivityType::MultiChoice || ActivityType == ETextbookActivityType::Matching || ActivityType == ETextbookActivityType::Ordering", EditConditionHides))
     FTextbookAttemptPolicy AttemptPolicy;
 
     // --------------------------------------------------------

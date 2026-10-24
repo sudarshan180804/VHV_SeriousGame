@@ -51,6 +51,9 @@ public:
     /** Uses the instruction line for a non-destructive invalid-submit response. */
     void ShowSelectionRequiredFeedback();
 
+    /** Locks the choices and marks the answer key after attempts are exhausted. */
+    void ShowCorrectAnswerReveal(const TSet<int32>& SubmittedOptionIndices);
+
     UFUNCTION()
     void SetOwningUIManager(UVHVUIManagerComponent* InUIManager);
 
@@ -78,6 +81,7 @@ private:
     int32 SelectedOptionIndex = INDEX_NONE;
     bool bMultiChoiceEnabled = false;
     bool bShowingSelectionFeedback = false;
+    bool bShowingAnswerReveal = false;
     float EntranceElapsed = 0.0f;
     TSet<int32> SelectedOptionIndices;
     TArray<TSharedPtr<SVHVChoiceCard>> ChoiceCards;

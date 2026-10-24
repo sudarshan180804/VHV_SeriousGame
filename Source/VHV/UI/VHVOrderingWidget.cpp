@@ -285,6 +285,8 @@ void UVHVOrderingWidget::SetActivityPresentation(
 
 void UVHVOrderingWidget::SetOrderingItems(const TArray<FOrderingItem>& Items)
 {
+    bShowingAnswerReveal = false;
+    SetIsEnabled(true);
     SourceItems = Items;
     if (SourceItems.Num() < 2)
     {
@@ -310,6 +312,24 @@ void UVHVOrderingWidget::SetOrderingItems(const TArray<FOrderingItem>& Items)
     RefreshDisplay();
     UpdateSelectionVisuals();
     UpdateSubmitHint();
+}
+
+void UVHVOrderingWidget::ShowCorrectAnswerReveal(const TArray<FString>& CorrectOrder)
+{
+    bShowingAnswerReveal = true;
+    CurrentOrder = CorrectOrder;
+    CurrentOrderingItems.Reset();
+    for (const FString& ItemID : CurrentOrder)
+    {
+        CurrentOrderingItems.Add(ResolveItemByID(ItemID));
+    }
+    FocusedIndex = INDEX_NONE;
+    FocusedItemID.Reset();
+    KeyboardReorderIndex = INDEX_NONE;
+    bKeyboardReorderMode = false;
+    ClearDragState();
+    RefreshDisplay();
+    SetIsEnabled(false);
 }
 
 void UVHVOrderingWidget::SetOwningUIManager(UVHVUIManagerComponent* InUIManager)
@@ -862,7 +882,11 @@ void UVHVOrderingWidget::UpdateMouseDropTarget()
 void UVHVOrderingWidget::UpdateSubmitHint()
 {
     FText Hint;
-    if (CurrentOrder.Num() < 2)
+    if (bShowingAnswerReveal)
+    {
+        Hint = FText::FromString(TEXT("Correct sequence shown with position numbers — review it, then continue."));
+    }
+    else if (CurrentOrder.Num() < 2)
     {
         Hint = FText::FromString(TEXT("Invalid ordering setup"));
     }

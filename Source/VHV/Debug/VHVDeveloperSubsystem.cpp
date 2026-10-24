@@ -1,11 +1,18 @@
 #include "Debug/VHVDeveloperSubsystem.h"
 
+#include "Ambient/VHVAmbientConversationActor.h"
+#include "Ambient/VHVAmbientConversationData.h"
 #include "Components/InputComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Containers/Ticker.h"
 #include "Engine/GameInstance.h"
+#include "EngineUtils.h"
 #include "Framework/Application/SlateApplication.h"
 #include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
 #include "InputCoreTypes.h"
+#include "NPC/VHVNPCCharacter.h"
+#include "Quest/Components/VHVQuestParticipantComponent.h"
 #include "Quest/Systems/VHVQuestSubsystem.h"
 #include "Save/VHVSaveSubsystem.h"
 #include "Story/Systems/VHVStoryStateSubsystem.h"
@@ -16,6 +23,442 @@
 #if !UE_BUILD_SHIPPING
 namespace
 {
+    const TCHAR* BoolText(const bool bValue)
+    {
+        return bValue ? TEXT("true") : TEXT("false");
+    }
+
+    FString DiagnosticActorLabel(const AActor* Actor)
+    {
+        if (!Actor)
+        {
+            return TEXT("None");
+        }
+#if WITH_EDITOR
+        return Actor->GetActorLabel();
+#else
+        return Actor->GetName();
+#endif
+    }
+
+    bool IsNativeMeshVisible(const AVHVNPCCharacter* NPC)
+    {
+        const USkeletalMeshComponent* Mesh = NPC ? NPC->GetMesh() : nullptr;
+        return IsValid(NPC) && !NPC->IsHidden() && IsValid(Mesh)
+            && Mesh->IsRegistered() && Mesh->IsActive() && Mesh->IsVisible()
+            && !Mesh->bHiddenInGame && Mesh->IsRenderStateCreated()
+            && Mesh->GetSkeletalMeshAsset() != nullptr;
+    }
+
+    FString ExpectedMeshPathForSlot(const FName SlotID)
+    {
+        return SlotID == TEXT("Model")
+            ? TEXT("/Game/Character/saeng/Saeng.Saeng")
+            : TEXT("/Game/Character/somchai/SOMCHAI.SOMCHAI");
+    }
+
+    struct FTimelineCastDiagnostic : TSharedFromThis<FTimelineCastDiagnostic>
+    {
+        explicit FTimelineCastDiagnostic(UWorld* InWorld, const bool bInQuitWhenDone)
+            : World(InWorld), bQuitWhenDone(bInQuitWhenDone)
+        {
+        }
+
+        void Start()
+        {
+            static const TCHAR* OrderedLabels[] = {
+                TEXT("HBCT_RoleModel_TimelineFindsModelScene"),
+                TEXT("HBCT_RoleModel_TimelineRepetitionScene"),
+                TEXT("HBCT_RoleModel_TimelineBeforeScene"),
+                TEXT("HBCT_RoleModel_TimelineFirstAttemptScene"),
+                TEXT("HBCT_RoleModel_TimelineNewRoutineScene")
+            };
+
+            TMap<FString, AVHVAmbientConversationActor*> ByLabel;
+            for (TActorIterator<AVHVAmbientConversationActor> It(World.Get()); It; ++It)
+            {
+                AVHVAmbientConversationActor* Scene = *It;
+                const FString Label = DiagnosticActorLabel(Scene);
+                if (Label.StartsWith(TEXT("HBCT_RoleModel_Timeline")))
+                {
+                    Scene->StopConversation();
+                    Scene->ResetConversation();
+                    ByLabel.Add(Label, Scene);
+                }
+            }
+            for (const TCHAR* Label : OrderedLabels)
+            {
+                if (AVHVAmbientConversationActor** Found = ByLabel.Find(Label))
+                {
+                    Scenes.Add(*Found);
+                }
+                else
+                {
+                    UE_LOG(LogVHV, Error, TEXT("[VHVTimelineCastDiagnostic] Missing scene '%s'."), Label);
+                    bAllPassed = false;
+                }
+            }
+
+            if (APawn* Pawn = World.IsValid() && World->GetFirstPlayerController()
+                    ? World->GetFirstPlayerController()->GetPawn() : nullptr)
+            {
+                OriginalPawnTransform = Pawn->GetActorTransform();
+                bHasOriginalPawnTransform = true;
+            }
+
+            UE_LOG(LogVHV, Log,
+                TEXT("[VHVTimelineCastDiagnostic] BEGIN World='%s' SceneCount=%d (Timeline 2 and 4 execute first; completion effects disabled)."),
+                *GetNameSafe(World.Get()), Scenes.Num());
+            StartNextScene();
+            FTSTicker::GetCoreTicker().AddTicker(
+                FTickerDelegate::CreateSP(AsShared(), &FTimelineCastDiagnostic::Tick), 0.1f);
+        }
+
+        bool Tick(float)
+        {
+            if (bFinished)
+            {
+                return false;
+            }
+            AVHVAmbientConversationActor* Scene = CurrentScene.Get();
+            if (!Scene)
+            {
+                FinishCurrentScene(false, TEXT("scene instance became invalid"));
+                return !bFinished;
+            }
+
+            const double Elapsed = FPlatformTime::Seconds() - SceneStartSeconds;
+            const int32 CurrentLine = Scene->GetCurrentLineIndex();
+            if (CurrentLine != LastLoggedLine && Scene->ConversationData
+                && Scene->ConversationData->Lines.IsValidIndex(CurrentLine))
+            {
+                LastLoggedLine = CurrentLine;
+                HighestLineSeen = FMath::Max(HighestLineSeen, CurrentLine);
+                const FName ExpectedSlot = Scene->ConversationData->Lines[CurrentLine].SpeakerSlot;
+                AVHVNPCCharacter* ExpectedSpeaker = Scene->GetResolvedParticipant(ExpectedSlot);
+                AVHVNPCCharacter* ActualSpeaker = Scene->GetCurrentSpeaker();
+                const bool bSpeakerMatches = IsValid(ExpectedSpeaker) && ActualSpeaker == ExpectedSpeaker;
+                bCurrentPassed &= bSpeakerMatches;
+                UE_LOG(LogVHV, Log,
+                    TEXT("[VHVTimelineCastDiagnostic] SPEAKER Scene='%s' Line=%d Slot='%s' Expected='%s' Actual='%s' BubbleAnchorMatch=%s."),
+                    *DiagnosticActorLabel(Scene), CurrentLine, *ExpectedSlot.ToString(),
+                    *DiagnosticActorLabel(ExpectedSpeaker), *DiagnosticActorLabel(ActualSpeaker), BoolText(bSpeakerMatches));
+            }
+
+            if (Elapsed >= 0.75 && !bLoggedStableSample)
+            {
+                bLoggedStableSample = true;
+                const bool bVisible = ValidateAndLogScene(TEXT("STABLE"), true);
+                bSawStableVisibleCast |= bVisible;
+                bCurrentPassed &= bVisible;
+            }
+
+            if (Scene->IsPlaying())
+            {
+                if (Elapsed > 30.0)
+                {
+                    Scene->StopConversation();
+                    FinishCurrentScene(false, TEXT("bounded playback timeout"));
+                }
+                return !bFinished;
+            }
+
+            const int32 ExpectedLastLine = Scene->ConversationData
+                ? Scene->ConversationData->Lines.Num() - 1 : INDEX_NONE;
+            const bool bPlayedAllLines = ExpectedLastLine >= 0 && HighestLineSeen == ExpectedLastLine;
+            const bool bCleanupValid = ValidateCleanup(Scene);
+            bCurrentPassed &= bPlayedAllLines && bSawStableVisibleCast && bCleanupValid;
+            FinishCurrentScene(bCurrentPassed, bPlayedAllLines
+                ? TEXT("completed") : TEXT("conversation ended before all authored lines"));
+            return !bFinished;
+        }
+
+        void StartNextScene()
+        {
+            ++SceneIndex;
+            if (!Scenes.IsValidIndex(SceneIndex))
+            {
+                FinishAll();
+                return;
+            }
+
+            AVHVAmbientConversationActor* Scene = Scenes[SceneIndex].Get();
+            CurrentScene = Scene;
+            bCurrentPassed = IsValid(Scene);
+            bSawStableVisibleCast = false;
+            bLoggedStableSample = false;
+            HighestLineSeen = INDEX_NONE;
+            LastLoggedLine = INDEX_NONE;
+            SceneStartSeconds = FPlatformTime::Seconds();
+            if (!Scene || !Scene->ConversationData)
+            {
+                FinishCurrentScene(false, TEXT("missing scene or conversation data"));
+                return;
+            }
+
+            SavedLeavePolicy = Scene->PlayerLeavePolicy;
+            Scene->PlayerLeavePolicy = EVHVAmbientConversationLeavePolicy::Continue;
+            FocusPlayerOnScene(Scene);
+            Scene->ResetConversation();
+            const bool bStarted = Scene->StartConversationRange(0, Scene->ConversationData->Lines.Num());
+            bCurrentPassed &= bStarted;
+            UE_LOG(LogVHV, Log,
+                TEXT("[VHVTimelineCastDiagnostic] START Scene='%s' Conversation='%s' Bindings=%d Started=%s."),
+                *DiagnosticActorLabel(Scene), *Scene->ConversationData->ConversationID.ToString(),
+                Scene->Participants.Num(), BoolText(bStarted));
+            if (bStarted)
+            {
+                bCurrentPassed &= ValidateAndLogScene(TEXT("START"), false);
+            }
+            else
+            {
+                FinishCurrentScene(false, TEXT("StartConversationRange rejected the runtime cast"));
+            }
+        }
+
+        bool ValidateAndLogScene(const TCHAR* Phase, const bool bCheckRendered)
+        {
+            AVHVAmbientConversationActor* Scene = CurrentScene.Get();
+            if (!Scene || !Scene->ConversationData)
+            {
+                return false;
+            }
+
+            bool bPass = Scene->AreResolvedParticipantsVisible();
+            const bool bExpectsTwo = DiagnosticActorLabel(Scene).Contains(TEXT("FindsModel"))
+                || DiagnosticActorLabel(Scene).Contains(TEXT("Repetition"));
+            bPass &= Scene->Participants.Num() == (bExpectsTwo ? 2 : 1);
+
+            for (const FVHVAmbientParticipantBinding& Binding : Scene->Participants)
+            {
+                AVHVNPCCharacter* Resolved = Scene->GetResolvedParticipant(Binding.SlotID);
+                USkeletalMeshComponent* Mesh = Resolved ? Resolved->GetMesh() : nullptr;
+                const UVHVQuestParticipantComponent* Participant = Resolved
+                    ? Resolved->GetQuestParticipantComponent() : nullptr;
+                const FName ParticipantID = Participant ? Participant->GetEffectiveParticipantID() : NAME_None;
+                const FString MeshPath = Mesh && Mesh->GetSkeletalMeshAsset()
+                    ? Mesh->GetSkeletalMeshAsset()->GetPathName() : TEXT("None");
+                const FString ExpectedMeshPath = ExpectedMeshPathForSlot(Binding.SlotID);
+                const bool bCorrectInstance = IsValid(Resolved) && Resolved == Binding.NPC;
+                const bool bNativeVisible = IsNativeMeshVisible(Resolved);
+                const bool bMeshCorrect = MeshPath == ExpectedMeshPath;
+                const bool bRendered = !bCheckRendered || (Mesh && Mesh->WasRecentlyRendered(1.0f));
+                bPass &= bCorrectInstance && bNativeVisible && bMeshCorrect && bRendered;
+
+                UE_LOG(LogVHV, Log,
+                    TEXT("[VHVTimelineCastDiagnostic] %s Scene='%s' Slot='%s' Actor='%s' ParticipantID='%s' Instance='%s' Valid=%s Active=%s Location=%s ActorHidden=%s MeshVisible=%s MeshHiddenInGame=%s Registered=%s RenderState=%s RecentlyRendered=%s Mesh='%s' AnimClass='%s' Materials=%d ComponentLocation=%s BoundsOrigin=%s BoundsExtent=%s Result=%s."),
+                    Phase, *DiagnosticActorLabel(Scene), *Binding.SlotID.ToString(),
+                    *DiagnosticActorLabel(Binding.NPC), *ParticipantID.ToString(), *GetPathNameSafe(Resolved),
+                    BoolText(IsValid(Resolved)), BoolText(Mesh && Mesh->IsActive()),
+                    Resolved ? *Resolved->GetActorLocation().ToCompactString() : TEXT("None"),
+                    BoolText(Resolved && Resolved->IsHidden()), BoolText(Mesh && Mesh->IsVisible()),
+                    BoolText(Mesh && Mesh->bHiddenInGame), BoolText(Mesh && Mesh->IsRegistered()),
+                    BoolText(Mesh && Mesh->IsRenderStateCreated()), BoolText(Mesh && Mesh->WasRecentlyRendered(1.0f)),
+                    *MeshPath, Mesh ? *GetNameSafe(Mesh->GetAnimClass()) : TEXT("None"),
+                    Mesh ? Mesh->GetNumMaterials() : 0,
+                    Mesh ? *Mesh->GetComponentLocation().ToCompactString() : TEXT("None"),
+                    Mesh ? *Mesh->Bounds.Origin.ToCompactString() : TEXT("None"),
+                    Mesh ? *Mesh->Bounds.BoxExtent.ToCompactString() : TEXT("None"),
+                    BoolText(bCorrectInstance && bNativeVisible && bMeshCorrect && bRendered));
+            }
+
+            int32 VisibleSomchai = 0;
+            int32 VisibleSaeng = 0;
+            TArray<FString> VisibleSomchaiActors;
+            TArray<FString> VisibleSaengActors;
+            CountVisibleIdentityActors(VisibleSomchai, VisibleSaeng, VisibleSomchaiActors, VisibleSaengActors);
+            const bool bUnique = VisibleSomchai == 1 && VisibleSaeng <= 1
+                && (!bExpectsTwo || VisibleSaeng == 1);
+            bPass &= bUnique;
+            UE_LOG(LogVHV, Log,
+                TEXT("[VHVTimelineCastDiagnostic] %s Scene='%s' VisibleSomchai=%d [%s] VisibleSaeng=%d [%s] RequiredTogether=%s UniqueIdentityCast=%s."),
+                Phase, *DiagnosticActorLabel(Scene), VisibleSomchai, *FString::Join(VisibleSomchaiActors, TEXT(",")),
+                VisibleSaeng, *FString::Join(VisibleSaengActors, TEXT(",")), BoolText(bExpectsTwo), BoolText(bUnique));
+            return bPass;
+        }
+
+        bool ValidateCleanup(AVHVAmbientConversationActor* Scene)
+        {
+            bool bPass = true;
+            for (const FVHVAmbientParticipantBinding& Binding : Scene->Participants)
+            {
+                const AVHVNPCCharacter* NPC = Binding.NPC;
+                const bool bHidden = IsValid(NPC) && NPC->IsHidden();
+                bPass &= bHidden;
+                UE_LOG(LogVHV, Log,
+                    TEXT("[VHVTimelineCastDiagnostic] CLEANUP Scene='%s' Slot='%s' Actor='%s' ActorHidden=%s."),
+                    *DiagnosticActorLabel(Scene), *Binding.SlotID.ToString(),
+                    *DiagnosticActorLabel(NPC), BoolText(bHidden));
+            }
+
+            int32 VisibleSomchai = 0;
+            int32 VisibleSaeng = 0;
+            TArray<FString> SomchaiActors;
+            TArray<FString> SaengActors;
+            CountVisibleIdentityActors(VisibleSomchai, VisibleSaeng, SomchaiActors, SaengActors);
+            const bool bNoDuplicates = VisibleSomchai <= 1 && VisibleSaeng <= 1;
+            bPass &= bNoDuplicates;
+            UE_LOG(LogVHV, Log,
+                TEXT("[VHVTimelineCastDiagnostic] CLEANUP Scene='%s' VisibleSomchai=%d VisibleSaeng=%d NoDuplicates=%s."),
+                *DiagnosticActorLabel(Scene), VisibleSomchai, VisibleSaeng, BoolText(bNoDuplicates));
+            return bPass;
+        }
+
+        void CountVisibleIdentityActors(int32& OutSomchai, int32& OutSaeng,
+            TArray<FString>& OutSomchaiActors, TArray<FString>& OutSaengActors) const
+        {
+            OutSomchai = 0;
+            OutSaeng = 0;
+            for (TActorIterator<AVHVNPCCharacter> It(World.Get()); It; ++It)
+            {
+                AVHVNPCCharacter* NPC = *It;
+                const USkeletalMeshComponent* Mesh = NPC->GetMesh();
+                if (!IsNativeMeshVisible(NPC) || !Mesh || !Mesh->GetSkeletalMeshAsset())
+                {
+                    continue;
+                }
+                const FString Label = DiagnosticActorLabel(NPC);
+                const bool bTimelineActor = Label.StartsWith(TEXT("HBCT_RoleModel_Timeline"));
+                const bool bSomchaiIdentity = Label == TEXT("HBCT_RoleModel_UncleSomchai")
+                    || (bTimelineActor && Label.EndsWith(TEXT("_Target")));
+                const bool bSaengIdentity = Label == TEXT("HBCT_Motivation_Saeng")
+                    || (bTimelineActor && Label.EndsWith(TEXT("_Model")));
+                if (bSomchaiIdentity)
+                {
+                    ++OutSomchai;
+                    OutSomchaiActors.Add(Label);
+                }
+                else if (bSaengIdentity)
+                {
+                    ++OutSaeng;
+                    OutSaengActors.Add(Label);
+                }
+            }
+        }
+
+        void FocusPlayerOnScene(AVHVAmbientConversationActor* Scene) const
+        {
+            APlayerController* Controller = World.IsValid() ? World->GetFirstPlayerController() : nullptr;
+            APawn* Pawn = Controller ? Controller->GetPawn() : nullptr;
+            if (!Pawn || Scene->Participants.IsEmpty())
+            {
+                return;
+            }
+            FVector Center = FVector::ZeroVector;
+            int32 Count = 0;
+            for (const FVHVAmbientParticipantBinding& Binding : Scene->Participants)
+            {
+                if (IsValid(Binding.NPC))
+                {
+                    Center += Binding.NPC->GetActorLocation();
+                    ++Count;
+                }
+            }
+            if (Count == 0)
+            {
+                return;
+            }
+            Center /= static_cast<float>(Count);
+            const FVector ViewLocation = Center + FVector(-650.0f, 0.0f, 80.0f);
+            Pawn->SetActorLocation(ViewLocation, false, nullptr, ETeleportType::TeleportPhysics);
+            const FRotator ViewRotation = (Center + FVector(0.0f, 0.0f, 80.0f) - Pawn->GetPawnViewLocation()).Rotation();
+            Controller->SetControlRotation(ViewRotation);
+        }
+
+        void FinishCurrentScene(const bool bPassed, const TCHAR* Reason)
+        {
+            AVHVAmbientConversationActor* Scene = CurrentScene.Get();
+            if (Scene)
+            {
+                Scene->PlayerLeavePolicy = SavedLeavePolicy;
+            }
+            bAllPassed &= bPassed;
+            if (bPassed)
+            {
+                UE_LOG(LogVHV, Log,
+                    TEXT("[VHVTimelineCastDiagnostic] RESULT Scene='%s' Passed=true Reason='%s'."),
+                    *DiagnosticActorLabel(Scene), Reason);
+            }
+            else
+            {
+                UE_LOG(LogVHV, Error,
+                    TEXT("[VHVTimelineCastDiagnostic] RESULT Scene='%s' Passed=false Reason='%s'."),
+                    *DiagnosticActorLabel(Scene), Reason);
+            }
+            CurrentScene.Reset();
+            StartNextScene();
+        }
+
+        void FinishAll()
+        {
+            if (bHasOriginalPawnTransform)
+            {
+                if (APawn* Pawn = World.IsValid() && World->GetFirstPlayerController()
+                        ? World->GetFirstPlayerController()->GetPawn() : nullptr)
+                {
+                    Pawn->SetActorTransform(OriginalPawnTransform, false, nullptr, ETeleportType::TeleportPhysics);
+                }
+            }
+            bFinished = true;
+            if (bAllPassed)
+            {
+                UE_LOG(LogVHV, Log,
+                    TEXT("[VHVTimelineCastDiagnostic] FINAL Passed=true TimelinesTested=%d. No completion effects or save writes were performed."),
+                    Scenes.Num());
+            }
+            else
+            {
+                UE_LOG(LogVHV, Error,
+                    TEXT("[VHVTimelineCastDiagnostic] FINAL Passed=false TimelinesTested=%d. No completion effects or save writes were performed."),
+                    Scenes.Num());
+            }
+            if (bQuitWhenDone)
+            {
+                FPlatformMisc::RequestExit(false);
+            }
+        }
+
+        TWeakObjectPtr<UWorld> World;
+        TArray<TWeakObjectPtr<AVHVAmbientConversationActor>> Scenes;
+        TWeakObjectPtr<AVHVAmbientConversationActor> CurrentScene;
+        int32 SceneIndex = INDEX_NONE;
+        int32 HighestLineSeen = INDEX_NONE;
+        int32 LastLoggedLine = INDEX_NONE;
+        double SceneStartSeconds = 0.0;
+        EVHVAmbientConversationLeavePolicy SavedLeavePolicy = EVHVAmbientConversationLeavePolicy::Cancel;
+        FTransform OriginalPawnTransform;
+        bool bHasOriginalPawnTransform = false;
+        bool bCurrentPassed = true;
+        bool bAllPassed = true;
+        bool bSawStableVisibleCast = false;
+        bool bLoggedStableSample = false;
+        bool bFinished = false;
+        bool bQuitWhenDone = false;
+    };
+
+    TSharedPtr<FTimelineCastDiagnostic> ActiveTimelineCastDiagnostic;
+
+    void TimelineCastDiagnosticCommand(const TArray<FString>& Args, UWorld* World)
+    {
+        const bool bQuitWhenDone = Args.ContainsByPredicate([](const FString& Arg)
+        {
+            return Arg.Equals(TEXT("quit"), ESearchCase::IgnoreCase);
+        });
+        if (!World || !World->IsGameWorld())
+        {
+            UE_LOG(LogVHV, Error,
+                TEXT("[VHVTimelineCastDiagnostic] Command requires an active PIE or standalone gameplay world."));
+            return;
+        }
+        if (ActiveTimelineCastDiagnostic.IsValid())
+        {
+            UE_LOG(LogVHV, Warning, TEXT("[VHVTimelineCastDiagnostic] A validation run is already active."));
+            return;
+        }
+        ActiveTimelineCastDiagnostic = MakeShared<FTimelineCastDiagnostic>(World, bQuitWhenDone);
+        ActiveTimelineCastDiagnostic->Start();
+    }
+
     bool IsEditableTextFocused()
     {
         if (!FSlateApplication::IsInitialized())
@@ -175,6 +618,10 @@ namespace
         TEXT("vhv.save"), TEXT("Save VHV progress using the existing save subsystem."), FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&SaveCommand), ECVF_Cheat);
     static FAutoConsoleCommandWithWorldAndArgs GLoadCommand(
         TEXT("vhv.load"), TEXT("Load VHV progress using the existing save subsystem."), FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&LoadCommand), ECVF_Cheat);
+    static FAutoConsoleCommandWithWorldAndArgs GTimelineCastDiagnosticCommand(
+        TEXT("vhv.timeline.cast.validate"),
+        TEXT("Development-only live validation of the five Quest 3 timeline casts. Optional argument: quit."),
+        FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TimelineCastDiagnosticCommand), ECVF_Cheat);
 }
 #endif
 

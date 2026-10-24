@@ -45,7 +45,9 @@ enum class EVHVUIState : uint8
     LearningHint,
     LearningFeedback,
     LearningTeach,
-    MajorStinger
+    MajorStinger,
+    /** Exclusive answer-key presentation after configured attempts are exhausted. */
+    LearningSolution
 };
 
 UENUM(BlueprintType)
@@ -262,6 +264,17 @@ public:
     bool IsLearningAskUIActive() const { return CurrentUIState == EVHVUIState::LearningAsk; }
 
     UFUNCTION(BlueprintPure, Category = "VHV|UI|Diagnostics")
+    bool IsLearningSolutionUIActive() const { return CurrentUIState == EVHVUIState::LearningSolution; }
+
+    /** True when the answer key is the only visible assessment presentation. */
+    UFUNCTION(BlueprintPure, Category = "VHV|UI|Diagnostics")
+    bool IsSolutionPresentationExclusive() const;
+
+    /** Narrow automation hook used by focused PIE validation of the native choice UI. */
+    UFUNCTION(BlueprintCallable, Category = "VHV|UI|Diagnostics")
+    bool SubmitQuestionOptionForDiagnostics(int32 OptionIndex);
+
+    UFUNCTION(BlueprintPure, Category = "VHV|UI|Diagnostics")
     bool IsQuestTrackerSuppressedForMajorStinger() const;
 
     /** Routes the existing IA_Interact action to the active modal activity. */
@@ -351,6 +364,7 @@ protected:
     bool bCurrentMajorStingerCompletesActivity = false;
     bool bCurrentMajorStingerIsQuestTransition = false;
     bool bDeveloperQuestTransitionBypassActive = false;
+    bool bFeedbackAdvanceInProgress = false;
     TArray<FQueuedMajorStinger> PendingMajorStingers;
 
     UFUNCTION()

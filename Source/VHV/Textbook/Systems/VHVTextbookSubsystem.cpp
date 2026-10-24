@@ -65,6 +65,8 @@ void UVHVTextbookSubsystem::StartDay()
     RuntimeState.HintLevel = 0;
     RuntimeState.bAnswerSubmitted = false;
     RuntimeState.bAnswerCorrect = false;
+    RuntimeState.bAnswerRevealed = false;
+    LastSubmittedChoiceOptionIndices.Empty();
 }
 
 // ============================================================
@@ -77,6 +79,7 @@ void UVHVTextbookSubsystem::EnterAskPhase()
     RuntimeState.bAnswerSubmitted = false;
     RuntimeState.bAnswerCorrect = false;
     RuntimeState.bAnswerPartial = false;
+    RuntimeState.bAnswerRevealed = false;
 
     OnLearningPhaseChanged.Broadcast(RuntimeState.CurrentPhase);
 }
@@ -88,8 +91,9 @@ void UVHVTextbookSubsystem::EnterFeedbackPhase()
         return;
     }
 
-    if (!GetCurrentActivity().HasMeaningfulFeedbackForResult(
-        RuntimeState.bAnswerCorrect, RuntimeState.bAnswerPartial))
+    if (!RuntimeState.bAnswerRevealed
+        && !GetCurrentActivity().HasMeaningfulFeedbackForResult(
+            RuntimeState.bAnswerCorrect, RuntimeState.bAnswerPartial))
     {
         // A result with no authored explanation has nothing to present. Continue
         // through the normal Teach/completion path without opening an empty shell.
@@ -145,33 +149,59 @@ void UVHVTextbookSubsystem::SubmitAnswer(const bool bWasCorrect, const bool bWas
     RuntimeState.bAnswerSubmitted = true;
     RuntimeState.bAnswerCorrect = bWasCorrect;
     RuntimeState.bAnswerPartial = bWasPartial;
+    RuntimeState.bAnswerRevealed = false;
 
     const FTextbookActivityData CurrentActivity = GetCurrentActivity();
-    const bool bAssessedChoice = CurrentActivity.ActivityType == ETextbookActivityType::SingleChoice
-        || CurrentActivity.ActivityType == ETextbookActivityType::MultiChoice;
-    const bool bRetryEnabled = bAssessedChoice && CurrentActivity.AttemptPolicy.bEnabled;
-    const int32 MaxAttempts = FMath::Max(1, CurrentActivity.AttemptPolicy.MaxAttempts);
-    const bool bNeedsRetry = bRetryEnabled && !bWasCorrect
-        && (CurrentActivity.AttemptPolicy.bRetryUntilCorrect || RuntimeState.AttemptCount < MaxAttempts);
+    const bool bSupportsReveal = SupportsAnswerReveal(CurrentActivity.ActivityType);
+    const int32 MaxAttempts = GetMaximumAttempts(CurrentActivity);
+    const bool bNeedsRetry = bSupportsReveal && !bWasCorrect
+        && RuntimeState.AttemptCount < MaxAttempts;
 
     if (bNeedsRetry)
     {
-        UE_LOG(LogTemp, Log, TEXT("[VHVTextbook] Choice attempt=%d/%d result=Wrong -> Hint"),
+        RequestHint();
+        UE_LOG(LogTemp, Log, TEXT("[VHVTextbook] Activity attempt=%d/%d result=Wrong -> Hint"),
             RuntimeState.AttemptCount, MaxAttempts);
         EnterHintPhase();
         return;
     }
 
+    if (bSupportsReveal && !bWasCorrect)
+    {
+        RuntimeState.bAnswerRevealed = true;
+    }
+
     // Result effects are terminal for retry-enabled questions. This prevents a
     // first-attempt miss from applying failure state before the retry is used.
     ApplyCurrentActivityResultEffects(bWasCorrect, bWasPartial);
-    UE_LOG(LogTemp, Log, TEXT("[VHVTextbook] Choice attempt=%d/%d result=%s -> %s"),
-        RuntimeState.AttemptCount, bRetryEnabled ? MaxAttempts : RuntimeState.AttemptCount,
+    UE_LOG(LogTemp, Log, TEXT("[VHVTextbook] Activity attempt=%d/%d result=%s -> %s"),
+        RuntimeState.AttemptCount, MaxAttempts,
         bWasCorrect ? TEXT("Correct") : TEXT("Wrong"),
         CurrentActivity.HasMeaningfulFeedbackForResult(bWasCorrect, bWasPartial)
             ? TEXT("Feedback")
             : (CurrentActivity.Teaching.HasMeaningfulContent() ? TEXT("Teach") : TEXT("Complete")));
     EnterFeedbackPhase();
+}
+
+bool UVHVTextbookSubsystem::SupportsAnswerReveal(const ETextbookActivityType ActivityType) const
+{
+    return ActivityType == ETextbookActivityType::SingleChoice
+        || ActivityType == ETextbookActivityType::MultiChoice
+        || ActivityType == ETextbookActivityType::Matching
+        || ActivityType == ETextbookActivityType::Ordering;
+}
+
+int32 UVHVTextbookSubsystem::GetMaximumAttempts(const FTextbookActivityData& Activity) const
+{
+    if (Activity.AttemptPolicy.bEnabled)
+    {
+        return FMath::Max(1, Activity.AttemptPolicy.MaxAttempts);
+    }
+
+    // Matching and ordering historically allowed three submissions. Preserve
+    // that behavior while routing their terminal miss through answer reveal.
+    return Activity.ActivityType == ETextbookActivityType::Matching
+        || Activity.ActivityType == ETextbookActivityType::Ordering ? 3 : 1;
 }
 
 bool UVHVTextbookSubsystem::SubmitSingleChoice(const int32 SelectedOptionIndex)
@@ -189,6 +219,8 @@ bool UVHVTextbookSubsystem::SubmitSingleChoice(const int32 SelectedOptionIndex)
     }
 
     LastSelectedSingleChoiceOptionIndex = SelectedOptionIndex;
+    LastSubmittedChoiceOptionIndices.Empty();
+    LastSubmittedChoiceOptionIndices.Add(SelectedOptionIndex);
     SubmitAnswer(CurrentActivity.Question.Options[SelectedOptionIndex].bIsCorrect);
     return true;
 }
@@ -240,6 +272,7 @@ bool UVHVTextbookSubsystem::SubmitMultiChoice(const TArray<int32>& SelectedOptio
     const bool bWasCorrect = !bSelectedIncorrectOption && SelectedCorrectOptionCount == CorrectOptionCount;
     const bool bWasPartial = !bSelectedIncorrectOption && SelectedCorrectOptionCount < CorrectOptionCount;
 
+    LastSubmittedChoiceOptionIndices = SubmittedIndices;
     UE_LOG(LogTemp, Log, TEXT("[VHVTextbook] MultiChoice submitted SelectedCount=%d"), SubmittedIndices.Num());
     UE_LOG(LogTemp, Log, TEXT("[VHVTextbook] MultiChoice result=%s"), bWasCorrect ? TEXT("Correct") : (bWasPartial ? TEXT("Partial") : TEXT("Incorrect")));
     SubmitAnswer(bWasCorrect, bWasPartial);
@@ -248,7 +281,7 @@ bool UVHVTextbookSubsystem::SubmitMultiChoice(const TArray<int32>& SelectedOptio
 
 bool UVHVTextbookSubsystem::SubmitOrdering(const TArray<FString>& OrderedItemIDs)
 {
-    if (!CurrentLevelData || !RuntimeState.bActivityActive || RuntimeState.CurrentPhase != ELearningPhase::Ask || RuntimeState.AttemptCount >= 3)
+    if (!CurrentLevelData || !RuntimeState.bActivityActive || RuntimeState.CurrentPhase != ELearningPhase::Ask)
     {
         return false;
     }
@@ -312,29 +345,7 @@ bool UVHVTextbookSubsystem::SubmitOrdering(const TArray<FString>& OrderedItemIDs
         bCorrect = false;
     }
 
-    RuntimeState.AttemptCount++;
-    RuntimeState.bAnswerSubmitted = true;
-    RuntimeState.bAnswerCorrect = bCorrect;
-    RuntimeState.bAnswerPartial = false;
-
-    ApplyCurrentActivityResultEffects(bCorrect, false);
-
-    if (bCorrect)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[VHVTextbook] Ordering attempt=%d result=Correct -> Feedback"), RuntimeState.AttemptCount);
-        EnterFeedbackPhase();
-    }
-    else if (RuntimeState.AttemptCount < 3)
-    {
-        RequestHint();
-        UE_LOG(LogTemp, Warning, TEXT("[VHVTextbook] Ordering attempt=%d result=Wrong -> Hint"), RuntimeState.AttemptCount);
-        EnterHintPhase();
-    }
-    else
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[VHVTextbook] Ordering attempt=3 result=Wrong -> Feedback"));
-        EnterFeedbackPhase();
-    }
+    SubmitAnswer(bCorrect, false);
 
     return bCorrect;
 }
@@ -403,7 +414,7 @@ bool UVHVTextbookSubsystem::IsValidOrderingDefinition(const FTextbookActivityDat
 
 bool UVHVTextbookSubsystem::SubmitMatching(const TArray<FMatchingPair>& SubmittedMatches)
 {
-    if (!CurrentLevelData || !RuntimeState.bActivityActive || RuntimeState.CurrentPhase != ELearningPhase::Ask || RuntimeState.AttemptCount >= 3)
+    if (!CurrentLevelData || !RuntimeState.bActivityActive || RuntimeState.CurrentPhase != ELearningPhase::Ask)
     {
         return false;
     }
@@ -608,8 +619,11 @@ void UVHVTextbookSubsystem::AdvanceToNextActivity()
         RuntimeState.bActivityActive = true;
         RuntimeState.bAnswerSubmitted = false;
         RuntimeState.bAnswerCorrect = false;
+        RuntimeState.bAnswerPartial = false;
+        RuntimeState.bAnswerRevealed = false;
         RuntimeState.AttemptCount = 0;
         RuntimeState.HintLevel = 0;
+        LastSubmittedChoiceOptionIndices.Empty();
 
         const FTextbookActivityData NextActivity = GetCurrentActivity();
         UE_LOG(LogTemp, Warning, TEXT("[VHVTextbook] Advancing to ActivityID=%s"), *NextActivity.GetEffectiveActivityID());
@@ -646,8 +660,11 @@ void UVHVTextbookSubsystem::AdvanceToNextActivity()
         RuntimeState.bActivityActive = true;
         RuntimeState.bAnswerSubmitted = false;
         RuntimeState.bAnswerCorrect = false;
+        RuntimeState.bAnswerPartial = false;
+        RuntimeState.bAnswerRevealed = false;
         RuntimeState.AttemptCount = 0;
         RuntimeState.HintLevel = 0;
+        LastSubmittedChoiceOptionIndices.Empty();
 
         UE_LOG(LogTemp, Warning, TEXT("[VHVTextbook] Starting next TopicID=%s"), *NextTopic.TopicID);
 
@@ -800,7 +817,10 @@ bool UVHVTextbookSubsystem::StartActivityByID(const FString& ActivityID)
                 RuntimeState.HintLevel = 0;
                 RuntimeState.bAnswerSubmitted = false;
                 RuntimeState.bAnswerCorrect = false;
+                RuntimeState.bAnswerPartial = false;
+                RuntimeState.bAnswerRevealed = false;
                 LastSelectedSingleChoiceOptionIndex = INDEX_NONE;
+                LastSubmittedChoiceOptionIndices.Empty();
 
                 OnLearningPhaseChanged.Broadcast(RuntimeState.CurrentPhase);
                 return true;
@@ -826,6 +846,53 @@ FString UVHVTextbookSubsystem::GetCurrentResponseFeedbackText() const
     }
     return CurrentActivity.GetFeedbackTextForResult(
         RuntimeState.bAnswerCorrect, RuntimeState.bAnswerPartial);
+}
+
+FString UVHVTextbookSubsystem::GetCurrentCorrectSolutionText() const
+{
+    const FTextbookActivityData Activity = GetCurrentActivity();
+    switch (Activity.ActivityType)
+    {
+    case ETextbookActivityType::SingleChoice:
+    case ETextbookActivityType::MultiChoice:
+    {
+        TArray<FString> CorrectOptions;
+        for (const FQuestionOption& Option : Activity.Question.Options)
+        {
+            if (Option.bIsCorrect)
+            {
+                CorrectOptions.Add(FString::Printf(TEXT("\u2713 %s"), *Option.OptionText));
+            }
+        }
+        return FString::Join(CorrectOptions, TEXT("\n"));
+    }
+    case ETextbookActivityType::Matching:
+    {
+        TArray<FString> Pairs;
+        for (const FMatchingPair& Pair : Activity.MatchingPairs)
+        {
+            Pairs.Add(FString::Printf(TEXT("%s  \u2192  %s"), *Pair.LeftText, *Pair.RightText));
+        }
+        return FString::Join(Pairs, TEXT("\n"));
+    }
+    case ETextbookActivityType::Ordering:
+    {
+        TArray<FString> Steps;
+        for (int32 Index = 0; Index < Activity.CorrectOrder.Num(); ++Index)
+        {
+            const FString& ItemID = Activity.CorrectOrder[Index];
+            const FOrderingItem* Item = Activity.OrderingItems.FindByPredicate(
+                [&ItemID](const FOrderingItem& Candidate) { return Candidate.ItemID == ItemID; });
+            if (Item)
+            {
+                Steps.Add(FString::Printf(TEXT("%d. %s"), Index + 1, *Item->ItemText));
+            }
+        }
+        return FString::Join(Steps, TEXT("\n"));
+    }
+    default:
+        return FString();
+    }
 }
 
 // ============================================================
@@ -858,8 +925,10 @@ void UVHVTextbookSubsystem::ExitCurrentLearningSession()
     RuntimeState.bAnswerSubmitted = false;
     RuntimeState.bAnswerCorrect = false;
     RuntimeState.bAnswerPartial = false;
+    RuntimeState.bAnswerRevealed = false;
     RuntimeState.CurrentPhase = ELearningPhase::Ask;
     LastSelectedSingleChoiceOptionIndex = INDEX_NONE;
+    LastSubmittedChoiceOptionIndices.Empty();
 }
 
 void UVHVTextbookSubsystem::RetryCurrentActivityAfterHint()
@@ -873,7 +942,9 @@ void UVHVTextbookSubsystem::RetryCurrentActivityAfterHint()
     RuntimeState.bAnswerSubmitted = false;
     RuntimeState.bAnswerCorrect = false;
     RuntimeState.bAnswerPartial = false;
+    RuntimeState.bAnswerRevealed = false;
     LastSelectedSingleChoiceOptionIndex = INDEX_NONE;
+    LastSubmittedChoiceOptionIndices.Empty();
     RuntimeState.CurrentPhase = ELearningPhase::Ask;
 
     UE_LOG(LogTemp, Warning, TEXT("[VHVTextbook] Hint dismissed -> retry ActivityID=%s"), *CurrentActivity.GetEffectiveActivityID());

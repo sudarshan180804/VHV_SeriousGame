@@ -24,10 +24,20 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
+#include "HAL/IConsoleManager.h"
 #include "NavigationPath.h"
 #include "NavigationSystem.h"
 #include "TimerManager.h"
 #include "VHV.h"
+
+namespace
+{
+    TAutoConsoleVariable<float> CVarVHVLocalParticipantMoveMaxDistance(
+        TEXT("vhv.Quest.LocalParticipantMoveMaxDistance"),
+        300.0f,
+        TEXT("Maximum direct distance in centimeters for quest-presence NPC walking."),
+        ECVF_Default);
+}
 
 void UVHVQuestSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -2432,13 +2442,6 @@ bool UVHVQuestSubsystem::EnsureParticipantPresentAtLocation(
             *ParticipantID.ToString(), *ObjectiveID.ToString());
     }
 
-    // A placed or previously spawned participant is reactivated through the same
-    // presence path. Apply the trigger's initial request once for this activation.
-    if (!bSpawnedParticipant)
-    {
-        ParticipantActor->SetIsSitting(RequiredLocation->bIsSitting);
-    }
-
     const FVector LocalPosition = RequiredLocation->BoxComponent->GetComponentTransform()
         .InverseTransformPosition(ParticipantActor->GetActorLocation());
     const FVector Extent = RequiredLocation->BoxComponent->GetUnscaledBoxExtent();
@@ -2447,10 +2450,52 @@ bool UVHVQuestSubsystem::EnsureParticipantPresentAtLocation(
         && FMath::Abs(LocalPosition.Z) <= Extent.Z;
     if (bInside)
     {
+        ParticipantActor->SetIsSitting(RequiredLocation->bIsSitting);
         UE_LOG(LogVHV, Log,
             TEXT("[VHVQuest] Required participant '%s' actor '%s' already present at %s for objective '%s'."),
             *ParticipantID.ToString(), *GetNameSafe(ParticipantActor),
             *ParticipantActor->GetActorLocation().ToCompactString(), *ObjectiveID.ToString());
+        return true;
+    }
+
+    const FVector Destination = RequiredLocation->GetActorLocation();
+    const float DirectDistance = FVector::Dist(ParticipantActor->GetActorLocation(), Destination);
+    const float MaximumLocalDistance = FMath::Max(
+        0.0f, CVarVHVLocalParticipantMoveMaxDistance.GetValueOnGameThread());
+    if (!bSpawnedParticipant && DirectDistance > KINDA_SMALL_NUMBER
+        && DirectDistance <= MaximumLocalDistance
+        && !ParticipantActor->IsSpecialAnimationActionActive())
+    {
+        UNavigationPath* Path = UNavigationSystemV1::FindPathToLocationSynchronously(
+            World, ParticipantActor->GetActorLocation(), Destination, ParticipantActor);
+        float RouteLength = 0.0f;
+        if (Path)
+        {
+            for (int32 PointIndex = 1; PointIndex < Path->PathPoints.Num(); ++PointIndex)
+            {
+                RouteLength += FVector::Dist(
+                    Path->PathPoints[PointIndex - 1], Path->PathPoints[PointIndex]);
+            }
+        }
+        const bool bSafeShortRoute = Path && Path->IsValid() && !Path->IsPartial()
+            && Path->PathPoints.Num() >= 2
+            && RouteLength <= MaximumLocalDistance * 1.75f;
+        if (bSafeShortRoute && CommandComponent->MoveToLocationForPresence(
+            Destination,
+            RequiredLocation->GetActorRotation(),
+            RequiredLocation->bIsSitting))
+        {
+            UE_LOG(LogVHV, Log,
+                TEXT("[VHVQuest] Walking nearby participant '%s' %.0f cm to '%s' (route %.0f cm); objective exposure remains non-blocking."),
+                *ParticipantID.ToString(), DirectDistance, *LocationID.ToString(), RouteLength);
+            return true;
+        }
+    }
+    else if (ParticipantActor->IsSpecialAnimationActionActive())
+    {
+        UE_LOG(LogVHV, Log,
+            TEXT("[VHVQuest] Participant '%s' is in a special animation; preserving it and deferring local relocation."),
+            *ParticipantID.ToString());
         return true;
     }
 
@@ -2465,6 +2510,7 @@ bool UVHVQuestSubsystem::EnsureParticipantPresentAtLocation(
     // detached by ActivateCurrentObjective. Cancelling here therefore cannot let the old
     // request's synchronous or late completion mutate this newly selected objective.
     CommandComponent->CancelQuestCommand();
+    ParticipantActor->SetIsSitting(RequiredLocation->bIsSitting);
     if (ACharacter* Character = Cast<ACharacter>(ParticipantActor))
     {
         if (UCharacterMovementComponent* Movement = Character->GetCharacterMovement())
@@ -3635,6 +3681,32 @@ bool UVHVQuestSubsystem::BuildJournalEntry(const FVHVQuestDefinition& Definition
                 Objective.ObjectiveText,
                 FText::AsNumber(CountCompletedTrackingDestinations(Objective)),
                 FText::AsNumber(Objective.TrackingDestinations.Num()));
+        }
+
+        static const FName RecordEveningWalkObjectiveID(TEXT("O09_RecordEveningWalk"));
+        if (Definition.QuestID == SelfMonitoringQuestID
+            && Objective.ObjectiveID == RecordEveningWalkObjectiveID
+            && StoryStateSubsystem
+            && StoryStateSubsystem->HasFlag(TEXT("SMWalkRouteComplete"))
+            && !StoryStateSubsystem->HasFlag(TEXT("SMWalkRecorded")))
+        {
+            OutEntry.CurrentObjectiveText = NSLOCTEXT(
+                "VHVQuest", "SelfMonitoringRecordWalk", "Record today's walk");
+        }
+
+        static const FName PositiveReinforcementQuestID(TEXT("Q_HBCT_06_POSITIVE_REINFORCEMENT"));
+        static const FName MeaningfulReinforcementObjectiveID(TEXT("O05_ChooseMeaningfulReinforcement"));
+        if (Definition.QuestID == PositiveReinforcementQuestID
+            && Objective.ObjectiveID == MeaningfulReinforcementObjectiveID
+            && StoryStateSubsystem)
+        {
+            const bool bAllPreferencesObserved =
+                StoryStateSubsystem->HasFlag(TEXT("PRPreferencePraiseObserved"))
+                && StoryStateSubsystem->HasFlag(TEXT("PRPreferenceActivityObserved"))
+                && StoryStateSubsystem->HasFlag(TEXT("PRPreferenceTokenObserved"));
+            OutEntry.CurrentObjectiveText = bAllPreferencesObserved
+                ? NSLOCTEXT("VHVQuest", "ReturnToReinforcementInstructor", "Return to the Instructor")
+                : Objective.ObjectiveText;
         }
     }
     return true;

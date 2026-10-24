@@ -131,6 +131,20 @@ void SVHVChoiceCard::SetPresentationState(
     Invalidate(EInvalidateWidgetReason::Paint);
 }
 
+void SVHVChoiceCard::SetAnswerRevealState(
+    const bool bInCorrectAnswer,
+    const bool bInIncorrectSelection)
+{
+    bAnswerReveal = true;
+    bCorrectAnswer = bInCorrectAnswer;
+    bIncorrectSelection = bInIncorrectSelection;
+    bFocused = false;
+    bSelected = bCorrectAnswer || bIncorrectSelection;
+    bEnabled = false;
+    SetEnabled(false);
+    Invalidate(EInvalidateWidgetReason::Paint);
+}
+
 void SVHVChoiceCard::Tick(
     const FGeometry& AllottedGeometry,
     const double InCurrentTime,
@@ -200,7 +214,17 @@ void SVHVChoiceCard::RefreshBrushes(const float DeltaTime)
         ? VHVActivityUIStyle::BorderGold()
         : (bFocused ? VHVActivityUIStyle::BorderFocused() : VHVActivityUIStyle::BorderNeutral());
 
-    if (!bEnabled)
+    if (bAnswerReveal && bCorrectAnswer)
+    {
+        TargetFill = VHVActivityUIStyle::FromSRGB(36, 89, 58, 225);
+        TargetOutline = FLinearColor(0.43f, 0.76f, 0.54f, 1.0f);
+    }
+    else if (bAnswerReveal && bIncorrectSelection)
+    {
+        TargetFill = VHVActivityUIStyle::FromSRGB(103, 45, 38, 210);
+        TargetOutline = FLinearColor(0.88f, 0.43f, 0.30f, 1.0f);
+    }
+    else if (!bEnabled)
     {
         TargetFill = VHVActivityUIStyle::FromSRGB(25, 29, 32, 118);
         TargetOutline = VHVActivityUIStyle::FromSRGB(123, 124, 121, 58);
@@ -240,6 +264,10 @@ void SVHVChoiceCard::RefreshBrushes(const float DeltaTime)
 
 FSlateColor SVHVChoiceCard::GetAnswerColor() const
 {
+    if (bAnswerReveal && (bCorrectAnswer || bIncorrectSelection))
+    {
+        return FSlateColor(VHVActivityUIStyle::PrimaryText());
+    }
     return bEnabled
         ? FSlateColor(bSelected || bFocused || bHovered
             ? VHVActivityUIStyle::PrimaryText()
@@ -249,6 +277,14 @@ FSlateColor SVHVChoiceCard::GetAnswerColor() const
 
 FSlateColor SVHVChoiceCard::GetIndicatorColor() const
 {
+    if (bAnswerReveal && bCorrectAnswer)
+    {
+        return FSlateColor(FLinearColor(0.62f, 0.95f, 0.70f, 1.0f));
+    }
+    if (bAnswerReveal && bIncorrectSelection)
+    {
+        return FSlateColor(FLinearColor(1.0f, 0.64f, 0.56f, 1.0f));
+    }
     return FSlateColor(bSelected
         ? VHVActivityUIStyle::GoldActive()
         : VHVActivityUIStyle::TextPrimary());
@@ -256,6 +292,12 @@ FSlateColor SVHVChoiceCard::GetIndicatorColor() const
 
 FText SVHVChoiceCard::GetIndicatorText() const
 {
+    if (bAnswerReveal)
+    {
+        return bCorrectAnswer
+            ? FText::FromString(TEXT("\u2713"))
+            : (bIncorrectSelection ? FText::FromString(TEXT("\u2715")) : FText::GetEmpty());
+    }
     if (bMultiChoice)
     {
         return bSelected ? FText::FromString(TEXT("\u2713")) : FText::GetEmpty();

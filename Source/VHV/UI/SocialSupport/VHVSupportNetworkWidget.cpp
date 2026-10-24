@@ -160,6 +160,7 @@ TSharedRef<SWidget> UVHVSupportNetworkWidget::RebuildWidget()
 
 void UVHVSupportNetworkWidget::Configure(const FTextbookActivityData& Activity)
 {
+    SetIsEnabled(true);
     ActivityData = Activity;
     bReadOnly = Activity.PresentationStyle == EVHVActivityPresentationStyle::SocialSupportNetworkReadOnly;
     bSubmissionLocked = false;
@@ -277,6 +278,10 @@ void UVHVSupportNetworkWidget::SubmitOrClose()
         }
         Status = TEXT("Some connections do not fit what each person can realistically do. Repair the highlighted links.");
         RefreshVisuals();
+        if (OwningUIManager)
+        {
+            OwningUIManager->CompleteSupportNetworkPlanning(Matches);
+        }
         return;
     }
 
@@ -298,6 +303,21 @@ void UVHVSupportNetworkWidget::SubmitOrClose()
 void UVHVSupportNetworkWidget::FinishCorrectSubmission()
 {
     if (OwningUIManager) OwningUIManager->CompleteSupportNetworkPlanning(GetCurrentMatches());
+}
+
+void UVHVSupportNetworkWidget::ShowCorrectAnswerReveal()
+{
+    Assignments.Reset();
+    IncorrectAssignments.Init(false, 4);
+    for (int32 Index = 0; Index < 4; ++Index)
+    {
+        Assignments.Add(Index);
+    }
+    bSubmissionLocked = true;
+    bReadOnly = true;
+    Status = TEXT("Correct support connections shown — review them, then continue.");
+    RefreshVisuals();
+    SetIsEnabled(false);
 }
 
 FString UVHVSupportNetworkWidget::SupporterText(const int32 Index) const

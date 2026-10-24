@@ -7,6 +7,9 @@
 #include "Widgets/Layout/SBackgroundBlur.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SConstraintCanvas.h"
+#include "Widgets/Layout/SBox.h"
+#include "Widgets/Layout/SSafeZone.h"
+#include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/SOverlay.h"
 #include "Widgets/Text/STextBlock.h"
@@ -29,11 +32,19 @@ TSharedRef<SWidget> UVHVFeedbackWidget::RebuildWidget()
         .SetPressedPadding(FMargin(1.0f, 2.0f, 0.0f, 0.0f));
 
     TSharedRef<SWidget> Result =
+        SNew(SSafeZone)
+        [
         SNew(SConstraintCanvas)
         + SConstraintCanvas::Slot()
-        .Anchors(FAnchors(0.045f, 0.69f, 0.49f, 0.925f))
+        .Anchors(FAnchors(0.045f, 0.925f))
+        .Alignment(FVector2D(0.0f, 1.0f))
+        .AutoSize(true)
         .Offset(FMargin(0.0f))
         [
+            SNew(SBox)
+            .WidthOverride(700.0f)
+            .MaxDesiredHeight(600.0f)
+            [
             SAssignNew(FeedbackPanel, SOverlay)
             + SOverlay::Slot()
             .Padding(FMargin(7.0f, 9.0f, -7.0f, -9.0f))
@@ -62,15 +73,25 @@ TSharedRef<SWidget> UVHVFeedbackWidget::RebuildWidget()
                         .Font(VHVActivityUIStyle::MediumFont(16))
                     ]
                     + SVerticalBox::Slot()
-                    .FillHeight(1.0f)
+                    .AutoHeight()
                     .VAlign(VAlign_Center)
                     .Padding(FMargin(0.0f, 14.0f, 0.0f, 12.0f))
                     [
+                        SNew(SBox)
+                        .MaxDesiredHeight(410.0f)
+                        [
+                        SNew(SScrollBox)
+                        .ScrollBarAlwaysVisible(false)
+                        + SScrollBox::Slot()
+                        [
                         SAssignNew(FeedbackTextSlate, STextBlock)
                         .Font(VHVActivityUIStyle::RegularFont(25))
                         .ColorAndOpacity(VHVActivityUIStyle::PrimaryText())
                         .AutoWrapText(true)
-                        .LineHeightPercentage(1.12f)
+                        .WrapTextAt(636.0f)
+                        .LineHeightPercentage(1.16f)
+                        ]
+                        ]
                     ]
                     + SVerticalBox::Slot()
                     .AutoHeight()
@@ -92,6 +113,8 @@ TSharedRef<SWidget> UVHVFeedbackWidget::RebuildWidget()
                     ]
                 ]
             ]
+            ]
+        ]
         ];
 
     RefreshPresentation();
@@ -136,11 +159,16 @@ void UVHVFeedbackWidget::SetFeedbackText(const FText& InText)
     SetFeedbackPresentation(InText, ETone::Neutral);
 }
 
-void UVHVFeedbackWidget::SetFeedbackPresentation(const FText& InText, const ETone InTone, const bool bIsHint)
+void UVHVFeedbackWidget::SetFeedbackPresentation(
+    const FText& InText,
+    const ETone InTone,
+    const bool bIsHint,
+    const bool bIsSolutionReveal)
 {
     CurrentText = InText;
     CurrentTone = InTone;
     bCurrentIsHint = bIsHint;
+    bCurrentIsSolutionReveal = bIsSolutionReveal;
     bContinueActivated = false;
     EntranceElapsed = 0.0f;
     RefreshPresentation();
@@ -169,6 +197,11 @@ void UVHVFeedbackWidget::RefreshPresentation()
     {
         Title = FText::FromString(TEXT("HINT"));
     }
+    else if (bCurrentIsSolutionReveal)
+    {
+        Accent = FLinearColor(0.43f, 0.76f, 0.54f, 1.0f);
+        Title = FText::FromString(TEXT("CORRECT ANSWER"));
+    }
     else if (CurrentTone == ETone::Positive)
     {
         Accent = FLinearColor(0.43f, 0.76f, 0.54f, 1.0f);
@@ -180,8 +213,11 @@ void UVHVFeedbackWidget::RefreshPresentation()
         Title = FText::FromString(TEXT("REVIEW"));
     }
 
+    const FLinearColor PanelColor = bCurrentIsSolutionReveal
+        ? VHVActivityUIStyle::FromSRGB(18, 23, 29, 252)
+        : VHVActivityUIStyle::CharcoalGlass();
     PanelBrush = VHVActivityUIStyle::RoundedBrush(
-        VHVActivityUIStyle::CharcoalGlass(), 16.0f,
+        PanelColor, 16.0f,
         FLinearColor(Accent.R, Accent.G, Accent.B, 0.72f), 1.2f);
     if (TitleTextSlate)
     {

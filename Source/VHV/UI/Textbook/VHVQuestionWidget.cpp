@@ -283,6 +283,7 @@ void UVHVQuestionWidget::SetQuestionData(const FQuestionData& InQuestion)
     SelectedOptionIndex = INDEX_NONE;
     SelectedOptionIndices.Empty();
     bShowingSelectionFeedback = false;
+    bShowingAnswerReveal = false;
     EntranceElapsed = 0.0f;
     RebuildChoiceCards();
     UpdatePresentation();
@@ -294,11 +295,16 @@ void UVHVQuestionWidget::SetMultiChoiceEnabled(const bool bInMultiChoiceEnabled)
     SelectedOptionIndex = INDEX_NONE;
     SelectedOptionIndices.Empty();
     bShowingSelectionFeedback = false;
+    bShowingAnswerReveal = false;
     UpdatePresentation();
 }
 
 FReply UVHVQuestionWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
 {
+    if (bShowingAnswerReveal)
+    {
+        return FReply::Handled();
+    }
     if (CurrentQuestion.Options.Num() == 0)
     {
         return Super::NativeOnKeyDown(InGeometry, InKeyEvent);
@@ -387,6 +393,10 @@ TArray<int32> UVHVQuestionWidget::GetSelectedOptionIndices() const
 
 bool UVHVQuestionWidget::ActivateFocusedOption()
 {
+    if (bShowingAnswerReveal)
+    {
+        return false;
+    }
     if (!CurrentQuestion.Options.IsValidIndex(FocusedOptionIndex))
     {
         if (CurrentQuestion.Options.IsEmpty())
@@ -413,7 +423,7 @@ FReply UVHVQuestionWidget::HandleSubmitClicked()
 
 void UVHVQuestionWidget::HandleOptionSelected(const int32 OptionIndex)
 {
-    if (!CurrentQuestion.Options.IsValidIndex(OptionIndex))
+    if (bShowingAnswerReveal || !CurrentQuestion.Options.IsValidIndex(OptionIndex))
     {
         return;
     }
@@ -468,6 +478,28 @@ void UVHVQuestionWidget::ShowSelectionRequiredFeedback()
             ? TEXT("Select at least one option before confirming.")
             : TEXT("Select an option before confirming.")));
         InstructionTextSlate->SetColorAndOpacity(VHVActivityUIStyle::WarningText());
+    }
+}
+
+void UVHVQuestionWidget::ShowCorrectAnswerReveal(const TSet<int32>& SubmittedOptionIndices)
+{
+    bShowingAnswerReveal = true;
+    bShowingSelectionFeedback = false;
+    FocusedOptionIndex = INDEX_NONE;
+    if (InstructionTextSlate)
+    {
+        InstructionTextSlate->SetText(FText::FromString(
+            TEXT("Correct answers are marked with a check. Your incorrect choices are marked with an X.")));
+        InstructionTextSlate->SetColorAndOpacity(FLinearColor(0.62f, 0.95f, 0.70f, 1.0f));
+    }
+    for (int32 Index = 0; Index < ChoiceCards.Num(); ++Index)
+    {
+        if (ChoiceCards[Index] && CurrentQuestion.Options.IsValidIndex(Index))
+        {
+            ChoiceCards[Index]->SetAnswerRevealState(
+                CurrentQuestion.Options[Index].bIsCorrect,
+                SubmittedOptionIndices.Contains(Index) && !CurrentQuestion.Options[Index].bIsCorrect);
+        }
     }
 }
 
@@ -528,7 +560,7 @@ void UVHVQuestionWidget::UpdatePresentation()
     {
         QuestionTextSlate->SetText(FText::FromString(CurrentQuestion.QuestionText));
     }
-    if (InstructionTextSlate && !bShowingSelectionFeedback)
+    if (InstructionTextSlate && !bShowingSelectionFeedback && !bShowingAnswerReveal)
     {
         InstructionTextSlate->SetText(GetDefaultInstruction());
         InstructionTextSlate->SetColorAndOpacity(VHVActivityUIStyle::SecondaryText());
@@ -547,11 +579,14 @@ void UVHVQuestionWidget::UpdatePresentation()
             const bool bIsSelected = bMultiChoiceEnabled
                 ? SelectedOptionIndices.Contains(Index)
                 : SelectedOptionIndex == Index;
-            ChoiceCards[Index]->SetPresentationState(
-                Index == FocusedOptionIndex,
-                bIsSelected,
-                true,
-                bMultiChoiceEnabled);
+            if (!bShowingAnswerReveal)
+            {
+                ChoiceCards[Index]->SetPresentationState(
+                    Index == FocusedOptionIndex,
+                    bIsSelected,
+                    true,
+                    bMultiChoiceEnabled);
+            }
         }
     }
 }

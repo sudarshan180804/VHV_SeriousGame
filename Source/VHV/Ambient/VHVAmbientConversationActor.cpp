@@ -4,13 +4,16 @@
 #include "Ambient/VHVAmbientSpeechLog.h"
 #include "Core/VHVAuthoringReferences.h"
 #include "Engine/GameInstance.h"
+#include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "NPC/Components/VHVAmbientSpeechComponent.h"
 #include "NPC/Components/VHVNPCBehaviorComponent.h"
 #include "NPC/Components/VHVNPCPresentationComponent.h"
 #include "NPC/Animation/VHVNPCAnimationProfile.h"
 #include "NPC/VHVNPCAIController.h"
 #include "NPC/VHVNPCCharacter.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Story/Systems/VHVStoryStateSubsystem.h"
 #include "TimerManager.h"
 #include "UI/Ambient/VHVAmbientSpeechStyle.h"
@@ -49,6 +52,7 @@ void AVHVAmbientConversationActor::BeginPlay()
 {
     Super::BeginPlay();
     ResetWorldPresentation();
+    HideControlledParticipants();
     WorldActionReceiver->OnWorldActionRequested.AddUniqueDynamic(this,
         &AVHVAmbientConversationActor::HandleWorldActionRequested);
     if (bAutoStartOnBeginPlay && GetWorld())
@@ -64,6 +68,7 @@ void AVHVAmbientConversationActor::EndPlay(const EEndPlayReason::Type EndPlayRea
 {
     if (GetWorld()) GetWorld()->GetTimerManager().ClearTimer(SequenceTimerHandle);
     if (bPlaying) CompleteConversation(false);
+    RestoreTemporarilySuppressedActors();
     WorldActionReceiver->OnWorldActionRequested.RemoveDynamic(this,
         &AVHVAmbientConversationActor::HandleWorldActionRequested);
     Super::EndPlay(EndPlayReason);
@@ -84,6 +89,15 @@ void AVHVAmbientConversationActor::Tick(const float DeltaSeconds)
             CompleteConversation(false);
             return;
         }
+    }
+
+    if (bControlParticipantVisibility && !AreResolvedParticipantsVisible())
+    {
+        UE_LOG(LogVHVAmbientSpeech, Error,
+            TEXT("Conversation '%s' cancelled because presentation ownership was lost and a required participant became hidden."),
+            *GetNameSafe(this));
+        CompleteConversation(false);
+        return;
     }
 
     const bool bOutside = IsPlayerOutsideObservationRadius();
@@ -127,6 +141,7 @@ void AVHVAmbientConversationActor::StopConversation()
 void AVHVAmbientConversationActor::ResetConversation()
 {
     if (bPlaying) CompleteConversation(false);
+    RestoreTemporarilySuppressedActors();
     bHasPlayed = false;
     CurrentLineIndex = INDEX_NONE;
     ActiveLineEndExclusive = INDEX_NONE;
@@ -232,8 +247,21 @@ bool AVHVAmbientConversationActor::StartConversationRangeInternal(
             *GetName(), *Error, *GetNameSafe(ConversationData), Participants.Num(), ResolvedParticipants.Num());
         return false;
     }
-
+    // Claim presentation ownership before revealing the local cast. The final
+    // visibility write for every required participant therefore belongs to this
+    // scene, while identity-equivalent persistent actors remain suppressed.
     ApplyStartedWorldPresentation();
+    ApplyTemporaryActorSuppression();
+    if (!ActivateControlledParticipants(Error))
+    {
+        HideControlledParticipants();
+        RestoreTemporarilySuppressedActors();
+        ResetWorldPresentation();
+        UE_LOG(LogVHVAmbientSpeech, Error,
+            TEXT("Conversation '%s' could not activate its complete cast: %s Asset='%s'."),
+            *GetName(), *Error, *GetNameSafe(ConversationData));
+        return false;
+    }
 
     ActiveWorldActionRequestID = WorldActionRequestID;
     if (ActiveWorldActionRequestID.IsValid())
@@ -346,6 +374,161 @@ bool AVHVAmbientConversationActor::ResolveAndValidateParticipants(FString& OutEr
     return true;
 }
 
+bool AVHVAmbientConversationActor::AreResolvedParticipantsVisible() const
+{
+    if (ResolvedParticipants.IsEmpty())
+    {
+        return false;
+    }
+    for (const TPair<FName, TObjectPtr<AVHVNPCCharacter>>& Pair : ResolvedParticipants)
+    {
+        const AVHVNPCCharacter* NPC = Pair.Value.Get();
+        const USkeletalMeshComponent* Mesh = NPC ? NPC->GetMesh() : nullptr;
+        if (!IsValid(NPC) || NPC->IsHidden() || !IsValid(Mesh)
+            || !Mesh->IsVisible() || Mesh->bHiddenInGame)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+AVHVNPCCharacter* AVHVAmbientConversationActor::GetResolvedParticipant(const FName SlotID) const
+{
+    return FindParticipant(SlotID);
+}
+
+bool AVHVAmbientConversationActor::ActivateControlledParticipants(FString& OutError)
+{
+    if (!bControlParticipantVisibility)
+    {
+        return true;
+    }
+
+    for (const TPair<FName, TObjectPtr<AVHVNPCCharacter>>& Pair : ResolvedParticipants)
+    {
+        AVHVNPCCharacter* NPC = Pair.Value.Get();
+        USkeletalMeshComponent* Mesh = NPC ? NPC->GetMesh() : nullptr;
+        if (!IsValid(NPC) || !IsValid(Mesh) || !Mesh->GetSkeletalMeshAsset())
+        {
+            OutError = FString::Printf(
+                TEXT("slot '%s' has no initialized NPC skeletal appearance."), *Pair.Key.ToString());
+            return false;
+        }
+
+        if (ActorsTemporarilyHiddenWhileConversationPlays.Contains(NPC))
+        {
+            OutError = FString::Printf(
+                TEXT("slot '%s' is also configured as a suppressed persistent actor."), *Pair.Key.ToString());
+            return false;
+        }
+
+        // Scene-local timeline actors are intentionally dormant while hidden.
+        // Restore the BeginPlay transform in case a pre-fix/runtime transition
+        // allowed gravity to move them before this checkpoint became active.
+        if (const FTransform* AuthoredTransform = ControlledParticipantAuthoredTransforms.Find(NPC))
+        {
+            NPC->SetActorTransform(*AuthoredTransform, false, nullptr, ETeleportType::TeleportPhysics);
+        }
+        if (UCharacterMovementComponent* Movement = NPC->GetCharacterMovement())
+        {
+            Movement->StopMovementImmediately();
+            Movement->DisableMovement();
+        }
+
+        // A level-placed Character can retain component-level hidden/inactive state
+        // even after its Actor bHidden flag is cleared. Claim the complete render
+        // lifecycle for this scene-local representation before dialogue can begin.
+        NPC->SetActorHiddenInGame(false);
+        if (!Mesh->IsRegistered())
+        {
+            Mesh->RegisterComponent();
+        }
+        Mesh->Activate(true);
+        Mesh->SetComponentTickEnabled(true);
+        Mesh->SetHiddenInGame(false, true);
+        Mesh->SetVisibility(true, true);
+        Mesh->UpdateBounds();
+        Mesh->MarkRenderTransformDirty();
+        Mesh->MarkRenderDynamicDataDirty();
+        Mesh->MarkRenderStateDirty();
+
+        if (NPC->IsHidden() || !Mesh->IsRegistered() || !Mesh->IsActive()
+            || !Mesh->IsVisible() || Mesh->bHiddenInGame || !Mesh->IsRenderStateCreated())
+        {
+            OutError = FString::Printf(
+                TEXT("slot '%s' failed render activation (ActorHidden=%s Registered=%s Active=%s Visible=%s ComponentHidden=%s RenderState=%s)."),
+                *Pair.Key.ToString(), NPC->IsHidden() ? TEXT("true") : TEXT("false"),
+                Mesh->IsRegistered() ? TEXT("true") : TEXT("false"),
+                Mesh->IsActive() ? TEXT("true") : TEXT("false"),
+                Mesh->IsVisible() ? TEXT("true") : TEXT("false"),
+                Mesh->bHiddenInGame ? TEXT("true") : TEXT("false"),
+                Mesh->IsRenderStateCreated() ? TEXT("true") : TEXT("false"));
+            return false;
+        }
+
+        UE_LOG(LogVHVAmbientSpeech, Log,
+            TEXT("Conversation '%s' activated slot '%s': Actor='%s' Location=%s Mesh='%s' Registered=true Active=true Visible=true ComponentHidden=false RenderState=true."),
+            *GetNameSafe(this), *Pair.Key.ToString(), *GetNameSafe(NPC),
+            *NPC->GetActorLocation().ToCompactString(), *GetPathNameSafe(Mesh->GetSkeletalMeshAsset()));
+    }
+    return true;
+}
+
+void AVHVAmbientConversationActor::HideControlledParticipants()
+{
+    if (!bControlParticipantVisibility)
+    {
+        return;
+    }
+    for (const FVHVAmbientParticipantBinding& Binding : Participants)
+    {
+        if (IsValid(Binding.NPC))
+        {
+            if (!ControlledParticipantAuthoredTransforms.Contains(Binding.NPC))
+            {
+                ControlledParticipantAuthoredTransforms.Add(Binding.NPC, Binding.NPC->GetActorTransform());
+            }
+            // Hidden ACharacter instances still simulate gravity unless movement
+            // is explicitly suspended. Keeping these scene representations
+            // dormant prevents them falling below the map while awaiting a later
+            // checkpoint (the Timeline 2/4 Saeng failure).
+            if (UCharacterMovementComponent* Movement = Binding.NPC->GetCharacterMovement())
+            {
+                Movement->StopMovementImmediately();
+                Movement->DisableMovement();
+            }
+            Binding.NPC->SetActorHiddenInGame(true);
+        }
+    }
+}
+
+void AVHVAmbientConversationActor::ApplyTemporaryActorSuppression()
+{
+    RestoreTemporarilySuppressedActors();
+    for (AActor* Actor : ActorsTemporarilyHiddenWhileConversationPlays)
+    {
+        if (!IsValid(Actor))
+        {
+            continue;
+        }
+        TemporarilySuppressedActorHiddenStates.Add(Actor, Actor->IsHidden());
+        Actor->SetActorHiddenInGame(true);
+    }
+}
+
+void AVHVAmbientConversationActor::RestoreTemporarilySuppressedActors()
+{
+    for (const TPair<TWeakObjectPtr<AActor>, bool>& Pair : TemporarilySuppressedActorHiddenStates)
+    {
+        if (AActor* Actor = Pair.Key.Get())
+        {
+            Actor->SetActorHiddenInGame(Pair.Value);
+        }
+    }
+    TemporarilySuppressedActorHiddenStates.Empty();
+}
+
 void AVHVAmbientConversationActor::PrepareParticipants()
 {
     PreviousBehaviorStates.Empty();
@@ -432,6 +615,8 @@ void AVHVAmbientConversationActor::ShowCurrentLine()
     }
 	const FVHVAmbientSpeechLine& Line = ConversationData->Lines[CurrentLineIndex];
 	AVHVNPCCharacter* Speaker = FindParticipant(Line.SpeakerSlot);
+	const FText SpeakerName = FindSpeakerName(Line.SpeakerSlot);
+	const bool bPlayerBubbleOwner = SpeakerName.ToString().Equals(TEXT("PLAYER"), ESearchCase::IgnoreCase);
 	for (const TPair<FName, TObjectPtr<AVHVNPCCharacter>>& Pair : ResolvedParticipants)
 	{
 		if (Pair.Value)
@@ -439,13 +624,26 @@ void AVHVAmbientConversationActor::ShowCurrentLine()
 			Pair.Value->SetSpecialAnimationActionActive(false);
 		}
 	}
-	if (Speaker)
+	if (Speaker && !bPlayerBubbleOwner)
 	{
 		const UVHVNPCAnimationProfile* Profile = Speaker->GetAnimationProfile();
 		Speaker->SetSpecialAnimationActionActive(Profile && Profile->bUseSpecialActionDuringDialogue);
 	}
-    UVHVAmbientSpeechComponent* Speech = Speaker
-        ? Speaker->FindComponentByClass<UVHVAmbientSpeechComponent>() : nullptr;
+    UVHVAmbientSpeechComponent* Speech = nullptr;
+    if (bPlayerBubbleOwner)
+    {
+        if (const APlayerController* PlayerController = GetWorld()->GetFirstPlayerController())
+        {
+            if (const APawn* PlayerPawn = PlayerController->GetPawn())
+            {
+                Speech = PlayerPawn->FindComponentByClass<UVHVAmbientSpeechComponent>();
+            }
+        }
+    }
+    else if (Speaker)
+    {
+        Speech = Speaker->FindComponentByClass<UVHVAmbientSpeechComponent>();
+    }
     if (!Speech)
     {
         UE_LOG(LogVHVAmbientSpeech, Warning,
@@ -455,7 +653,7 @@ void AVHVAmbientConversationActor::ShowCurrentLine()
         return;
     }
     if (!Line.bKeepPreviousBubbleVisible) HideAllBubbles(false);
-    if (!Speech->ShowBubble(FindSpeakerName(Line.SpeakerSlot), Line.Text, Line.SpeechType,
+    if (!Speech->ShowBubble(SpeakerName, Line.Text, Line.SpeechType,
         ConversationData->bShowSpeakerName))
     {
         UE_LOG(LogVHVAmbientSpeech, Warning,
@@ -464,9 +662,9 @@ void AVHVAmbientConversationActor::ShowCurrentLine()
         CompleteConversation(false);
         return;
     }
-    ApplyLineFacing(Speaker, Line.bLookAtOtherParticipant);
+    ApplyLineFacing(Speaker, !bPlayerBubbleOwner && Line.bLookAtOtherParticipant);
 
-    if (Line.NPCActionTag.IsValid())
+    if (!bPlayerBubbleOwner && Speaker && Line.NPCActionTag.IsValid())
     {
         const FName ActionID = VHVAuthoringReferences::ResolveTagLeaf(Line.NPCActionTag);
         if (UVHVNPCPresentationComponent* Presentation = Speaker->GetPresentationComponent();
@@ -493,6 +691,8 @@ void AVHVAmbientConversationActor::CompleteConversation(const bool bSuccess)
     if (GetWorld()) GetWorld()->GetTimerManager().ClearTimer(SequenceTimerHandle);
     HideAllBubbles(false);
     RestoreParticipants();
+    HideControlledParticipants();
+    RestoreTemporarilySuppressedActors();
 
     const FGuid CompletedRequestID = ActiveWorldActionRequestID;
     ActiveWorldActionRequestID.Invalidate();
@@ -531,6 +731,25 @@ void AVHVAmbientConversationActor::HideAllBubbles(const bool bImmediate)
             {
                 Speech->HideBubble(bImmediate);
                 Speech->SetSeparationOffset(0.0f);
+            }
+        }
+    }
+    if (ConversationData && ConversationData->Participants.ContainsByPredicate(
+            [](const FVHVAmbientParticipantDefinition& Participant)
+            {
+                return Participant.SpeakerName.ToString().Equals(TEXT("PLAYER"), ESearchCase::IgnoreCase);
+            }))
+    {
+        if (const APlayerController* PlayerController = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr)
+        {
+            if (const APawn* PlayerPawn = PlayerController->GetPawn())
+            {
+                if (UVHVAmbientSpeechComponent* Speech =
+                        PlayerPawn->FindComponentByClass<UVHVAmbientSpeechComponent>())
+                {
+                    Speech->HideBubble(bImmediate);
+                    Speech->SetSeparationOffset(0.0f);
+                }
             }
         }
     }

@@ -22,6 +22,7 @@ public:
     void Configure(const FTextbookActivityData& Activity);
     void SetOwningUIManager(UVHVUIManagerComponent* InManager);
     TArray<FMatchingPair> GetCurrentMatches() const;
+    void ShowCorrectAnswerReveal();
     void ActivateSelectedConnection() { ConnectSelected(); }
 
     virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;

@@ -113,6 +113,17 @@ def counter_at_least_condition(counter_name, compare_value):
             compare_value=compare_value)])
 
 
+def counter_equal_condition(counter_name, compare_value):
+    return struct(
+        unreal.VHVStoryConditionSet,
+        match_mode=unreal.VHVStoryConditionMatch.ALL,
+        conditions=[struct(
+            unreal.VHVStoryCondition,
+            condition_type=unreal.VHVStoryConditionType.COUNTER_EQUAL,
+            state_tag=tag(counter_name),
+            compare_value=compare_value)])
+
+
 def ordering_items(items):
     return [
         struct(unreal.OrderingItem, item_id=str(index), item_text=text)
@@ -1605,38 +1616,55 @@ def create_ambient_assets():
         },
         "DA_Ambient_HBCT_RoleModel_TimelineBefore": {
             "id": "HBCT_RoleModel_TimelineBefore",
-            "participants": [ambient_participant("Target", "TARGET VILLAGER")],
-            "lines": [ambient_line("Target", "I'd probably fail if I tried.", 2.8, thought=True)],
+            "participants": [ambient_participant("Target", "UNCLE SOMCHAI")],
+            "lines": [
+                ambient_line("Target", "Day 1 — Before starting: I keep putting off walking because it feels too difficult.", 4.0, thought=True),
+                ambient_line("Target", "I want better health, but I am not sure I can keep going even if I begin.", 3.6, thought=True),
+            ],
             "show_names": True,
             "effects": [counter_effect("VHV.Story.Counter.HBCT.RoleModel.TimelineStationsObserved")],
         },
         "DA_Ambient_HBCT_RoleModel_TimelineFindsModel": {
             "id": "HBCT_RoleModel_TimelineFindsModel",
-            "participants": [ambient_participant("Target", "TARGET VILLAGER"),
-                             ambient_participant("Model", "SIMILAR MODEL")],
-            "lines": [ambient_line("Target", "She started from where I am.", 2.8, thought=True)],
+            "participants": [ambient_participant("Target", "UNCLE SOMCHAI"),
+                             ambient_participant("Model", "AUNT SAENG")],
+            "lines": [
+                ambient_line("Model", "Week 1 — I started with short walks and one realistic food change.", 3.8, look_at=True),
+                ambient_line("Model", "I did not try to change everything at once.", 3.2, look_at=True),
+                ambient_line("Target", "Seeing Aunt Saeng start gradually makes a short walk feel possible for me too.", 4.0, thought=True, look_at=True),
+            ],
             "show_names": True,
             "effects": [counter_effect("VHV.Story.Counter.HBCT.RoleModel.TimelineStationsObserved")],
         },
         "DA_Ambient_HBCT_RoleModel_TimelineFirstAttempt": {
             "id": "HBCT_RoleModel_TimelineFirstAttempt",
-            "participants": [ambient_participant("Target", "TARGET VILLAGER")],
-            "lines": [ambient_line("Target", "Ten minutes is enough for today.", 2.8)],
+            "participants": [ambient_participant("Target", "UNCLE SOMCHAI")],
+            "lines": [
+                ambient_line("Target", "Week 1 — I walked for ten minutes at a pace I could manage.", 3.6),
+                ambient_line("Target", "I do not need to match Aunt Saeng's pace to make a useful start.", 3.8),
+            ],
             "show_names": True,
             "effects": [counter_effect("VHV.Story.Counter.HBCT.RoleModel.TimelineStationsObserved")],
         },
         "DA_Ambient_HBCT_RoleModel_TimelineRepetition": {
             "id": "HBCT_RoleModel_TimelineRepetition",
-            "participants": [ambient_participant("Target", "TARGET VILLAGER"),
-                             ambient_participant("Model", "SIMILAR MODEL")],
-            "lines": [ambient_line("Target", "I'll walk this part again today.", 2.8)],
+            "participants": [ambient_participant("Target", "UNCLE SOMCHAI"),
+                             ambient_participant("Model", "AUNT SAENG")],
+            "lines": [
+                ambient_line("Target", "Week 3 — Rain and family work made me miss two walks.", 3.4, look_at=True),
+                ambient_line("Model", "Setbacks happen. Choose a shorter indoor route and start again today.", 3.8, look_at=True),
+                ambient_line("Target", "I will adjust the plan and keep practicing.", 2.8, look_at=True),
+            ],
             "show_names": True,
             "effects": [counter_effect("VHV.Story.Counter.HBCT.RoleModel.TimelineStationsObserved")],
         },
         "DA_Ambient_HBCT_RoleModel_TimelineNewRoutine": {
             "id": "HBCT_RoleModel_TimelineNewRoutine",
-            "participants": [ambient_participant("Target", "TARGET VILLAGER")],
-            "lines": [ambient_line("Target", "This is becoming part of my morning.", 3.0)],
+            "participants": [ambient_participant("Target", "UNCLE SOMCHAI")],
+            "lines": [
+                ambient_line("Target", "Month 2 — I now take a short walk most mornings.", 3.2),
+                ambient_line("Target", "Small steps, support, and adjusting after setbacks made it part of my routine.", 4.0),
+            ],
             "show_names": True,
             "effects": [counter_effect("VHV.Story.Counter.HBCT.RoleModel.TimelineStationsObserved")],
         },
@@ -2062,6 +2090,32 @@ def spawn_npc(npc_class, label, location, yaw, participant_tag="", preserve_exis
     return actor
 
 
+def copy_npc_appearance(source, target):
+    before = (target.get_actor_location(), target.get_actor_rotation(), target.get_actor_scale3d())
+    source_mesh = source.get_editor_property("mesh")
+    target_mesh = target.get_editor_property("mesh")
+    target.modify()
+    target_mesh.modify()
+    target.set_animation_profile(None)
+    target_mesh.set_anim_instance_class(None)
+    target_mesh.set_skinned_asset_and_update(source_mesh.get_skeletal_mesh_asset())
+    target_mesh.set_editor_property(
+        "override_materials", list(source_mesh.get_editor_property("override_materials") or []))
+    target_mesh.set_editor_property("animation_mode", source_mesh.get_editor_property("animation_mode"))
+    target_mesh.set_anim_instance_class(source_mesh.get_editor_property("anim_class"))
+    target_mesh.set_relative_location(source_mesh.get_editor_property("relative_location"), False, False)
+    target_mesh.set_relative_rotation(source_mesh.get_editor_property("relative_rotation"), False, False)
+    target_mesh.set_relative_scale3d(source_mesh.get_editor_property("relative_scale3d"))
+    target.set_animation_profile(source.get_animation_profile())
+    target.set_npc_posture(unreal.VHVNPCPosture.STANDING)
+    target.set_special_animation_action_active(False)
+    after = (target.get_actor_location(), target.get_actor_rotation(), target.get_actor_scale3d())
+    if before != after:
+        raise RuntimeError("Appearance copy changed world transform for {}".format(
+            target.get_actor_label()))
+    return target
+
+
 def configure_npc_nameplate(actor, display_name="", show_nameplate=True):
     if not actor:
         raise RuntimeError("Cannot configure a nameplate on a missing NPC")
@@ -2079,7 +2133,8 @@ def bind(slot_id, npc):
 
 
 def configure_ambient_actor(label, location, asset, receiver_tag, bindings,
-                            explicit_trigger=False, preserve_existing_transform=False):
+                            explicit_trigger=False, preserve_existing_transform=False,
+                            control_participant_visibility=False):
     actor = spawn_actor(unreal.VHVAmbientConversationActor, label, location,
                         preserve_existing_transform=preserve_existing_transform)
     actor.set_editor_properties({
@@ -2088,6 +2143,7 @@ def configure_ambient_actor(label, location, asset, receiver_tag, bindings,
         "auto_start_on_begin_play": False,
         "requires_explicit_trigger": explicit_trigger,
         "play_once": True,
+        "control_participant_visibility": control_participant_visibility,
         "player_leave_policy": unreal.VHVAmbientConversationLeavePolicy.CANCEL,
         "observation_radius": 1800.0,
     })
@@ -2722,28 +2778,34 @@ def configure_map(ambient_assets, conversations):
             npc_class, "HBCT_RoleModel_Timeline{}_Target".format(suffix),
             (x, -1500.0, 100.0), 90.0, preserve_existing_transform=True),
             role_root + "/Timeline")
+        copy_npc_appearance(somchai, target_npc)
+        configure_npc_nameplate(target_npc, "Uncle Somchai")
         bindings = [bind("Target", target_npc)]
         if suffix in ("FindsModel", "Repetition"):
             model_npc = set_actor_folder(spawn_npc(
                 npc_class, "HBCT_RoleModel_Timeline{}_Model".format(suffix),
                 (x, -1300.0, 100.0), -90.0, preserve_existing_transform=True),
                 role_root + "/Timeline")
+            copy_npc_appearance(saeng, model_npc)
+            configure_npc_nameplate(model_npc, "Aunt Saeng")
             bindings.append(bind("Model", model_npc))
         receiver_name = "VHV.WorldReceiver.HBCT.RoleModel.Timeline." + suffix
-        configure_ambient_actor(
+        timeline_scene = configure_ambient_actor(
             "HBCT_RoleModel_Timeline{}Scene".format(suffix), (x, -1500.0, 100.0),
             ambient_assets["DA_Ambient_HBCT_RoleModel_" + asset_suffix],
-            receiver_name, bindings, True, True)
+            receiver_name, bindings, True, True, True)
+        timeline_scene.set_editor_property(
+            "actors_temporarily_hidden_while_conversation_plays",
+            [somchai, saeng] if suffix in ("FindsModel", "Repetition") else [somchai])
         set_actor_folder(find_actor("HBCT_RoleModel_Timeline{}Scene".format(suffix)), role_root + "/Timeline")
         timeline_trigger = configure_story_trigger(
             "HBCT_Trigger_RoleModel_Timeline{}".format(suffix), (x, -1750.0, 100.0),
             (135.0, 200.0, 220.0), "VHV.Location.HBCT.RoleModel.Timeline." + suffix,
             "Q_HBCT_03_ROLE_MODEL", "O09_SeeChangeOverTime",
             receiver_name, track_as_objective=False)
-        if required_count:
-            timeline_trigger.set_editor_property(
-                "trigger_conditions", counter_at_least_condition(
-                    "VHV.Story.Counter.HBCT.RoleModel.TimelineStationsObserved", required_count))
+        timeline_trigger.set_editor_property(
+            "trigger_conditions", counter_equal_condition(
+                "VHV.Story.Counter.HBCT.RoleModel.TimelineStationsObserved", required_count))
         set_actor_folder(timeline_trigger, role_root + "/Timeline")
 
     configure_semantic_npc_location(

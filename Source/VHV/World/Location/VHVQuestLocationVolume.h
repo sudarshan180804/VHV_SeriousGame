@@ -139,6 +139,7 @@ private:
     bool DispatchConfiguredActions();
     void RefreshInteractionConfiguration();
     void RefreshInteractionAvailability();
+    void RetryAutomaticDispatchForPlayersInside();
 
 #if WITH_EDITORONLY_DATA
     /** Screen-scaled editor handle that makes large trigger volumes easy to pick. Never cooked. */

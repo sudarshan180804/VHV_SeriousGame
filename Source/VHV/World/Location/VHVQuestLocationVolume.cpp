@@ -307,21 +307,49 @@ void AVHVQuestLocationVolume::HandleInteractionRequested()
 void AVHVQuestLocationVolume::HandleQuestStateChanged(FName QuestID)
 {
     RefreshInteractionAvailability();
+    RetryAutomaticDispatchForPlayersInside();
 }
 
 void AVHVQuestLocationVolume::HandleObjectiveStateChanged(FName QuestID, FName ObjectiveID)
 {
     RefreshInteractionAvailability();
+    RetryAutomaticDispatchForPlayersInside();
 }
 
 void AVHVQuestLocationVolume::HandleStoryFlagChanged(FName FlagID, bool bValue)
 {
     RefreshInteractionAvailability();
+    RetryAutomaticDispatchForPlayersInside();
 }
 
 void AVHVQuestLocationVolume::HandleStoryCounterChanged(FName CounterID, int32 NewValue)
 {
     RefreshInteractionAvailability();
+    RetryAutomaticDispatchForPlayersInside();
+}
+
+void AVHVQuestLocationVolume::RetryAutomaticDispatchForPlayersInside()
+{
+    if (!bEnabled || bRequirePlayerInteraction || PlayersInside.IsEmpty()
+        || !AreConfiguredGatesSatisfied())
+    {
+        return;
+    }
+
+    for (auto It = PlayersInside.CreateIterator(); It; ++It)
+    {
+        AVHVCharacter* PlayerCharacter = It->Get();
+        if (!IsValid(PlayerCharacter))
+        {
+            It.RemoveCurrent();
+            continue;
+        }
+        if (PlayerCharacter->IsPlayerControlled())
+        {
+            DispatchConfiguredActions();
+            return;
+        }
+    }
 }
 
 void AVHVQuestLocationVolume::HandleBoxEndOverlap(
