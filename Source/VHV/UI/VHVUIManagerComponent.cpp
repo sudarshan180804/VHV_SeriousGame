@@ -38,6 +38,10 @@
 #include "Save/VHVSaveTypes.h"
 #include "Story/Systems/VHVStoryStateSubsystem.h"
 #include "UI/Quest/VHVQuestTrackerWidget.h"
+#include "Audio/VHVAudioSubsystem.h"
+#include "VHVCharacter.h"
+#include "NPC/VHVNPCCharacter.h"
+#include "NPC/Animation/VHVNPCAnimationProfile.h"
 
 namespace
 {
@@ -953,7 +957,29 @@ void UVHVUIManagerComponent::ApplyModalInputAndFocus(const EVHVUIState State)
 
 void UVHVUIManagerComponent::ApplyUIState(EVHVUIState NewState)
 {
+    const EVHVUIState PreviousState = CurrentUIState;
     CurrentUIState = NewState;
+
+    const bool bWasLearning = PreviousState == EVHVUIState::LearningAsk
+        || PreviousState == EVHVUIState::LearningHint
+        || PreviousState == EVHVUIState::LearningFeedback
+        || PreviousState == EVHVUIState::LearningTeach
+        || PreviousState == EVHVUIState::LearningSolution;
+    const bool bIsLearning = NewState == EVHVUIState::LearningAsk
+        || NewState == EVHVUIState::LearningHint
+        || NewState == EVHVUIState::LearningFeedback
+        || NewState == EVHVUIState::LearningTeach
+        || NewState == EVHVUIState::LearningSolution;
+    if (!bWasLearning && bIsLearning)
+    {
+        if (const UGameInstance* GI = GetWorld() ? GetWorld()->GetGameInstance() : nullptr)
+        {
+            if (UVHVAudioSubsystem* Audio = GI->GetSubsystem<UVHVAudioSubsystem>())
+            {
+                Audio->PlayEvent(TEXT("EDU_TeachingScreenOpen"));
+            }
+        }
+    }
 
     if (DialogueWidget)
     {
@@ -2597,11 +2623,18 @@ void UVHVUIManagerComponent::ToggleObjectiveTracking()
             UE_LOG(LogVHV, Log,
                 TEXT("[VHVGuidance] Guidance active for objective '%s' at '%s'."),
                 *TrackedLocationObjectiveID.ToString(), *TrackedLocationID.ToString());
+            if (const UGameInstance* GI = GetWorld() ? GetWorld()->GetGameInstance() : nullptr)
+                if (UVHVAudioSubsystem* Audio = GI->GetSubsystem<UVHVAudioSubsystem>())
+                {
+                    Audio->PlayEvent(TEXT("NAV_GuidanceOn"));
+                }
         }
         return;
     }
 
     ClearObjectiveTracking();
+    if (const UGameInstance* GI = GetWorld() ? GetWorld()->GetGameInstance() : nullptr)
+        if (UVHVAudioSubsystem* Audio = GI->GetSubsystem<UVHVAudioSubsystem>()) Audio->PlayEvent(TEXT("NAV_GuidanceOff"));
     UE_LOG(LogVHV, Log, TEXT("[VHVGuidance] Guidance disabled by player."));
 }
 
@@ -2889,6 +2922,17 @@ bool UVHVUIManagerComponent::TraverseToNode(const FString& NodeID, bool bLogBran
     ActiveConversationState.CurrentNodeID = TargetNodeID;
     bCurrentDialogueNodeCompleted = false;
     CommitCurrentConversationState();
+
+    if (const UGameInstance* GI = GetWorld() ? GetWorld()->GetGameInstance() : nullptr)
+    {
+        if (UVHVAudioSubsystem* Audio = GI->GetSubsystem<UVHVAudioSubsystem>())
+        {
+            if (TargetNode->NodeType != EVHVDialogueNodeType::LearningActivity)
+            {
+                Audio->PlayEvent(TEXT("DIA_BubbleAppear"));
+            }
+        }
+    }
 
     if (bLogBranchEntry)
     {
@@ -3226,6 +3270,80 @@ void UVHVUIManagerComponent::HideDialogue()
     bConversationActive = false;
     ApplyUIState(EVHVUIState::Gameplay);
     EndConversationSession();
+}
+
+void UVHVUIManagerComponent::HandleDialogueSpeakerChanged(
+    const FString& SpeakerID,
+    const FText& SpeakerName,
+    const bool bSpokenLine)
+{
+    HandleDialoguePresentationEnded();
+    if (!bSpokenLine || !GetWorld())
+    {
+        return;
+    }
+
+    const FString DisplayName = SpeakerName.ToString();
+    const bool bPlayerSpeaker = SpeakerID.Equals(TEXT("Player"), ESearchCase::IgnoreCase)
+        || (SpeakerID.IsEmpty() && DisplayName.Equals(TEXT("Player"), ESearchCase::IgnoreCase));
+    if (bPlayerSpeaker)
+    {
+        if (const APlayerController* PlayerController = GetWorld()->GetFirstPlayerController())
+        {
+            if (AVHVCharacter* Player = Cast<AVHVCharacter>(PlayerController->GetPawn()))
+            {
+                Player->SetConversationTalking(true);
+                bPlayerIsActiveDialogueSpeaker = true;
+            }
+        }
+        return;
+    }
+
+    if (SpeakerID.IsEmpty())
+    {
+        return;
+    }
+
+    for (TActorIterator<AVHVNPCCharacter> It(GetWorld()); It; ++It)
+    {
+        AVHVNPCCharacter* NPC = *It;
+        const UVHVQuestParticipantComponent* Participant = NPC->GetQuestParticipantComponent();
+        if (!Participant
+            || !Participant->GetEffectiveParticipantID().ToString().Equals(SpeakerID, ESearchCase::IgnoreCase))
+        {
+            continue;
+        }
+
+        const UVHVNPCAnimationProfile* Profile = NPC->GetAnimationProfile();
+        if (Profile && Profile->bUseSpecialActionDuringDialogue)
+        {
+            NPC->SetSpecialAnimationActionActive(true);
+            ActiveDialogueSpeakerNPC = NPC;
+        }
+        return;
+    }
+}
+
+void UVHVUIManagerComponent::HandleDialoguePresentationEnded()
+{
+    if (bPlayerIsActiveDialogueSpeaker && GetWorld())
+    {
+        if (const APlayerController* PlayerController = GetWorld()->GetFirstPlayerController())
+        {
+            if (AVHVCharacter* Player = Cast<AVHVCharacter>(PlayerController->GetPawn()))
+            {
+                Player->SetConversationTalking(false);
+            }
+        }
+    }
+    bPlayerIsActiveDialogueSpeaker = false;
+
+    if (AVHVNPCCharacter* NPC = ActiveDialogueSpeakerNPC.Get())
+    {
+        const UVHVNPCAnimationProfile* Profile = NPC->GetAnimationProfile();
+        NPC->SetSpecialAnimationActionActive(Profile && Profile->bUseSpecialActionOutsideDialogue);
+    }
+    ActiveDialogueSpeakerNPC.Reset();
 }
 
 void UVHVUIManagerComponent::AdvanceDialogue()

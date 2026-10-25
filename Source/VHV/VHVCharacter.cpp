@@ -12,6 +12,10 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputActionValue.h"
+#include "Audio/VHVAudioSubsystem.h"
+#include "Engine/GameInstance.h"
+#include "PhysicalMaterials/PhysicalMaterial.h"
+#include "TimerManager.h"
 
 #include "VHV.h"
 #include "VHV/Player/Components/VHVPlayerInteractionComponent.h"
@@ -152,6 +156,51 @@ void AVHVCharacter::Move(const FInputActionValue& Value)
 
 	// Route the input
 	DoMove(MovementVector.X, MovementVector.Y);
+	if (!MovementVector.IsNearlyZero() && GetWorld()
+		&& !GetWorld()->GetTimerManager().IsTimerActive(FootstepTimer))
+	{
+		GetWorld()->GetTimerManager().SetTimer(
+			FootstepTimer, this, &AVHVCharacter::PlayMovementFootstep, 0.34f, true, 0.08f);
+	}
+}
+
+void AVHVCharacter::SetConversationTalking(const bool bTalking)
+{
+	bConversationTalking = bTalking;
+	if (UVHVMixamoNPCAnimInstance* AnimInstance =
+		Cast<UVHVMixamoNPCAnimInstance>(GetMesh()->GetAnimInstance()))
+	{
+		AnimInstance->SetSpecialActionActive(bConversationTalking);
+	}
+}
+
+void AVHVCharacter::PlayMovementFootstep()
+{
+	UWorld* World = GetWorld();
+	if (!World || !GetCharacterMovement()->IsMovingOnGround()
+		|| GetVelocity().SizeSquared2D() < FMath::Square(35.0f))
+	{
+		if (World) World->GetTimerManager().ClearTimer(FootstepTimer);
+		return;
+	}
+
+	FName EventID(TEXT("FOL_Footstep_Dirt"));
+	FHitResult FloorHit;
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(VHVFootstepSurface), false, this);
+	Params.bReturnPhysicalMaterial = true;
+	const FVector Start = GetActorLocation();
+	if (World->LineTraceSingleByChannel(FloorHit, Start, Start - FVector(0.0f, 0.0f, 150.0f),
+		ECC_Visibility, Params) && FloorHit.PhysMaterial.IsValid())
+	{
+		const FString SurfaceName = FloorHit.PhysMaterial->GetName().ToLower();
+		if (SurfaceName.Contains(TEXT("grass"))) EventID = TEXT("FOL_Footstep_Grass");
+		else if (SurfaceName.Contains(TEXT("wood"))) EventID = TEXT("FOL_Footstep_Wood");
+		else if (SurfaceName.Contains(TEXT("pavement")) || SurfaceName.Contains(TEXT("stone"))
+			|| SurfaceName.Contains(TEXT("concrete"))) EventID = TEXT("FOL_Footstep_Pavement");
+	}
+	if (const UGameInstance* GI = GetGameInstance())
+		if (UVHVAudioSubsystem* Audio = GI->GetSubsystem<UVHVAudioSubsystem>())
+			Audio->PlayEventAtLocation(EventID, GetActorLocation());
 }
 
 void AVHVCharacter::Look(const FInputActionValue& Value)

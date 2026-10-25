@@ -427,6 +427,10 @@ void UVHVDialogueWidget::ShowConversation(const FDialogueConversation& InConvers
 
 void UVHVDialogueWidget::HideDialogue()
 {
+    if (OwningUIManager)
+    {
+        OwningUIManager->HandleDialoguePresentationEnded();
+    }
     ClearWorldSpaceSpeechPresentation();
     SetPlayerThoughtPresentation(false);
     SetActivityChoicePresentation(false);
@@ -548,6 +552,12 @@ void UVHVDialogueWidget::UpdateDialogueLine()
 
         UpdateNormalDialogueText(Line.SpeakerName, Line.Text);
         SetPlayerThoughtPresentation(Line.Presentation == EVHVDialoguePresentation::Thought, Line.Text);
+        if (OwningUIManager)
+        {
+            OwningUIManager->HandleDialogueSpeakerChanged(
+                Line.GetEffectiveSpeakerID(), Line.SpeakerName,
+                Line.Presentation == EVHVDialoguePresentation::Spoken);
+        }
     }
 }
 
@@ -558,6 +568,14 @@ void UVHVDialogueWidget::UpdateFromNode()
     {
         HideDialogue();
         return;
+    }
+
+    if (OwningUIManager)
+    {
+        OwningUIManager->HandleDialogueSpeakerChanged(
+            CurrentNode->GetEffectiveSpeakerID(), CurrentNode->SpeakerName,
+            CurrentNode->NodeType == EVHVDialogueNodeType::Text
+                && CurrentNode->Presentation == EVHVDialoguePresentation::Spoken);
     }
 
     SetActivityChoicePresentation(

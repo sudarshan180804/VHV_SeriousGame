@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "Logging/LogMacros.h"
+#include "TimerManager.h"
 #include "VHVCharacter.generated.h"
 
 class USpringArmComponent;
@@ -79,6 +80,8 @@ protected:
 
 	/** Called for movement input */
 	void Move(const FInputActionValue& Value);
+	void PlayMovementFootstep();
+	FTimerHandle FootstepTimer;
 
 	/** Called for looking input */
 	void Look(const FInputActionValue& Value);
@@ -105,6 +108,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "VHV|Interaction")
 	void Interact();
 
+	/** Event-driven dialogue pose. It never changes movement or input ownership. */
+	UFUNCTION(BlueprintCallable, Category = "VHV|Player|Animation")
+	void SetConversationTalking(bool bTalking);
+
+	UFUNCTION(BlueprintPure, Category = "VHV|Player|Animation")
+	bool IsConversationTalking() const { return bConversationTalking; }
+
 public:
 
 	/** Returns CameraBoom subobject */
@@ -129,4 +139,8 @@ public:
 	{
 		return ThoughtSpeechComponent;
 	}
+
+private:
+	UPROPERTY(Transient)
+	bool bConversationTalking = false;
 };

@@ -3,6 +3,7 @@
 #include "UI/Textbook/SVHVChoiceCard.h"
 #include "UI/Textbook/VHVActivityUIStyle.h"
 #include "UI/VHVUIManagerComponent.h"
+#include "Audio/VHVAudioSubsystem.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "InputCoreTypes.h"
@@ -364,6 +365,13 @@ void UVHVQuestionWidget::SetSelectedOptionIndex(const int32 Index)
     FocusedOptionIndex = Index;
     SelectedOptionIndex = Index;
     ClearInputFeedback();
+        if (const UGameInstance* GI = GetGameInstance())
+        {
+            if (UVHVAudioSubsystem* Audio = GI->GetSubsystem<UVHVAudioSubsystem>())
+            {
+                Audio->PlayEvent(TEXT("EDU_CheckboxTick"));
+            }
+        }
     UpdatePresentation();
 }
 
@@ -462,6 +470,8 @@ void UVHVQuestionWidget::ToggleSelectedOption(const int32 OptionIndex)
     else
     {
         SelectedOptionIndices.Add(OptionIndex);
+        if (const UGameInstance* GI = GetGameInstance())
+            if (UVHVAudioSubsystem* Audio = GI->GetSubsystem<UVHVAudioSubsystem>()) Audio->PlayEvent(TEXT("EDU_CheckboxTick"));
     }
 
     UE_LOG(LogTemp, Log, TEXT("[VHVTextbook] MultiChoice selected OptionIndex=%d Selected=%s"),

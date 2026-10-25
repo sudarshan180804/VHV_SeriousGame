@@ -3,6 +3,7 @@
 #include "UI/Textbook/VHVActivityUIStyle.h"
 #include "UI/VHVMatchingCardWidget.h"
 #include "UI/VHVUIManagerComponent.h"
+#include "Audio/VHVAudioSubsystem.h"
 #include "Blueprint/DragDropOperation.h"
 #include "Components/Button.h"
 #include "Components/TextBlock.h"
@@ -769,6 +770,11 @@ void UVHVMatchingWidget::AssignFocusedRightToFocusedLeft()
         }
     }
     LeftToRight[FocusedLeftIndex] = RightIndex;
+    if (const UGameInstance* GI = GetGameInstance())
+    {
+        if (UVHVAudioSubsystem* Audio = GI->GetSubsystem<UVHVAudioSubsystem>())
+            Audio->PlayEvent(TEXT("EDU_CheckboxTick"));
+    }
     PendingLeftIndex = INDEX_NONE;
     ConnectionRevealElapsed = 0.0f;
     UpdateCardVisuals();

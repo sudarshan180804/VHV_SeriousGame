@@ -20,6 +20,7 @@
 #include "World/Components/VHVWorldActionReceiverComponent.h"
 #include "World/Location/VHVQuestLocationVolume.h"
 #include "World/Systems/VHVWorldActionSubsystem.h"
+#include "VHVCharacter.h"
 
 #if WITH_EDITOR
 #include "EngineUtils.h"
@@ -553,7 +554,19 @@ void AVHVAmbientConversationActor::RestoreParticipants()
 	{
 		if (Pair.Value)
 		{
-			Pair.Value->SetSpecialAnimationActionActive(false);
+			const UVHVNPCAnimationProfile* Profile = Pair.Value->GetAnimationProfile();
+			Pair.Value->SetSpecialAnimationActionActive(
+				Profile && Profile->bUseSpecialActionOutsideDialogue);
+		}
+	}
+	if (GetWorld())
+	{
+		if (const APlayerController* PlayerController = GetWorld()->GetFirstPlayerController())
+		{
+			if (AVHVCharacter* Player = Cast<AVHVCharacter>(PlayerController->GetPawn()))
+			{
+				Player->SetConversationTalking(false);
+			}
 		}
 	}
     for (const TPair<TWeakObjectPtr<AVHVNPCCharacter>, FName>& Pair : StartedPresentationActions)
@@ -617,11 +630,20 @@ void AVHVAmbientConversationActor::ShowCurrentLine()
 	AVHVNPCCharacter* Speaker = FindParticipant(Line.SpeakerSlot);
 	const FText SpeakerName = FindSpeakerName(Line.SpeakerSlot);
 	const bool bPlayerBubbleOwner = SpeakerName.ToString().Equals(TEXT("PLAYER"), ESearchCase::IgnoreCase);
+	if (const APlayerController* PlayerController = GetWorld()->GetFirstPlayerController())
+	{
+		if (AVHVCharacter* Player = Cast<AVHVCharacter>(PlayerController->GetPawn()))
+		{
+			Player->SetConversationTalking(bPlayerBubbleOwner);
+		}
+	}
 	for (const TPair<FName, TObjectPtr<AVHVNPCCharacter>>& Pair : ResolvedParticipants)
 	{
 		if (Pair.Value)
 		{
-			Pair.Value->SetSpecialAnimationActionActive(false);
+			const UVHVNPCAnimationProfile* Profile = Pair.Value->GetAnimationProfile();
+			Pair.Value->SetSpecialAnimationActionActive(
+				Profile && Profile->bUseSpecialActionOutsideDialogue);
 		}
 	}
 	if (Speaker && !bPlayerBubbleOwner)

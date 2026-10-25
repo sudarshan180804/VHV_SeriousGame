@@ -158,10 +158,12 @@ bool UVHVNPCDialogueComponent::BeginDialogueSession(UVHVUIManagerComponent* UIMa
 	}
 	ActiveUIManager = UIManager;
 	ActiveUIManager->OnConversationSessionEnded.AddUniqueDynamic(this, &UVHVNPCDialogueComponent::HandleConversationSessionEnded);
+	// The UI manager activates a dialogue action only for the current authored
+	// speaker. Starting a session must not make the interacting NPC talk through
+	// the player's and other participants' lines.
 	if (AVHVNPCCharacter* NPC = Cast<AVHVNPCCharacter>(GetOwner()))
 	{
-		const UVHVNPCAnimationProfile* Profile = NPC->GetAnimationProfile();
-		NPC->SetSpecialAnimationActionActive(Profile && Profile->bUseSpecialActionDuringDialogue);
+		NPC->SetSpecialAnimationActionActive(false);
 	}
 	return true;
 }

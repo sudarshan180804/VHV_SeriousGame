@@ -31,6 +31,7 @@ class UVHVSocialSupportHUDWidget;
 class UUserWidget;
 class AVHVNavigationGuidanceActor;
 class AVHVQuestLocationVolume;
+class AVHVNPCCharacter;
 class AActor;
 struct FVHVDialogueCheckpointSaveState;
 
@@ -217,6 +218,15 @@ public:
     UPROPERTY(BlueprintAssignable, Category = "VHV|UI")
     FOnVHVConversationSessionEnded OnConversationSessionEnded;
 
+    /** Called by the dialogue presentation exactly when an authored line changes. */
+    void HandleDialogueSpeakerChanged(
+        const FString& SpeakerID,
+        const FText& SpeakerName,
+        bool bSpokenLine);
+
+    /** Restores the previous speaker's normal idle/ambient animation. */
+    void HandleDialoguePresentationEnded();
+
     UFUNCTION(BlueprintCallable, Category = "VHV|UI")
     FConversationRuntimeState GetConversationState() const;
 
@@ -365,6 +375,8 @@ protected:
     bool bCurrentMajorStingerIsQuestTransition = false;
     bool bDeveloperQuestTransitionBypassActive = false;
     bool bFeedbackAdvanceInProgress = false;
+    bool bPlayerIsActiveDialogueSpeaker = false;
+    TWeakObjectPtr<AVHVNPCCharacter> ActiveDialogueSpeakerNPC;
     TArray<FQueuedMajorStinger> PendingMajorStingers;
 
     UFUNCTION()

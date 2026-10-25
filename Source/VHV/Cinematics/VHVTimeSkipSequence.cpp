@@ -16,6 +16,7 @@
 #include "TimerManager.h"
 #include "World/Location/VHVQuestLocationVolume.h"
 #include "VHV.h"
+#include "Audio/VHVAudioSubsystem.h"
 
 AVHVTimeSkipSequence::AVHVTimeSkipSequence()
 {
@@ -519,6 +520,8 @@ bool AVHVTimeSkipSequence::BeginTransition(const int32 NextStageIndex)
         || Stages[NextStageIndex].PlayerArrivalRelativeActor != nullptr;
     PendingStageIndex = NextStageIndex;
     SequenceState = EVHVTimeSkipSequenceState::Transitioning;
+    if (const UGameInstance* GI = GetGameInstance())
+        if (UVHVAudioSubsystem* Audio = GI->GetSubsystem<UVHVAudioSubsystem>()) Audio->PlayEvent(TEXT("QST_TimeSkip"));
     LockPlayerInput();
     GetWorld()->GetTimerManager().SetTimer(
         TransitionFailSafeTimer,
@@ -571,6 +574,8 @@ bool AVHVTimeSkipSequence::BeginEntryTransition(const int32 StageIndex)
     CurrentStageIndex = INDEX_NONE;
     PendingStageIndex = StageIndex;
     SequenceState = EVHVTimeSkipSequenceState::Transitioning;
+    if (const UGameInstance* GI = GetGameInstance())
+        if (UVHVAudioSubsystem* Audio = GI->GetSubsystem<UVHVAudioSubsystem>()) Audio->PlayEvent(TEXT("QST_TimeSkip"));
     LockPlayerInput();
     GetWorld()->GetTimerManager().SetTimer(
         TransitionFailSafeTimer,

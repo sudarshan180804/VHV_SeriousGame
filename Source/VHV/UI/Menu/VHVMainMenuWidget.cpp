@@ -8,6 +8,7 @@
 #include "Save/VHVSaveSubsystem.h"
 #include "Styling/CoreStyle.h"
 #include "UI/Textbook/VHVActivityUIStyle.h"
+#include "Audio/VHVAudioSubsystem.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Input/SButton.h"
@@ -270,10 +271,7 @@ void UVHVMainMenuWidget::NativeConstruct()
         MenuPanel->SetRenderOpacity(0.0f);
         MenuPanel->SetRenderTransform(FSlateRenderTransform(FVector2D(0.0f, MenuEntranceOffset)));
     }
-    if (MenuAmbience)
-    {
-        MenuAmbienceComponent = UGameplayStatics::SpawnSound2D(this, MenuAmbience);
-    }
+    // Background music and ambience are intentionally disabled.
 }
 
 void UVHVMainMenuWidget::NativeDestruct()
@@ -495,6 +493,8 @@ void UVHVMainMenuWidget::HideNewGameConfirmation()
     {
         ConfirmationPanel->SetVisibility(EVisibility::Collapsed);
     }
+    if (UVHVAudioSubsystem* Audio = GetGameInstance() ? GetGameInstance()->GetSubsystem<UVHVAudioSubsystem>() : nullptr)
+        Audio->PlayEvent(TEXT("UI_BackCancel"));
 }
 
 void UVHVMainMenuWidget::SetConfirmationSelection(const int32 Index, const bool bPlaySound)
@@ -567,17 +567,14 @@ void UVHVMainMenuWidget::PrepareForTravel()
 
 void UVHVMainMenuWidget::PlayFocusSound() const
 {
-    if (FocusSound)
-    {
-        UGameplayStatics::PlaySound2D(this, FocusSound);
-    }
+    // Hover/focus has no equivalent in the 19-sound library and stays silent.
 }
 
 void UVHVMainMenuWidget::PlayConfirmSound() const
 {
-    if (ConfirmSound)
+    if (UVHVAudioSubsystem* Audio = GetGameInstance() ? GetGameInstance()->GetSubsystem<UVHVAudioSubsystem>() : nullptr)
     {
-        UGameplayStatics::PlaySound2D(this, ConfirmSound);
+        Audio->PlayEvent(TEXT("UI_ButtonConfirm"));
     }
 }
 
@@ -588,6 +585,10 @@ void UVHVMainMenuWidget::HandleMenuHovered(const int32 Index)
 
 FReply UVHVMainMenuWidget::HandleMenuClicked(const int32 Index)
 {
+    if (Index == static_cast<int32>(EMenuOption::Continue) && !bContinueEnabled)
+    {
+        return FReply::Handled();
+    }
     SetSelectedOption(Index, false);
     ActivateOption(Index);
     return FReply::Handled();
@@ -601,7 +602,7 @@ void UVHVMainMenuWidget::HandleConfirmationHovered(const int32 Index)
 FReply UVHVMainMenuWidget::HandleConfirmationClicked(const int32 Index)
 {
     SetConfirmationSelection(Index, false);
-    PlayConfirmSound();
+    if (Index == 0) PlayConfirmSound();
     Index == 0 ? StartNewGame() : HideNewGameConfirmation();
     return FReply::Handled();
 }

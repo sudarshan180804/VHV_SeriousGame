@@ -1,11 +1,14 @@
 ﻿#include "VHVPlayerInteractionComponent.h"
 #include "Engine/CollisionProfile.h"
+#include "Audio/VHVAudioSubsystem.h"
 #include "VHVInteractionComponent.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/Controller.h"
 #include "GameFramework/Pawn.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Engine/World.h"
+#include "Engine/GameInstance.h"
+#include "NPC/VHVNPCCharacter.h"
 #include "VHV.h"
 #include "VHV/Core/VHVCollisionChannels.h"
 
@@ -147,6 +150,16 @@ void UVHVPlayerInteractionComponent::TryInteract()
     }
 
     UE_LOG(LogVHV, Warning, TEXT("VHV Interaction: Interacting with %s"), *GetNameSafe(CurrentTarget->GetOwner()));
+    if (Cast<AVHVNPCCharacter>(CurrentTarget->GetOwner()))
+    {
+        if (const UGameInstance* GI = GetWorld() ? GetWorld()->GetGameInstance() : nullptr)
+        {
+            if (UVHVAudioSubsystem* Audio = GI->GetSubsystem<UVHVAudioSubsystem>())
+            {
+                Audio->PlayEvent(TEXT("UI_InteractNPC"));
+            }
+        }
+    }
     CurrentTarget->InteractWithActor(GetOwner());
 }
 
