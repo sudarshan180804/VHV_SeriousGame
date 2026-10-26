@@ -109,7 +109,10 @@ AVHVAmbientRunnerRoute::AVHVAmbientRunnerRoute()
 	RoutePreview->SetupAttachment(SceneRoot);
 	RoutePreview->SetHiddenInGame(true);
 	RoutePreview->SetClosedLoop(true);
+
+#if WITH_EDITORONLY_DATA
 	RoutePreview->SetIsVisualizationComponent(true);
+#endif
 
 #if WITH_EDITORONLY_DATA
 	static ConstructorHelpers::FObjectFinder<UTexture2D> MarkerTexture(
@@ -126,9 +129,19 @@ AVHVAmbientRunnerRoute::AVHVAmbientRunnerRoute()
 void AVHVAmbientRunnerRoute::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
+	// Serialized editor actors can temporarily contain stale component references
+	// while they are being reconstructed. Construction must tolerate that state.
+	if (!IsValid(RoutePreview) || !IsValid(Start) || !IsValid(End))
+	{
+		return;
+	}
+
 	RoutePreview->ClearSplinePoints(false);
 	RoutePreview->AddSplinePoint(Start->GetRelativeLocation(), ESplineCoordinateSpace::Local, false);
-	RoutePreview->AddSplinePoint(Mid->GetRelativeLocation(), ESplineCoordinateSpace::Local, false);
+	if (IsValid(Mid))
+	{
+		RoutePreview->AddSplinePoint(Mid->GetRelativeLocation(), ESplineCoordinateSpace::Local, false);
+	}
 	RoutePreview->AddSplinePoint(End->GetRelativeLocation(), ESplineCoordinateSpace::Local, false);
 	RoutePreview->SetClosedLoop(true, true);
 }
@@ -138,6 +151,11 @@ void AVHVAmbientRunnerRoute::BeginPlay()
 	Super::BeginPlay();
 	if (!bEnabled)
 	{
+		return;
+	}
+	if (!IsValid(Start) || !IsValid(End) || !GetWorld())
+	{
+		StopRoute(TEXT("required route components or world were unavailable"));
 		return;
 	}
 
@@ -160,7 +178,8 @@ void AVHVAmbientRunnerRoute::BeginPlay()
 	}
 
 	const FTransform SpawnTransform(GetActorRotation(), SpawnLocation);
-	SpawnedRunner = GetWorld()->SpawnActorDeferred<AVHVAmbientRunnerCharacter>(
+	UWorld* const World = GetWorld();
+	SpawnedRunner = World->SpawnActorDeferred<AVHVAmbientRunnerCharacter>(
 		AVHVAmbientRunnerCharacter::StaticClass(), SpawnTransform, this, nullptr,
 		ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
 	if (!SpawnedRunner)
@@ -216,16 +235,20 @@ const UVHVAmbientRunnerCharacterData* AVHVAmbientRunnerRoute::GetSelectedCharact
 
 FVector AVHVAmbientRunnerRoute::GetPointLocation(const int32 Index) const
 {
-	switch (Index)
+	if (Index <= 0 || !IsValid(End))
 	{
-	case 1:
-		return Mid->GetComponentLocation();
-	case 2:
-		return End->GetComponentLocation();
-	case 0:
-	default:
-		return Start->GetComponentLocation();
+		return IsValid(Start) ? Start->GetComponentLocation() : GetActorLocation();
 	}
+	if (!IsValid(Mid) || Index >= 2)
+	{
+		return End->GetComponentLocation();
+	}
+	return Mid->GetComponentLocation();
+}
+
+int32 AVHVAmbientRunnerRoute::GetRoutePointCount() const
+{
+	return IsValid(Mid) ? 3 : 2;
 }
 
 void AVHVAmbientRunnerRoute::BeginRouteMovement()
@@ -243,12 +266,13 @@ void AVHVAmbientRunnerRoute::MoveToNextPoint()
 		return;
 	}
 
-	if (!bLoopIndefinitely && CurrentPointIndex == 2)
+	const int32 PointCount = GetRoutePointCount();
+	if (PointCount < 2 || (!bLoopIndefinitely && CurrentPointIndex == PointCount - 1))
 	{
 		return;
 	}
 
-	RequestedPointIndex = (CurrentPointIndex + 1) % 3;
+	RequestedPointIndex = (CurrentPointIndex + 1) % PointCount;
 	const EPathFollowingRequestResult::Type RequestResult = RunnerController->MoveToLocation(
 		GetPointLocation(RequestedPointIndex), 35.0f, true, true, true, false, nullptr, true);
 	if (RequestResult == EPathFollowingRequestResult::Failed)
@@ -281,7 +305,7 @@ void AVHVAmbientRunnerRoute::HandleMoveCompleted(
 
 	CurrentPointIndex = RequestedPointIndex;
 	RequestedPointIndex = INDEX_NONE;
-	if (!bLoopIndefinitely && CurrentPointIndex == 2)
+	if (!bLoopIndefinitely && CurrentPointIndex == GetRoutePointCount() - 1)
 	{
 		return;
 	}

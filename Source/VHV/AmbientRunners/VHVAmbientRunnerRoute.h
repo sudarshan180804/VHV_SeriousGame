@@ -138,6 +138,7 @@ private:
 	bool bRouteStopped = false;
 
 	const UVHVAmbientRunnerCharacterData* GetSelectedCharacterData() const;
+	int32 GetRoutePointCount() const;
 	FVector GetPointLocation(int32 Index) const;
 	void BeginRouteMovement();
 	void MoveToNextPoint();
