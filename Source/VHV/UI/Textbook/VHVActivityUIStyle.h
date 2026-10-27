@@ -8,7 +8,7 @@
 namespace VHVActivityUIStyle
 {
     inline constexpr float QuestionPanelAlpha = 0.61f;
-    inline constexpr float ChoiceCardAlpha = 0.57f;
+    inline constexpr float ChoiceCardAlpha = 0.68f;
     inline constexpr float QuestionPanelRadius = 26.0f;
     inline constexpr float ChoiceCardRadius = 41.0f;
     inline constexpr float ChoiceIndicatorDiameter = 66.0f;

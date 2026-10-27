@@ -37,6 +37,10 @@ public:
     UFUNCTION(BlueprintCallable, Category = "VHV|Quest")
     bool StartQuestArc(UVHVQuestArcData* QuestArc);
 
+    /** Builds prerequisite state without playing skipped quests, then starts a real isolated technique quest. */
+    UFUNCTION(BlueprintCallable, Category = "VHV|Quest")
+    bool StartTechniquePractice(UVHVQuestArcData* QuestArc, FName TechniqueQuestID);
+
     UFUNCTION(BlueprintCallable, Category = "VHV|Quest")
     bool StartQuest(FName QuestID);
 

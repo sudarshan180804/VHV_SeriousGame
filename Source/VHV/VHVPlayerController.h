@@ -12,6 +12,7 @@ class UUserWidget;
 class UVHVUIManagerComponent;
 class UVHVLevelData;
 class UVHVQuestArcData;
+class UVHVReturnToMenuWidget;
 
 /**
  *  Basic PlayerController class for a third person game
@@ -24,6 +25,10 @@ class AVHVPlayerController : public APlayerController
 
 public:
 	AVHVPlayerController();
+
+    /** Called by the compact in-game Esc overlay. */
+    void CloseReturnToMenuOverlay();
+    void ReturnToMainMenu(bool bSaveFirst);
 
 protected:
 
@@ -82,5 +87,11 @@ protected:
 
 	/** Input mapping context setup */
 	virtual void SetupInputComponent() override;
+
+    void ToggleReturnToMenuOverlay();
+    void PositionPlayerForTechniqueStart();
+
+    UPROPERTY(Transient)
+    TObjectPtr<UVHVReturnToMenuWidget> ReturnToMenuWidget;
 
 };

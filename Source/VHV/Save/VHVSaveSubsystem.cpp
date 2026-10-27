@@ -7,6 +7,7 @@
 #include "Story/Systems/VHVStoryStateSubsystem.h"
 #include "Textbook/Systems/VHVTextbookSubsystem.h"
 #include "UI/VHVUIManagerComponent.h"
+#include "UI/Menu/VHVFrontEndSubsystem.h"
 #include "VHV.h"
 #include "TimerManager.h"
 #include "UObject/UObjectGlobals.h"
@@ -40,6 +41,16 @@ void UVHVSaveSubsystem::Deinitialize()
 bool UVHVSaveSubsystem::SaveProgress()
 {
     bool bSuccess = false;
+    if (const UGameInstance* GameInstance = GetGameInstance())
+    {
+        if (const UVHVFrontEndSubsystem* FrontEnd = GameInstance->GetSubsystem<UVHVFrontEndSubsystem>();
+            FrontEnd && FrontEnd->IsTechniquePracticeActive())
+        {
+            UE_LOG(LogVHV, Warning, TEXT("[VHVSave] Practice sessions never overwrite campaign progress."));
+            OnSaveCompleted.Broadcast(false);
+            return false;
+        }
+    }
     if (!IsStableState(TEXT("save")) || !QuestSubsystem || !StoryStateSubsystem || !TextbookSubsystem)
     {
         UE_LOG(LogVHV, Warning, TEXT("[VHVSave] Save failed because required runtime systems are unavailable or busy."));
@@ -52,6 +63,14 @@ bool UVHVSaveSubsystem::SaveProgress()
     {
         SaveGame->SaveVersion = CurrentSaveVersion;
         SaveGame->SavedMapName = GetCurrentMapName();
+        if (const APlayerController* PlayerController = UGameplayStatics::GetPlayerController(this, 0))
+        {
+            if (const APawn* Pawn = PlayerController->GetPawn())
+            {
+                SaveGame->bHasPlayerTransform = true;
+                SaveGame->PlayerTransform = Pawn->GetActorTransform();
+            }
+        }
         QuestSubsystem->ExportSaveState(SaveGame->QuestState);
         StoryStateSubsystem->ExportSaveState(SaveGame->StoryState);
         TextbookSubsystem->ExportSaveState(SaveGame->TextbookState);
@@ -127,6 +146,23 @@ bool UVHVSaveSubsystem::LoadProgress()
     if (bSuccess)
     {
         bSuccess = QuestSubsystem->ImportSaveState(SaveGame->QuestState);
+    }
+
+    if (bSuccess && SaveGame->bHasPlayerTransform)
+    {
+        if (APlayerController* PlayerController = UGameplayStatics::GetPlayerController(this, 0))
+        {
+            if (APawn* Pawn = PlayerController->GetPawn())
+            {
+                if (!Pawn->TeleportTo(
+                    SaveGame->PlayerTransform.GetLocation(),
+                    SaveGame->PlayerTransform.Rotator(), false, true))
+                {
+                    UE_LOG(LogVHV, Warning,
+                        TEXT("[VHVSave] Progress restored, but the saved player transform was obstructed; retaining PlayerStart."));
+                }
+            }
+        }
     }
 
     if (bSuccess)

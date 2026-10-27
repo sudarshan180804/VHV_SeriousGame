@@ -3,12 +3,127 @@
 #include "Components/TextBlock.h"
 #include "Engine/GameInstance.h"
 #include "Quest/Systems/VHVQuestSubsystem.h"
+#include "UI/Textbook/VHVActivityUIStyle.h"
 #include "VHV.h"
+#include "Widgets/Layout/SBorder.h"
+#include "Widgets/Layout/SBox.h"
+#include "Widgets/SBoxPanel.h"
+#include "Widgets/SOverlay.h"
+#include "Widgets/Text/STextBlock.h"
 
 namespace
 {
     constexpr float TrackerRevealDuration = 0.22f;
     constexpr float TrackerRevealOffsetX = -10.0f;
+}
+
+TSharedRef<SWidget> UVHVQuestTrackerWidget::RebuildWidget()
+{
+    // Keep the authored UMG tree available for compatibility, but present the tracker
+    // natively so every quest uses one responsive, data-driven visual treatment.
+    Super::RebuildWidget();
+
+    AccentLineBrush = VHVActivityUIStyle::RoundedBrush(
+        VHVActivityUIStyle::FromSRGB(199, 170, 99, 190), 1.0f);
+    TrackerPanelBrush = VHVActivityUIStyle::RoundedBrush(
+        VHVActivityUIStyle::FromSRGB(10, 17, 22, 86), 12.0f,
+        VHVActivityUIStyle::FromSRGB(199, 170, 99, 78), 1.0f);
+
+    return SNew(SOverlay)
+        + SOverlay::Slot()
+        .HAlign(HAlign_Left)
+        .VAlign(VAlign_Top)
+        .Padding(FMargin(46.0f, 42.0f, 0.0f, 0.0f))
+        [
+            SNew(SBorder)
+            .BorderImage(&TrackerPanelBrush)
+            .Padding(FMargin(15.0f, 13.0f, 18.0f, 14.0f))
+            [
+                SNew(SHorizontalBox)
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(FMargin(0.0f, 1.0f, 13.0f, 0.0f))
+                [
+                    SNew(SBox).WidthOverride(2.0f)
+                    [
+                        SNew(SBorder).BorderImage(&AccentLineBrush)
+                    ]
+                ]
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                [
+                    SNew(SBox).WidthOverride(410.0f)
+                    [
+                        SNew(SVerticalBox)
+                        + SVerticalBox::Slot().AutoHeight()
+                        [
+                            SNew(SHorizontalBox)
+                            + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Top)
+                            .Padding(FMargin(0.0f, 3.0f, 9.0f, 0.0f))
+                            [
+                                SNew(STextBlock)
+                                .Font(VHVActivityUIStyle::MediumFont(16))
+                                .ColorAndOpacity(VHVActivityUIStyle::HeaderGold())
+                                .ShadowOffset(FVector2D(1.0f, 1.0f))
+                                .ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.85f))
+                                .Text(FText::FromString(TEXT("\u25c7")))
+                            ]
+                            + SHorizontalBox::Slot().FillWidth(1.0f)
+                            [
+                                SAssignNew(NativeQuestTitleText, STextBlock)
+                                .Font(VHVActivityUIStyle::MediumFont(23))
+                                .ColorAndOpacity(VHVActivityUIStyle::TextPrimary())
+                                .ShadowOffset(FVector2D(1.0f, 1.0f))
+                                .ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.88f))
+                                .AutoWrapText(true)
+                                .WrapTextAt(375.0f)
+                                .LineHeightPercentage(1.06f)
+                            ]
+                        ]
+                        + SVerticalBox::Slot().AutoHeight()
+                        .Padding(FMargin(25.0f, 9.0f, 0.0f, 10.0f))
+                        [
+                            SNew(SBox).WidthOverride(285.0f).HeightOverride(1.0f)
+                            [
+                                SNew(SBorder).BorderImage(&AccentLineBrush)
+                            ]
+                        ]
+                        + SVerticalBox::Slot().AutoHeight()
+                        [
+                            SNew(SHorizontalBox)
+                            + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Top)
+                            .Padding(FMargin(1.0f, 3.0f, 9.0f, 0.0f))
+                            [
+                                SNew(STextBlock)
+                                .Font(VHVActivityUIStyle::MediumFont(11))
+                                .ColorAndOpacity(VHVActivityUIStyle::HeaderGold())
+                                .ShadowOffset(FVector2D(1.0f, 1.0f))
+                                .ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.85f))
+                                .Text(FText::FromString(TEXT("\u25cf")))
+                            ]
+                            + SHorizontalBox::Slot().FillWidth(1.0f)
+                            [
+                                SAssignNew(NativeObjectiveText, STextBlock)
+                                .Font(VHVActivityUIStyle::RegularFont(17))
+                                .ColorAndOpacity(VHVActivityUIStyle::TextPrimary())
+                                .ShadowOffset(FVector2D(1.0f, 1.0f))
+                                .ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.88f))
+                                .AutoWrapText(true)
+                                .WrapTextAt(375.0f)
+                                .LineHeightPercentage(1.12f)
+                            ]
+                        ]
+                    ]
+                ]
+            ]
+        ];
+}
+
+void UVHVQuestTrackerWidget::ReleaseSlateResources(const bool bReleaseChildren)
+{
+    Super::ReleaseSlateResources(bReleaseChildren);
+    NativeQuestTitleText.Reset();
+    NativeObjectiveText.Reset();
 }
 
 void UVHVQuestTrackerWidget::SetQuestSubsystem(UVHVQuestSubsystem* InQuestSubsystem)
@@ -144,6 +259,14 @@ void UVHVQuestTrackerWidget::RefreshTracker()
     if (ObjectiveText)
     {
         ObjectiveText->SetText(Quest.CurrentObjectiveText);
+    }
+    if (NativeQuestTitleText)
+    {
+        NativeQuestTitleText->SetText(Quest.QuestTitle);
+    }
+    if (NativeObjectiveText)
+    {
+        NativeObjectiveText->SetText(Quest.CurrentObjectiveText);
     }
     SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 }

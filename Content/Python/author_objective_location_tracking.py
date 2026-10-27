@@ -162,7 +162,6 @@ MULTI_TRACKING_DESTINATIONS = {
             ("VHV.Location.HBCT.SocialSupport.SSMealScene", "flag", "VHV.Story.Flag.HBCT.SocialSupport.SSObservedMeal", 0),
             ("VHV.Location.HBCT.SocialSupport.SSWalkingPartnerScene", "flag", "VHV.Story.Flag.HBCT.SocialSupport.SSObservedWalkingPartner", 0),
             ("VHV.Location.HBCT.SocialSupport.SSEncouragementScene", "flag", "VHV.Story.Flag.HBCT.SocialSupport.SSObservedEncouragement", 0),
-            ("VHV.Location.HBCT.SocialSupport.SSHealthGuidanceScene", "flag", "VHV.Story.Flag.HBCT.SocialSupport.SSObservedGuidance", 0),
         ],
         "O03_ExploreSupportHouse": [
             ("VHV.Location.HBCT.SocialSupport.SSRoomEmotional", "flag", "VHV.Story.Flag.HBCT.SocialSupport.SSRoomEmotionalComplete", 0),

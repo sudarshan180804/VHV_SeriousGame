@@ -6,6 +6,7 @@
 
 class UTextBlock;
 class UVHVQuestSubsystem;
+class STextBlock;
 
 UCLASS()
 class VHV_API UVHVQuestTrackerWidget : public UVHVUserWidgetBase
@@ -19,6 +20,8 @@ public:
     bool IsMajorStingerSuppressed() const { return bUpdatesSuppressed; }
 
 protected:
+    virtual TSharedRef<SWidget> RebuildWidget() override;
+    virtual void ReleaseSlateResources(bool bReleaseChildren) override;
     virtual void NativeConstruct() override;
     virtual void NativeDestruct() override;
     virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
@@ -42,6 +45,11 @@ private:
 
     UPROPERTY()
     TObjectPtr<UVHVQuestSubsystem> QuestSubsystem;
+
+    TSharedPtr<STextBlock> NativeQuestTitleText;
+    TSharedPtr<STextBlock> NativeObjectiveText;
+    FSlateBrush TrackerPanelBrush;
+    FSlateBrush AccentLineBrush;
 
     bool bUpdatesSuppressed = false;
     bool bRevealAnimating = false;

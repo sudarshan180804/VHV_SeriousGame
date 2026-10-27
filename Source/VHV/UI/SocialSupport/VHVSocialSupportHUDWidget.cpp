@@ -46,12 +46,8 @@ TSharedRef<SWidget> UVHVSocialSupportHUDWidget::RebuildWidget()
 void UVHVSocialSupportHUDWidget::ShowObservationProgress(const int32 CompletedCount)
 {
     Title = TEXT("SUPPORT AROUND THE VILLAGE");
-    Progress.Empty();
-    for (int32 Index = 0; Index < 4; ++Index)
-    {
-        if (Index > 0) Progress += TEXT("  ");
-        Progress += Index < CompletedCount ? TEXT("●") : TEXT("○");
-    }
+    Progress = FString::Printf(
+        TEXT("OBSERVATIONS  %d / 3"), FMath::Clamp(CompletedCount, 0, 3));
     Refresh();
 }
 

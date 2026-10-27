@@ -17,6 +17,13 @@
 #include "Quest/Data/VHVQuestArcData.h"
 #include "Quest/Systems/VHVQuestSubsystem.h"
 #include "Save/VHVSaveSubsystem.h"
+#include "Audio/VHVAudioSubsystem.h"
+#include "Story/Systems/VHVStoryStateSubsystem.h"
+#include "UI/Menu/VHVFrontEndSubsystem.h"
+#include "UI/Menu/VHVReturnToMenuWidget.h"
+#include "NavigationSystem.h"
+#include "Kismet/GameplayStatics.h"
+#include "TimerManager.h"
 
 AVHVPlayerController::AVHVPlayerController()
 {
@@ -31,24 +38,52 @@ void AVHVPlayerController::BeginPlay()
 	const UVHVSaveSubsystem* SaveSubsystem = World && World->GetGameInstance()
 		? World->GetGameInstance()->GetSubsystem<UVHVSaveSubsystem>()
 		: nullptr;
-	if (SaveSubsystem && SaveSubsystem->IsLoadTravelPending())
+	const bool bLoadTravelPending = SaveSubsystem && SaveSubsystem->IsLoadTravelPending();
+
+	if (UVHVAudioSubsystem* Audio = World && World->GetGameInstance()
+		? World->GetGameInstance()->GetSubsystem<UVHVAudioSubsystem>() : nullptr)
 	{
-		return;
+		Audio->PlayGameplayMusic();
 	}
 
 	bool bQuestFlowStarted = false;
-	if (bUseQuestFlow && !StartingQuestArc.IsNull() && World && World->GetGameInstance())
+	if (!bLoadTravelPending && bUseQuestFlow && !StartingQuestArc.IsNull() && World && World->GetGameInstance())
 	{
 		if (UVHVQuestArcData* QuestArc = StartingQuestArc.LoadSynchronous())
 		{
 			if (UVHVQuestSubsystem* QuestSubsystem = World->GetGameInstance()->GetSubsystem<UVHVQuestSubsystem>())
 			{
-				bQuestFlowStarted = QuestSubsystem->StartQuestArc(QuestArc);
+				FName TechniqueQuestID;
+				UVHVFrontEndSubsystem* FrontEnd = World->GetGameInstance()->GetSubsystem<UVHVFrontEndSubsystem>();
+				const EVHVFrontEndLaunchMode LaunchMode = FrontEnd
+					? FrontEnd->ConsumeLaunchRequest(TechniqueQuestID)
+					: EVHVFrontEndLaunchMode::None;
+				if (LaunchMode == EVHVFrontEndLaunchMode::TechniquePractice)
+				{
+					bQuestFlowStarted = QuestSubsystem->StartTechniquePractice(QuestArc, TechniqueQuestID);
+					if (bQuestFlowStarted)
+					{
+						GetWorldTimerManager().SetTimerForNextTick(
+							FTimerDelegate::CreateUObject(this, &AVHVPlayerController::PositionPlayerForTechniqueStart));
+					}
+				}
+				else
+				{
+					if (UVHVStoryStateSubsystem* StoryState = World->GetGameInstance()->GetSubsystem<UVHVStoryStateSubsystem>())
+					{
+						StoryState->ResetStoryState();
+					}
+					if (FrontEnd)
+					{
+						FrontEnd->SetTechniquePracticeActive(false);
+					}
+					bQuestFlowStarted = QuestSubsystem->StartQuestArc(QuestArc);
+				}
 			}
 		}
 	}
 
-	if (!bQuestFlowStarted)
+	if (!bLoadTravelPending && !bQuestFlowStarted)
 	{
 		// Preserve the existing standalone textbook startup path when quest flow is not configured.
 		if (!StartingLevelData.IsValid())
@@ -95,6 +130,8 @@ void AVHVPlayerController::BeginPlay()
 void AVHVPlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
+	InputComponent->BindKey(EKeys::Escape, IE_Pressed, this,
+		&AVHVPlayerController::ToggleReturnToMenuOverlay);
 
 #if !UE_BUILD_SHIPPING
 	// Developer-only shortcut ownership lives in UVHVDeveloperSubsystem.
@@ -156,4 +193,109 @@ void AVHVPlayerController::SetupInputComponent()
 			}
 		}
 	}
+}
+
+void AVHVPlayerController::ToggleReturnToMenuOverlay()
+{
+    if (ReturnToMenuWidget)
+    {
+        CloseReturnToMenuOverlay();
+        return;
+    }
+    if (UIManagerComponent && UIManagerComponent->IsConversationSessionActive())
+    {
+        // Dialogue owns Escape until it reaches a stable checkpoint.
+        return;
+    }
+
+    ReturnToMenuWidget = CreateWidget<UVHVReturnToMenuWidget>(this, UVHVReturnToMenuWidget::StaticClass());
+    if (!ReturnToMenuWidget)
+    {
+        return;
+    }
+    ReturnToMenuWidget->AddToViewport(500);
+    SetPause(true);
+    bShowMouseCursor = true;
+    FInputModeUIOnly InputMode;
+    InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+    InputMode.SetWidgetToFocus(ReturnToMenuWidget->TakeWidget());
+    SetInputMode(InputMode);
+    ReturnToMenuWidget->SetKeyboardFocus();
+}
+
+void AVHVPlayerController::CloseReturnToMenuOverlay()
+{
+    if (ReturnToMenuWidget)
+    {
+        ReturnToMenuWidget->RemoveFromParent();
+        ReturnToMenuWidget = nullptr;
+    }
+    SetPause(false);
+    bShowMouseCursor = false;
+    SetInputMode(FInputModeGameOnly());
+}
+
+void AVHVPlayerController::ReturnToMainMenu(const bool bSaveFirst)
+{
+    if (bSaveFirst)
+    {
+        UVHVSaveSubsystem* SaveSubsystem = GetGameInstance()
+            ? GetGameInstance()->GetSubsystem<UVHVSaveSubsystem>() : nullptr;
+        if (!SaveSubsystem || !SaveSubsystem->SaveProgress())
+        {
+            if (ReturnToMenuWidget)
+            {
+                ReturnToMenuWidget->ShowSaveFailure();
+            }
+            return;
+        }
+    }
+    if (UVHVAudioSubsystem* Audio = GetGameInstance()
+        ? GetGameInstance()->GetSubsystem<UVHVAudioSubsystem>() : nullptr)
+    {
+        Audio->StopMusic(0.8f);
+    }
+    SetPause(false);
+    UGameplayStatics::OpenLevel(this, TEXT("/Game/VHV_Stuff/UI/MainMenu/Maps/Lvl_MainMenu"));
+}
+
+void AVHVPlayerController::PositionPlayerForTechniqueStart()
+{
+    UVHVQuestSubsystem* QuestSubsystem = GetGameInstance()
+        ? GetGameInstance()->GetSubsystem<UVHVQuestSubsystem>() : nullptr;
+    APawn* PlayerPawn = GetPawn();
+    if (!QuestSubsystem || !PlayerPawn || !GetWorld())
+    {
+        return;
+    }
+
+    FName QuestID;
+    FName ObjectiveID;
+    FName LocationID;
+    FVector TargetLocation;
+    AActor* TargetActor = nullptr;
+    if (!QuestSubsystem->ResolveCurrentObjectiveTrackingTarget(
+        GetWorld(), QuestID, ObjectiveID, LocationID, TargetLocation, TargetActor))
+    {
+        UE_LOG(LogVHV, Warning, TEXT("[VHVFrontEnd] Technique '%s' has no resolvable starting destination; using PlayerStart."),
+            *QuestID.ToString());
+        return;
+    }
+
+    FVector Away = PlayerPawn->GetActorLocation() - TargetLocation;
+    Away.Z = 0.0f;
+    if (!Away.Normalize())
+    {
+        Away = FVector::ForwardVector;
+    }
+    FVector Destination = TargetLocation + Away * 500.0f;
+    FNavLocation Projected;
+    if (UNavigationSystemV1* Nav = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
+        Nav && Nav->ProjectPointToNavigation(Destination, Projected, FVector(500.0f, 500.0f, 400.0f)))
+    {
+        Destination = Projected.Location;
+    }
+    const FRotator Facing = (TargetLocation - Destination).Rotation();
+    PlayerPawn->TeleportTo(Destination, FRotator(0.0f, Facing.Yaw, 0.0f), false, true);
+    SetControlRotation(FRotator(Facing.Pitch, Facing.Yaw, 0.0f));
 }

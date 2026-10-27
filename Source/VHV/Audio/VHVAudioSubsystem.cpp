@@ -1,9 +1,12 @@
 #include "Audio/VHVAudioSubsystem.h"
 
 #include "Engine/DataTable.h"
+#include "Components/AudioComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "Misc/ConfigCacheIni.h"
 #include "Quest/Systems/VHVQuestSubsystem.h"
 #include "Sound/SoundAttenuation.h"
+#include "Sound/SoundWave.h"
 #include "Textbook/Systems/VHVTextbookSubsystem.h"
 #include "VHV.h"
 
@@ -11,6 +14,7 @@ namespace
 {
     const TCHAR* AudioRoot = TEXT("/Game/Audio/VHV/SFX");
     constexpr int32 ExpectedEventCount = 19;
+    const TCHAR* AudioSettingsSection = TEXT("/Script/VHV.VHVAudioSettings");
 }
 
 void UVHVAudioSubsystem::Initialize(FSubsystemCollectionBase& Collection)
@@ -19,9 +23,21 @@ void UVHVAudioSubsystem::Initialize(FSubsystemCollectionBase& Collection)
     QuestSubsystem = Collection.InitializeDependency<UVHVQuestSubsystem>();
     TextbookSubsystem = Collection.InitializeDependency<UVHVTextbookSubsystem>();
 
+    GConfig->GetFloat(AudioSettingsSection, TEXT("MusicVolume"), MusicVolume, GGameUserSettingsIni);
+    MusicVolume = FMath::Clamp(MusicVolume, 0.0f, 1.0f);
+    MainMenuMusic = LoadObject<USoundBase>(nullptr, TEXT("/Game/Audio/mainscreen.mainscreen"));
+    GameplayMusic = LoadObject<USoundBase>(nullptr, TEXT("/Game/Audio/bgm.bgm"));
+    if (USoundWave* Wave = Cast<USoundWave>(MainMenuMusic))
+    {
+        Wave->bLooping = true;
+    }
+    if (USoundWave* Wave = Cast<USoundWave>(GameplayMusic))
+    {
+        Wave->bLooping = true;
+    }
+
     if (QuestSubsystem)
     {
-        QuestSubsystem->OnQuestStarted.AddDynamic(this, &UVHVAudioSubsystem::HandleQuestStarted);
         QuestSubsystem->OnQuestCompleted.AddDynamic(this, &UVHVAudioSubsystem::HandleQuestCompleted);
         QuestSubsystem->OnObjectiveCompleted.AddDynamic(this, &UVHVAudioSubsystem::HandleObjectiveCompleted);
     }
@@ -49,9 +65,9 @@ void UVHVAudioSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 void UVHVAudioSubsystem::Deinitialize()
 {
+    StopMusic(0.0f);
     if (QuestSubsystem)
     {
-        QuestSubsystem->OnQuestStarted.RemoveAll(this);
         QuestSubsystem->OnQuestCompleted.RemoveAll(this);
         QuestSubsystem->OnObjectiveCompleted.RemoveAll(this);
     }
@@ -67,7 +83,82 @@ void UVHVAudioSubsystem::Deinitialize()
     WorldAttenuation = nullptr;
     QuestSubsystem = nullptr;
     TextbookSubsystem = nullptr;
+    MainMenuMusic = nullptr;
+    GameplayMusic = nullptr;
     Super::Deinitialize();
+}
+
+void UVHVAudioSubsystem::PlayMainMenuMusic()
+{
+    PlayMusic(MainMenuMusic, TEXT("MainMenu"));
+}
+
+void UVHVAudioSubsystem::PlayGameplayMusic()
+{
+    PlayMusic(GameplayMusic, TEXT("Gameplay"));
+}
+
+void UVHVAudioSubsystem::PlayMusic(USoundBase* Sound, const FName TrackID)
+{
+    if (!Sound || !GetWorld())
+    {
+        UE_LOG(LogVHV, Warning, TEXT("[VHVAudio] Music asset '%s' is unavailable."), *TrackID.ToString());
+        return;
+    }
+    if (MusicComponent && MusicComponent->IsPlaying() && ActiveMusicTrack == TrackID)
+    {
+        MusicComponent->SetVolumeMultiplier(MusicVolume);
+        return;
+    }
+    if (MusicComponent)
+    {
+        MusicComponent->FadeOut(0.8f, 0.0f);
+        MusicComponent = nullptr;
+    }
+    // FadeIn applies gain on top of the component multiplier; a zero multiplier
+    // keeps the track silent until another caller changes it.
+    MusicComponent = UGameplayStatics::SpawnSound2D(
+        GetWorld(), Sound, MusicVolume, 1.0f, 0.0f, nullptr, true, true);
+    ActiveMusicTrack = TrackID;
+    if (MusicComponent)
+    {
+        MusicComponent->FadeIn(0.9f, 1.0f);
+        UE_LOG(LogVHV, Log, TEXT("[VHVAudio] Started looping '%s' music at %.0f%%."),
+            *TrackID.ToString(), MusicVolume * 100.0f);
+    }
+}
+
+void UVHVAudioSubsystem::StopMusic(const float FadeSeconds)
+{
+    if (MusicComponent)
+    {
+        if (FadeSeconds > 0.0f)
+        {
+            MusicComponent->FadeOut(FadeSeconds, 0.0f);
+        }
+        else
+        {
+            MusicComponent->Stop();
+        }
+        MusicComponent = nullptr;
+    }
+    ActiveMusicTrack = NAME_None;
+}
+
+void UVHVAudioSubsystem::SetMusicVolume(const float NormalizedVolume)
+{
+    MusicVolume = FMath::Clamp(NormalizedVolume, 0.0f, 1.0f);
+    if (MusicComponent)
+    {
+        MusicComponent->SetVolumeMultiplier(MusicVolume);
+    }
+    SaveMusicVolume();
+}
+
+void UVHVAudioSubsystem::SaveMusicVolume() const
+{
+    GConfig->SetFloat(AudioSettingsSection, TEXT("MusicVolume"), MusicVolume, GGameUserSettingsIni);
+    GConfig->Flush(false, GGameUserSettingsIni);
 }
 
 bool UVHVAudioSubsystem::EnsureManifestLoaded()
@@ -216,11 +307,6 @@ bool UVHVAudioSubsystem::PlayEventAtLocation(const FName EventID, const FVector 
         FMath::FRandRange(Volume.X, Volume.Y),
         FMath::FRandRange(Pitch.X, Pitch.Y), 0.0f, WorldAttenuation, nullptr, nullptr);
     return true;
-}
-
-void UVHVAudioSubsystem::HandleQuestStarted(const FName QuestID)
-{
-    PlayEvent(TEXT("QST_QuestStarted"));
 }
 
 void UVHVAudioSubsystem::HandleQuestCompleted(const FName QuestID)

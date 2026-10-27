@@ -2,6 +2,7 @@
 
 #include "GameFramework/PlayerController.h"
 #include "TimerManager.h"
+#include "Audio/VHVAudioSubsystem.h"
 #include "UI/Menu/VHVMainMenuWidget.h"
 
 AVHVMainMenuGameMode::AVHVMainMenuGameMode()
@@ -16,6 +17,12 @@ AVHVMainMenuGameMode::AVHVMainMenuGameMode()
 void AVHVMainMenuGameMode::BeginPlay()
 {
     Super::BeginPlay();
+
+    if (UVHVAudioSubsystem* Audio = GetGameInstance()
+        ? GetGameInstance()->GetSubsystem<UVHVAudioSubsystem>() : nullptr)
+    {
+        Audio->PlayMainMenuMusic();
+    }
 
     APlayerController* PlayerController = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
     if (!PlayerController || !MainMenuWidgetClass)

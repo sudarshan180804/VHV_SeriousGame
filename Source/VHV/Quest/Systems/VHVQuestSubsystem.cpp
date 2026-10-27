@@ -132,6 +132,88 @@ bool UVHVQuestSubsystem::StartQuestArc(UVHVQuestArcData* QuestArc)
     return StartQuest(QuestArc->Quests[0].QuestID);
 }
 
+bool UVHVQuestSubsystem::StartTechniquePractice(UVHVQuestArcData* QuestArc, const FName TechniqueQuestID)
+{
+    if (!RegisterQuestArc(QuestArc) || TechniqueQuestID.IsNone())
+    {
+        return false;
+    }
+    const int32 TechniqueIndex = QuestArc->Quests.IndexOfByPredicate(
+        [TechniqueQuestID](const FVHVQuestDefinition& Quest)
+        {
+            return Quest.QuestID == TechniqueQuestID;
+        });
+    // Index zero is the Prologue, not an HBCT technique.
+    if (TechniqueIndex <= 0)
+    {
+        UE_LOG(LogVHV, Warning, TEXT("[VHVQuest] Technique practice rejected unknown/non-technique quest '%s'."),
+            *TechniqueQuestID.ToString());
+        return false;
+    }
+
+    ++ObjectiveActivationSerial;
+    ClearMotivationFinalDebriefInstructorWait();
+    ClearActiveObjectiveNPCReadinessTracking();
+    ClearActiveObjectiveNPCMoveTracking(true);
+    ClearActiveNPCActionTracking();
+    ClearActiveWorldActionTracking();
+    bCurrentObjectiveActivated = false;
+    bCurrentObjectiveWaitingOnConditions = false;
+    bCompletingCurrentObjective = false;
+
+    if (StoryStateSubsystem)
+    {
+        StoryStateSubsystem->ResetStoryState();
+    }
+
+    RuntimeState = FVHVQuestArcRuntimeState();
+    RuntimeState.QuestArcID = QuestArc->QuestArcID;
+    RuntimeState.bArcActive = true;
+    for (int32 QuestIndex = 0; QuestIndex < QuestArc->Quests.Num(); ++QuestIndex)
+    {
+        const FVHVQuestDefinition& Definition = QuestArc->Quests[QuestIndex];
+        FVHVQuestRuntimeState State;
+        State.QuestID = Definition.QuestID;
+        if (QuestIndex < TechniqueIndex)
+        {
+            State.Status = EVHVQuestStatus::Completed;
+            State.CurrentObjectiveIndex = Definition.Objectives.Num();
+            RuntimeState.CompletedQuestIDs.Add(Definition.QuestID);
+            for (const FVHVQuestObjectiveDefinition& Objective : Definition.Objectives)
+            {
+                State.CompletedObjectiveIDs.Add(Objective.ObjectiveID);
+                if (StoryStateSubsystem && !Objective.CompletionEffects.IsEmpty())
+                {
+                    StoryStateSubsystem->ApplyEffects(Objective.CompletionEffects);
+                }
+            }
+        }
+        else
+        {
+            State.Status = QuestIndex == TechniqueIndex
+                ? EVHVQuestStatus::NotStarted : EVHVQuestStatus::Locked;
+        }
+        RuntimeState.QuestStates.Add(MoveTemp(State));
+    }
+
+    if (!QuestArc->AssociatedLevelData.IsNull() && TextbookSubsystem)
+    {
+        if (UVHVLevelData* LevelData = QuestArc->AssociatedLevelData.LoadSynchronous())
+        {
+            TextbookSubsystem->StartJourney(LevelData);
+        }
+    }
+    if (TextbookSubsystem)
+    {
+        TextbookSubsystem->SetProgressionMode(EVHVTextbookProgressionMode::QuestManaged);
+    }
+
+    RestorePersistentNPCMoves();
+    UE_LOG(LogVHV, Log, TEXT("[VHVQuest] Starting isolated technique practice at '%s'."),
+        *TechniqueQuestID.ToString());
+    return StartQuest(TechniqueQuestID);
+}
+
 bool UVHVQuestSubsystem::StartQuest(FName QuestID)
 {
     const FVHVQuestDefinition* Definition = FindQuestDefinition(QuestID);

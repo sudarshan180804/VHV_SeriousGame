@@ -17,6 +17,13 @@ public:
     UPROPERTY(BlueprintReadOnly, SaveGame, Category = "VHV|Save")
     FString SavedMapName;
 
+    /** Optional in version-1 saves; false keeps pre-update saves fully compatible. */
+    UPROPERTY(BlueprintReadOnly, SaveGame, Category = "VHV|Save")
+    bool bHasPlayerTransform = false;
+
+    UPROPERTY(BlueprintReadOnly, SaveGame, Category = "VHV|Save")
+    FTransform PlayerTransform;
+
     UPROPERTY(BlueprintReadOnly, SaveGame, Category = "VHV|Save")
     FVHVQuestSaveState QuestState;
 

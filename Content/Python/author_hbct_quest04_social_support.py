@@ -531,8 +531,7 @@ def configure_arc(arc, conversations):
     observed = (
         "VHV.Story.Flag.HBCT.SocialSupport.SSObservedMeal",
         "VHV.Story.Flag.HBCT.SocialSupport.SSObservedWalkingPartner",
-        "VHV.Story.Flag.HBCT.SocialSupport.SSObservedEncouragement",
-        "VHV.Story.Flag.HBCT.SocialSupport.SSObservedGuidance")
+        "VHV.Story.Flag.HBCT.SocialSupport.SSObservedEncouragement")
     rooms = (
         "VHV.Story.Flag.HBCT.SocialSupport.SSRoomEmotionalComplete",
         "VHV.Story.Flag.HBCT.SocialSupport.SSRoomInformationalComplete",
@@ -556,7 +555,7 @@ def configure_arc(arc, conversations):
             "SOCIAL SUPPORT — COMPLETE", "THE RIGHT HELP", "FROM THE RIGHT PERSON • AT THE RIGHT TIME", 2.4),
         objectives=[
             objective(
-                "O01_ObserveVillageSupport", "Observe how the village supports healthy behaviour", q.CUSTOM_EVENT,
+                "O01_ObserveVillageSupport", "Observe three ways the village supports healthy behaviour", q.CUSTOM_EVENT,
                 custom_event_tag=tag("VHV.CustomEvent.HBCT.SocialSupport.ObservationsComplete"),
                 completion_conditions=all_flags(*observed),
                 completion_npc_moves=[npc_move(
@@ -1021,7 +1020,8 @@ def configure_map(ambient_assets):
         "HBCT_SS_Ambient_ObserveHealthGuidance", (3100, 1890, 100),
         ambient_assets["DA_Ambient_HBCT_SocialSupport_HealthGuidance"],
         "VHV.WorldReceiver.HBCT.SocialSupport.ObserveHealthGuidance",
-        [bind("Patient", guidance_patient), bind("Nurse", guidance_nurse)], obs_folder)
+        [bind("Patient", guidance_patient), bind("Nurse", guidance_nurse)], obs_folder,
+        requires_explicit_trigger=False)
     ambient["room_emotional"] = spawn_ambient(
         "HBCT_SS_Ambient_RoomEmotional", (5200, 1540, 100),
         ambient_assets["DA_Ambient_HBCT_SocialSupport_RoomEmotional"],
@@ -1085,7 +1085,6 @@ def configure_map(ambient_assets):
         ("HBCT_SS_Trigger_ObserveMeal", (100, 1800, 100), "VHV.Location.HBCT.SocialSupport.SSMealScene", "VHV.WorldReceiver.HBCT.SocialSupport.ObserveMeal", "VHV.Story.Flag.HBCT.SocialSupport.SSObservedMeal"),
         ("HBCT_SS_Trigger_ObserveWalkingPartner", (1100, 1800, 100), "VHV.Location.HBCT.SocialSupport.SSWalkingPartnerScene", "VHV.WorldReceiver.HBCT.SocialSupport.ObserveWalkingPartner", "VHV.Story.Flag.HBCT.SocialSupport.SSObservedWalkingPartner"),
         ("HBCT_SS_Trigger_ObserveEncouragement", (2100, 1800, 100), "VHV.Location.HBCT.SocialSupport.SSEncouragementScene", "VHV.WorldReceiver.HBCT.SocialSupport.ObserveEncouragement", "VHV.Story.Flag.HBCT.SocialSupport.SSObservedEncouragement"),
-        ("HBCT_SS_Trigger_ObserveHealthGuidance", (3100, 1800, 100), "VHV.Location.HBCT.SocialSupport.SSHealthGuidanceScene", "VHV.WorldReceiver.HBCT.SocialSupport.ObserveHealthGuidance", "VHV.Story.Flag.HBCT.SocialSupport.SSObservedGuidance"),
     ]
     for label, location, location_tag, receiver, completed_flag in observation_specs:
         spawn_trigger(label, location, location_tag, "O01_ObserveVillageSupport",
@@ -1183,7 +1182,6 @@ def configure_map(ambient_assets):
             tag("VHV.Story.Flag.HBCT.SocialSupport.SSObservedMeal"),
             tag("VHV.Story.Flag.HBCT.SocialSupport.SSObservedWalkingPartner"),
             tag("VHV.Story.Flag.HBCT.SocialSupport.SSObservedEncouragement"),
-            tag("VHV.Story.Flag.HBCT.SocialSupport.SSObservedGuidance"),
         ],
         "supporter_flags": [
             tag("VHV.Story.Flag.HBCT.SocialSupport.SSWifeRecruited"),
@@ -1243,7 +1241,6 @@ TRIGGER_NAMES = [
     "HBCT_SS_Trigger_ObserveMeal",
     "HBCT_SS_Trigger_ObserveWalkingPartner",
     "HBCT_SS_Trigger_ObserveEncouragement",
-    "HBCT_SS_Trigger_ObserveHealthGuidance",
     "HBCT_SS_Trigger_InstructorCatchup",
     "HBCT_SS_Trigger_RoomEmotional",
     "HBCT_SS_Trigger_RoomInformational",
@@ -1292,8 +1289,8 @@ def validate_authored_data(level, conversations, ambient_assets, arc):
     o01 = objective_definition(quest4, "O01_ObserveVillageSupport")
     o03 = objective_definition(quest4, "O03_ExploreSupportHouse")
     o05 = objective_definition(quest4, "O05_FindChaiSupporters")
-    if len(o01.get_editor_property("completion_conditions").get_editor_property("conditions")) != 4:
-        raise RuntimeError("O01 must require four independently persisted observations")
+    if len(o01.get_editor_property("completion_conditions").get_editor_property("conditions")) != 3:
+        raise RuntimeError("O01 must require three independently persisted observations")
     if len(o03.get_editor_property("completion_conditions").get_editor_property("conditions")) != 4:
         raise RuntimeError("O03 must require four independently persisted room classifications")
     if len(o05.get_editor_property("completion_conditions").get_editor_property("conditions")) != 4:
@@ -1423,7 +1420,6 @@ def validate_map(authored):
         "HBCT_SS_Trigger_ObserveMeal": "HBCT_SS_NPC_MealPatient",
         "HBCT_SS_Trigger_ObserveWalkingPartner": "HBCT_SS_NPC_ObservationWalker",
         "HBCT_SS_Trigger_ObserveEncouragement": "HBCT_SS_NPC_TiredVillager",
-        "HBCT_SS_Trigger_ObserveHealthGuidance": "HBCT_SS_NPC_GuidanceNurse",
         "HBCT_SS_Trigger_RoomEmotional": "HBCT_SS_NPC_RoomEmotionalPatient",
         "HBCT_SS_Trigger_RoomInformational": "HBCT_SS_NPC_RoomInformationalVHV",
         "HBCT_SS_Trigger_RoomInstrumental": "HBCT_SS_NPC_RoomInstrumentalPatient",

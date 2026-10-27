@@ -47,8 +47,8 @@ TSharedRef<SWidget> UVHVDialogueWidget::RebuildWidget()
         VHVActivityUIStyle::HeaderGold(), VHVActivityUIStyle::BorderNormalWidth);
     ActivityDividerBrush = VHVActivityUIStyle::RoundedBrush(VHVActivityUIStyle::DividerGold(), 1.0f);
     DialogueCardBrush = VHVActivityUIStyle::RoundedBrush(
-        VHVActivityUIStyle::FromSRGB(17, 23, 27, 204), 22.0f,
-        VHVActivityUIStyle::FromSRGB(190, 166, 107, 76), 1.0f);
+        VHVActivityUIStyle::FromSRGB(12, 21, 29, 194), 22.0f,
+        VHVActivityUIStyle::FromSRGB(210, 178, 104, 96), 1.0f);
     DialogueShadowBrush = VHVActivityUIStyle::RoundedBrush(
         VHVActivityUIStyle::FromSRGB(0, 0, 0, 58), 25.0f);
     DialogueKeycapBrush = VHVActivityUIStyle::RoundedBrush(
@@ -57,14 +57,14 @@ TSharedRef<SWidget> UVHVDialogueWidget::RebuildWidget()
 
     TSharedRef<SOverlay> Root = SNew(SOverlay)
         + SOverlay::Slot()
-        .HAlign(HAlign_Center)
+        .HAlign(HAlign_Left)
         .VAlign(VAlign_Bottom)
-        .Padding(FMargin(0.0f, 0.0f, 0.0f, 60.0f))
+        .Padding(FMargin(64.0f, 0.0f, 0.0f, 72.0f))
         [
             SAssignNew(NormalDialoguePresentation, SBox)
-            .WidthOverride(720.0f)
-            .MinDesiredHeight(90.0f)
-            .MaxDesiredHeight(210.0f)
+            .WidthOverride(650.0f)
+            .MinDesiredHeight(118.0f)
+            .MaxDesiredHeight(260.0f)
             [
                 SNew(SOverlay)
                 + SOverlay::Slot()
@@ -77,28 +77,49 @@ TSharedRef<SWidget> UVHVDialogueWidget::RebuildWidget()
                 [
                     SNew(SBorder)
                     .BorderImage(&DialogueCardBrush)
-                    .Padding(FMargin(26.0f, 22.0f))
+                    .Padding(FMargin(24.0f, 20.0f))
                     [
                         SNew(SVerticalBox)
                         + SVerticalBox::Slot()
                         .AutoHeight()
                         [
-                            SAssignNew(NormalSpeakerRow, SBox)
+                            SAssignNew(NormalSpeakerRow, SHorizontalBox)
+                            + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+                            .Padding(FMargin(0.0f, 0.0f, 9.0f, 0.0f))
+                            [
+                                SNew(STextBlock)
+                                .Font(VHVActivityUIStyle::MediumFont(13))
+                                .ColorAndOpacity(VHVActivityUIStyle::HeaderGold())
+                                .Text(FText::FromString(TEXT("\u25c7")))
+                            ]
+                            + SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
                             [
                                 SAssignNew(NormalSpeakerText, STextBlock)
                                 .Font(VHVActivityUIStyle::MediumFont(15))
                                 .ColorAndOpacity(VHVActivityUIStyle::HeaderGold())
+                                .ShadowOffset(FVector2D(1.0f, 1.0f))
+                                .ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.9f))
                             ]
                         ]
                         + SVerticalBox::Slot()
                         .AutoHeight()
-                        .Padding(FMargin(0.0f, 7.0f, 0.0f, 0.0f))
+                        .Padding(FMargin(0.0f, 8.0f, 0.0f, 11.0f))
+                        [
+                            SNew(SBox).HeightOverride(1.0f)
+                            [
+                                SNew(SBorder).BorderImage(&ActivityDividerBrush)
+                            ]
+                        ]
+                        + SVerticalBox::Slot()
+                        .AutoHeight()
                         [
                             SAssignNew(NormalDialogueText, STextBlock)
-                            .Font(VHVActivityUIStyle::RegularFont(22))
+                            .Font(VHVActivityUIStyle::RegularFont(19))
                             .ColorAndOpacity(VHVActivityUIStyle::TextPrimary())
+                            .ShadowOffset(FVector2D(1.0f, 1.0f))
+                            .ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.9f))
                             .AutoWrapText(true)
-                            .WrapTextAt(650.0f)
+                            .WrapTextAt(590.0f)
                             .LineHeightPercentage(1.16f)
                         ]
                         + SVerticalBox::Slot()
@@ -146,7 +167,7 @@ TSharedRef<SWidget> UVHVDialogueWidget::RebuildWidget()
         [
             SAssignNew(ActivityRootCanvas, SConstraintCanvas)
             + SConstraintCanvas::Slot()
-            .Anchors(FAnchors(0.1275f, 0.655f, 0.5625f, 0.865f))
+            .Anchors(FAnchors(0.035f, 0.60f, 0.43f, 0.90f))
             .Offset(FMargin(0.0f))
             [
                 SAssignNew(ActivityQuestionPanel, SOverlay)
@@ -195,6 +216,8 @@ TSharedRef<SWidget> UVHVDialogueWidget::RebuildWidget()
                                 SAssignNew(ActivitySpeakerText, STextBlock)
                                 .Font(VHVActivityUIStyle::MediumFont(VHVActivityUIStyle::HeaderFontSize))
                                 .ColorAndOpacity(VHVActivityUIStyle::HeaderGold())
+                                .ShadowOffset(FVector2D(1.0f, 1.0f))
+                                .ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.9f))
                                 .AutoWrapText(true)
                             ]
                         ]
@@ -218,6 +241,8 @@ TSharedRef<SWidget> UVHVDialogueWidget::RebuildWidget()
                             SAssignNew(ActivityPromptText, STextBlock)
                             .Font(VHVActivityUIStyle::RegularFont(VHVActivityUIStyle::QuestionFontSize))
                             .ColorAndOpacity(VHVActivityUIStyle::TextPrimary())
+                            .ShadowOffset(FVector2D(1.0f, 1.0f))
+                            .ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.9f))
                             .AutoWrapText(true)
                             .LineHeightPercentage(1.0f)
                         ]
@@ -225,7 +250,7 @@ TSharedRef<SWidget> UVHVDialogueWidget::RebuildWidget()
                 ]
             ]
             + SConstraintCanvas::Slot()
-            .Anchors(FAnchors(0.6625f, 0.51f, 0.975f, 0.94f))
+            .Anchors(FAnchors(0.66f, 0.28f, 0.965f, 0.93f))
             .Offset(FMargin(0.0f))
             [
                 SAssignNew(ActivityAnswerPanel, SVerticalBox)
@@ -578,10 +603,9 @@ void UVHVDialogueWidget::UpdateFromNode()
                 && CurrentNode->Presentation == EVHVDialoguePresentation::Spoken);
     }
 
-    SetActivityChoicePresentation(
-        CurrentNode->NodeType == EVHVDialogueNodeType::Choice
-        && OwningUIManager
-        && OwningUIManager->IsDialogueChoiceLearningActivity(CurrentConversation.ConversationID, CurrentNodeID));
+    // All authored choice nodes share the same dynamic fantasy card presentation.
+    // Selection/confirmation still flows through the existing conversation manager.
+    SetActivityChoicePresentation(CurrentNode->NodeType == EVHVDialogueNodeType::Choice);
 
     const bool bUseWorldSpaceSpeech = CurrentConversation.bUseWorldSpaceSpeechBubbles
         && CurrentNode->NodeType == EVHVDialogueNodeType::Text
